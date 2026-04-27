@@ -619,7 +619,7 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
         job_status: "draft",
       };
 
-      const res = await fetch("http://localhost:8000/api/jobs", {
+      const res = await fetch("https://job-server-cocj.onrender.com/api/jobs", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

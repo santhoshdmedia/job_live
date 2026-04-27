@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useSelector } from "react-redux";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-const API_BASE = "http://localhost:8000/api";
+const API_BASE = "https://job-server-cocj.onrender.com/api";
 
 const WASTAGE_REASONS = [
   { value: "margin_trim", label: "Margin trim (top/bottom)" },

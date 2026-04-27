@@ -3,7 +3,7 @@ import { useSelector } from "react-redux";
 import { uploadImage } from "../api/index"; // adjust path as needed
 
 // ─── API ──────────────────────────────────────────────────────────────────────
-const API_BASE = "http://localhost:8000/api";
+const API_BASE = "https://job-server-cocj.onrender.com/api";
 
 const api = async (url, opts = {}) => {
   const token =

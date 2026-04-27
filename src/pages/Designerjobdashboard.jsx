@@ -31,7 +31,7 @@ const jsonHeader = () => ({ ...authHeader(), "Content-Type": "application/json" 
 const profile    = () => {
   try { return JSON.parse(localStorage.getItem("userprofile") || "{}"); } catch { return {}; }
 };
-const BASE = "http://localhost:8000/api/jobs";
+const BASE = "https://job-server-cocj.onrender.com/api/jobs";
 
 // ─── Status config ─────────────────────────────────────────────────────────────
 const STATUS = {
