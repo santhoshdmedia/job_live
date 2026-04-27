@@ -7,7 +7,7 @@ import { useDispatch, useSelector } from "react-redux";
 import React from "react";
 import { isLoginSuccess } from "../redux/slices/authSlice";
 import { useNavigate } from "react-router-dom";
-import CreateJobModal from "./job/CreateJobModal";
+import CreateJobModal from "./job/Createjobmodal";
 
 function getGreeting(name = "") {
   const hour = new Date().getHours();
