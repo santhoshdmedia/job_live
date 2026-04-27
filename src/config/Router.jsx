@@ -6,11 +6,11 @@ import PermissionGuard from "../components/PermissionGuard";
 import AdminJobManagement from "../pages/Adminjobmanagement";
 import Designerjobdashboard from "../pages/Designerjobdashboard";
 import OfflineProduct from "../pages/Stock/OfflineProduct";
-import MaterialIssueManager from "../pages/MaterialIssueManager";
+import MaterialIssueManager from "../pages/Materialissuemanager";
 import Productionuploadpanel from "../pages/Productionuploadpanel"
 import { useSelector } from "react-redux";
 import DeliveryPanel from "../pages/DeliveryPanel";
-import MyJobs from "../pages/MyJobs";
+import MyJobs from "../pages/Myjobs";
 import QualityCheckDashboard from "../pages/QualityCheckDashboard";
 
 
