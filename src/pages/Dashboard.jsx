@@ -322,7 +322,7 @@ const ErrorBanner = ({ message, onRetry }) => (
 // ═══════════════════════════════════════════════════════════════════
 export default function Dashboard() {
   const token = localStorage.getItem("admintoken") || "";
-  const baseURL = "http://localhost:8000/api";
+  const baseURL = "https://job-server-cocj.onrender.com/api";
     const { user } = useSelector((state) => state.authSlice);
   
 

@@ -102,9 +102,7 @@ const DEFAULT_FORM = {
   discount_percentage: 0,
   payment_mode: "",
   payment_amount: "",
-  notes: "",
-  terms_and_conditions:
-    "Payment due within 30 days.\nPrices subject to change without notice.\nDelivery: 7-10 business days after confirmation.",
+ 
 };
 
 // ─── Reusable UI ───────────────────────────────────────────────────────────────
@@ -426,7 +424,7 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
           </Select>
         </FormField>
 
-        <FormField label="Design File">
+        <FormField label="Design File" className="!mb-5">
           <UploadHelper
             setImagePath={(path) => set("design_file", path)}
             image_path={item.design_file}
@@ -436,22 +434,21 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
 
       {/* ✅ Design File Preview */}
       {item.design_file && (
-        <div style={{ marginBottom: 10 }}>
+        <div style={{ marginBottom: 30 }}>
           <div style={{
             fontSize: 10, fontWeight: 700, color: "#6b7280",
             marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em",
           }}>
             Design Preview
           </div>
-          <div style={{
+          <div className="flex justify-center items-center w-full" style={{
             border: "1px solid #e5e7eb", borderRadius: 8,
-            overflow: "hidden", display: "inline-block",
             background: "#f9fafb", padding: 4,
           }}>
             <img
               src={item.design_file}
               alt="Design Preview"
-              style={{ maxHeight: 120, maxWidth: "100%", objectFit: "contain", display: "block", borderRadius: 4 }}
+              style={{ maxHeight: 100, maxWidth: "100%", objectFit: "contain", display: "flex", flexDirection: "column", alignItems: "center", borderRadius: 4 }}
               onError={(e) => { e.currentTarget.parentElement.style.display = "none"; }}
             />
           </div>
@@ -459,11 +456,11 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
       )}
 
       {/* Item Total */}
-      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 40 }}>
         <div style={{
           background: "#fff", border: "1px solid #d1fae5",
           borderRadius: 8, padding: "8px 14px", textAlign: "right",
-          minWidth: 180,
+          minWidth: "100%"
         }}>
           <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 2 }}>
             Base: <span style={{ fontWeight: 600, color: "#374151" }}>₹{base.toFixed(2)}</span>
@@ -596,9 +593,6 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
         }),
 
         gst_no: formData.gst_no.trim(),
-        delivery_charges: formData.free_delivery ? 0 : parseFloat(formData.delivery_charges) || 0,
-        free_delivery: formData.free_delivery,
-        discount_percentage: parseFloat(formData.discount_percentage || 0),
 
         subtotal: parseFloat(t.subTotal.toFixed(2)),
         discount_amount: parseFloat(t.discAmt.toFixed(2)),
@@ -609,17 +603,13 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
         payment_mode: formData.payment_mode || "",
         payment_amount: parseFloat(formData.payment_amount) || 0,
         balance_amount: parseFloat(t.balance.toFixed(2)),
-
-        notes: formData.notes,
-        terms_and_conditions: formData.terms_and_conditions,
-
         created_by: adminUser?.name || "Admin",
         created_by_admin_id: adminUser?._id ?? null,
 
         job_status: "draft",
       };
 
-      const res = await fetch("http://localhost:8000/api/jobs", {
+      const res = await fetch("https://job-server-cocj.onrender.com/api/jobs", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -814,38 +804,6 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
               style={{ borderRadius: 8 }}
             />
           </FormField>
-          <FormField label="Discount %">
-            <InputNumber
-              min={0} max={100}
-              placeholder="0"
-              value={formData.discount_percentage || undefined}
-              suffix="%"
-              style={{ width: "100%", borderRadius: 8 }}
-              onChange={(v) => handleInput("discount_percentage", v ?? 0)}
-            />
-          </FormField>
-          <FormField label="Delivery Charges (₹)">
-            <InputNumber
-              min={0}
-              placeholder="0"
-              value={formData.free_delivery ? 0 : (formData.delivery_charges || undefined)}
-              prefix="₹"
-              disabled={formData.free_delivery}
-              style={{ width: "100%", borderRadius: 8 }}
-              onChange={(v) => handleInput("delivery_charges", v ?? 0)}
-            />
-          </FormField>
-          <FormField label="Free Delivery">
-            <div style={{ display: "flex", alignItems: "center", gap: 8, paddingTop: 4 }}>
-              <input
-                type="checkbox"
-                checked={formData.free_delivery}
-                onChange={(e) => handleInput("free_delivery", e.target.checked)}
-                style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#2563eb" }}
-              />
-              <span style={{ fontSize: 13, color: "#374151" }}>Yes, free delivery</span>
-            </div>
-          </FormField>
         </div>
 
         {/* ── Payment ── */}
@@ -877,26 +835,7 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
         </div>
 
         {/* ── Notes ── */}
-        <SectionHeader icon={<FileTextOutlined />} title="Notes & Terms" />
-        <div style={{ display: "grid", gridTemplateColumns: c2, gap: g, marginBottom: 14 }}>
-          <FormField label="Order Notes">
-            <Input.TextArea
-              rows={3}
-              placeholder="Any special instructions…"
-              value={formData.notes}
-              onChange={(e) => handleInput("notes", e.target.value)}
-              style={{ borderRadius: 8 }}
-            />
-          </FormField>
-          <FormField label="Terms & Conditions">
-            <Input.TextArea
-              rows={3}
-              value={formData.terms_and_conditions}
-              onChange={(e) => handleInput("terms_and_conditions", e.target.value)}
-              style={{ borderRadius: 8 }}
-            />
-          </FormField>
-        </div>
+      
 
         {/* ── Order Summary ── */}
         <div style={{

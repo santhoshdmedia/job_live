@@ -68,7 +68,7 @@ const UploadHelper = (props) => {
   return (
     <Skeleton loading={loading} active>
       <Upload.Dragger {...imageValidation} maxCount={max || 1} showUploadList={false} style={{ width: 100, background: "white", height: 100 }}>
-        <div className={`!w-full !h-[60px] !center_div ${blog && "!w-[100px] !h-[100px]"}`}>
+        <div className={`!w-full !h-[60px] flex justify-center items-center !center_div ${blog && "!w-[100px] !h-[100px]"}`}>
           <ICON_HELPER.UPLOAD_ICON />
         </div>
       </Upload.Dragger>
