@@ -72,7 +72,7 @@ const useBreakpoint = () => {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const AUTO_REFRESH_MS = 5 * 60 * 1000;
-const API_BASE = "https://job-server-cocj.onrender.com/api";
+const API_BASE = "http://localhost:8000/api";
 
 const STATUS_CONFIG = {
   draft: { label: "Draft", color: "default", icon: <FileTextOutlined /> },

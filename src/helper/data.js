@@ -15,6 +15,7 @@ export const MENU_DATA = [
     name: "my Jobs",
     icon: ICON_HELPER.ORDERS_ICON,
     to: "/my-jobs",
+    special: ["my-jobs"],
     for: ["super admin", "accounting team", "designing team", "production team", "delivery team","quality check","packing team"],
   },
 
@@ -23,7 +24,7 @@ export const MENU_DATA = [
     name: "Job Management",
     icon: ICON_HELPER.ORDERS_ICON,
     to: "/admin/job-management",
-    special: ["stock-management"],
+    special: ["admin-job-management"],
     for: ["super admin", "accounting team"],
   },
   {
@@ -31,6 +32,7 @@ export const MENU_DATA = [
     name: "Designer Dashboard",
     icon: ICON_HELPER.ORDERS_ICON,
     to: "/admin/designer-job-dashboard",
+    special: ["admin-designer-job-dashboard"],
     for: ["super admin", "designing team"],
   },
   {
@@ -38,6 +40,7 @@ export const MENU_DATA = [
     name: "store manager",
     icon: ICON_HELPER.PRODUCT_ICON,
     to: "/material-issue-manager",
+    special: ["material-issue-manager"],
     for: ["super admin","store manager"],
   },
   {
@@ -45,6 +48,7 @@ export const MENU_DATA = [
     name: "Production Panel",
     icon: ICON_HELPER.BANNER_ICON,
     to: "/production-panel",
+    special: ["production-panel"],
     for: ["super admin", "production team"],
   },
   {
@@ -52,7 +56,7 @@ export const MENU_DATA = [
     name: "Quality Check",
     icon: ICON_HELPER.COUPON_ICON,
     to: "/quality-check",
-    special: ["quality-check"],
+    special: ["quality-check-dashboard"],
     for: ["super admin", "quality check"],
   },
 
@@ -61,7 +65,7 @@ export const MENU_DATA = [
     name: "Users",
     icon: ICON_HELPER.ADMIN_ICON,
     to: "/users",
-    special: ["admin-users"],
+    special: ["staff"],
     for: ["super admin"],
   },
 

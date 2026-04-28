@@ -519,7 +519,7 @@ const AdminJobManagement = () => {
   const loadJobs = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const res = await fetch("https://job-server-cocj.onrender.com/api/jobs", {
+      const res = await fetch("http://localhost:8000/api/jobs", {
         headers: { Authorization: `Bearer ${localStorage.getItem("authToken")}` },
       });
       const data = await res.json();
@@ -562,7 +562,7 @@ const AdminJobManagement = () => {
   const fetchDesigners = async () => {
     setDesignersLoading(true);
     try {
-      const res = await fetch("https://job-server-cocj.onrender.com/api/admin/get_admin", {
+      const res = await fetch("http://localhost:8000/api/admin/get_admin", {
         headers: { Authorization: `Bearer ${localStorage.getItem("authToken")}` },
       });
       const data = await res.json();
@@ -612,7 +612,7 @@ const AdminJobManagement = () => {
         selectedDesigner.username ||
         "Unknown";
 
-      const response = await fetch(`https://job-server-cocj.onrender.com/api/jobs/${approvingJob._id}/approve`, {
+      const response = await fetch(`http://localhost:8000/api/jobs/${approvingJob._id}/approve`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -805,7 +805,7 @@ const AdminJobManagement = () => {
         terms_and_conditions: editForm.terms_and_conditions,
       };
 
-      const res = await fetch(`https://job-server-cocj.onrender.com/api/jobs/${editJob._id}`, {
+      const res = await fetch(`http://localhost:8000/api/jobs/${editJob._id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",

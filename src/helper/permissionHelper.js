@@ -1,71 +1,49 @@
+// Constants to avoid magic strings
+const SUPER_ADMIN_ROLE = "super admin";
+const DEFAULT_PERMISSION = { canView: false, canEdit: false, canDelete: false };
+
 /**
- * Check if user has permission to view a page
+ * Safely retrieves a permission object for a given page.
+ * Returns null if not found (internal helper).
  */
+const findPermission = (pagePermissions, pageName) => {
+  if (!Array.isArray(pagePermissions) || !pageName) return null;
+  return pagePermissions.find((p) => p.pageName === pageName) ?? null;
+};
+
+/** Check if user has permission to view a page */
 export const canViewPage = (pagePermissions, pageName) => {
-  if (!pagePermissions || !Array.isArray(pagePermissions)) return false;
-  
-  const permission = pagePermissions.find(p => p.pageName === pageName);
-  return permission ? permission.canView : false;
+  return findPermission(pagePermissions, pageName)?.canView ?? false;
 };
 
-/**
- * Check if user has edit permission for a page
- */
+/** Check if user has edit permission for a page */
 export const canEditPage = (pagePermissions, pageName) => {
-  if (!pagePermissions || !Array.isArray(pagePermissions)) return false;
-  
-  const permission = pagePermissions.find(p => p.pageName === pageName);
-  return permission ? permission.canEdit : false;
+  return findPermission(pagePermissions, pageName)?.canEdit ?? false;
 };
 
-/**
- * Check if user has delete permission for a page
- */
+/** Check if user has delete permission for a page */
 export const canDeletePage = (pagePermissions, pageName) => {
-  if (!pagePermissions || !Array.isArray(pagePermissions)) return false;
-  
-  const permission = pagePermissions.find(p => p.pageName === pageName);
-  return permission ? permission.canDelete : false;
+  return findPermission(pagePermissions, pageName)?.canDelete ?? false;
 };
 
-/**
- * Get all accessible pages for user
- */
+/** Get all page names the user is allowed to view */
 export const getAccessiblePages = (pagePermissions) => {
-  if (!pagePermissions || !Array.isArray(pagePermissions)) return [];
-  
-  return pagePermissions
-    .filter(p => p.canView)
-    .map(p => p.pageName);
+  if (!Array.isArray(pagePermissions)) return [];
+  return pagePermissions.filter((p) => p.canView).map((p) => p.pageName);
 };
 
-/**
- * Check if user has any permission for a page
- */
+/** Check if user has at least one permission (view/edit/delete) on a page */
 export const hasAnyPermission = (pagePermissions, pageName) => {
-  if (!pagePermissions || !Array.isArray(pagePermissions)) return false;
-  
-  const permission = pagePermissions.find(p => p.pageName === pageName);
-  return permission ? (permission.canView || permission.canEdit || permission.canDelete) : false;
+  const p = findPermission(pagePermissions, pageName);
+  return p ? p.canView || p.canEdit || p.canDelete : false;
 };
 
-/**
- * Get permission object for a page
- */
+/** Get full permission object for a page, with safe defaults */
 export const getPagePermissions = (pagePermissions, pageName) => {
-  if (!pagePermissions || !Array.isArray(pagePermissions)) {
-    return { canView: false, canEdit: false, canDelete: false };
-  }
-  
-  const permission = pagePermissions.find(p => p.pageName === pageName);
-  return permission || { canView: false, canEdit: false, canDelete: false };
+  return findPermission(pagePermissions, pageName) ?? { ...DEFAULT_PERMISSION };
 };
 
-/**
- * Check if user is super admin
- */
+/** Check if the given role is super admin */
 export const isSuperAdmin = (userRole) => {
-  return userRole === "super admin";
+  return userRole === SUPER_ADMIN_ROLE;
 };
-
-

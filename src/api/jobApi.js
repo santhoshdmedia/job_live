@@ -1,4 +1,4 @@
-const API_BASE = "https://job-server-cocj.onrender.com/api/jobs";
+const API_BASE = "http://localhost:8000/api/jobs";
 
 const authHeader = () => ({
   Authorization: `Bearer ${localStorage.getItem("authToken")}`,

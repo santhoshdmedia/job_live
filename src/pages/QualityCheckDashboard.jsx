@@ -30,7 +30,7 @@ const jsonHeader = () => ({ ...authHeader(), "Content-Type": "application/json" 
 const profile    = () => {
   try { return JSON.parse(localStorage.getItem("userprofile") || "{}"); } catch { return {}; }
 };
-const BASE = "https://job-server-cocj.onrender.com/api/jobs";
+const BASE = "http://localhost:8000/api/jobs";
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS_CFG = {
@@ -760,7 +760,7 @@ const QualityCheckDashboard = () => {
         {currentJob && (
           <div>
             {/* Design reference */}
-            {designRef && <DesignFilePreview fileUrl={`https://job-server-cocj.onrender.com${designRef}`} label="Reference Design" />}
+            {designRef && <DesignFilePreview fileUrl={`http://localhost:8000${designRef}`} label="Reference Design" />}
 
             {/* Daily summary */}
             {currentSessionData && (
@@ -778,7 +778,7 @@ const QualityCheckDashboard = () => {
                   Saved Photos ({existingImages.length})
                 </div>
                 <QCImageGallery
-                  images={existingImages.map((p) => p.startsWith("http") ? p : `https://job-server-cocj.onrender.com${p}`)}
+                  images={existingImages.map((p) => p.startsWith("http") ? p : `http://localhost:8000${p}`)}
                   readonly
                 />
               </>

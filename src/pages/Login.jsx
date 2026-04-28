@@ -3,7 +3,7 @@ import { LabelHelper } from "../components/LabelHelper";
 import { EmailValidation, formValidation, PasswordValidation } from "../helper/formvalidation";
 import { useEffect, useState } from "react";
 import { login } from "../api";
-import _ from "lodash";
+import _, { toLower } from "lodash";
 import { admintoken, ERROR_NOTIFICATION, SUCCESS_NOTIFICATION } from "../helper/notification_helper";
 import { useNavigate } from "react-router-dom";
 import { useDispatch } from "react-redux";
@@ -19,7 +19,9 @@ const Login = () => {
   const onFinish = async (values) => {
     try {
       setLoading(true);
-      const result = await login(values);
+      const validValues=toLower(values.email)
+      
+      const result = await login({email:validValues, password: values.password});
       if (_.isEmpty(_.get(result, "data.data", []))) {
         return ERROR_NOTIFICATION("Invalid credentials");
       }

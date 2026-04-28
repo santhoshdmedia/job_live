@@ -1,9 +1,9 @@
 import axios from "axios";
 import { admintoken } from "../helper/notification_helper";
 
-const BASE_URL = "https://job-server-cocj.onrender.com/api";
-const UPLOAD_BASE_URL = "https://job-server-cocj.onrender.com/api";
-export const CLIENT_URL = "https://job-server-cocj.onrender.com";
+const BASE_URL = "http://localhost:8000/api";
+const UPLOAD_BASE_URL = "http://localhost:8000/api";
+export const CLIENT_URL = "http://localhost:8000";
 
 export const login = async (formdata) =>
   await axios.post(`${BASE_URL}/auth/login`, formdata);
