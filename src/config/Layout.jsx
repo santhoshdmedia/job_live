@@ -127,6 +127,7 @@ const App = () => {
       <div className="h-[64px] w-full bg-white shadow fixed top-0 z-50">
         <TopNavbar />
       </div>
+      <div className="fixed top-0 z-50">
 
       {/* Mobile Hamburger Button – hidden when drawer is open to avoid z-index conflict */}
       {isMobile && !mobileDrawerVisible && (
@@ -145,6 +146,7 @@ const App = () => {
           }}
         />
       )}
+      </div>
 
       {/* Desktop Sider */}
       {!isMobile && (
@@ -159,6 +161,7 @@ const App = () => {
       )}
 
       {/* Mobile Drawer – explicit zIndex to stay above everything */}
+      
       <Drawer
         title="Navigation"
         placement="left"
@@ -170,6 +173,7 @@ const App = () => {
         headerStyle={{ borderBottom: "1px solid #f0f0f0" }}
         zIndex={1050}
         getContainer={false}
+        className=""
       >
         {renderMenuItems()}
       </Drawer>
