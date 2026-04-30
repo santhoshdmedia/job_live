@@ -1,6 +1,6 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useSelector } from "react-redux";
-import { uploadImage } from "../api/index"; // adjust path as needed
+import { uploadImage } from "../api/index";
 
 // ─── API ──────────────────────────────────────────────────────────────────────
 const API_BASE = "https://job-server-cocj.onrender.com/api";
@@ -23,50 +23,71 @@ const api = async (url, opts = {}) => {
 
 // ─── Toast ────────────────────────────────────────────────────────────────────
 const useToast = () => {
-  const [toast, setToast] = useState(null);
+  const [toasts, setToasts] = useState([]);
   const show = useCallback((msg, type = "info") => {
-    setToast({ message: msg, type });
-    setTimeout(() => setToast(null), 4000);
+    const id = Date.now();
+    setToasts((p) => [...p, { id, message: msg, type }]);
+    setTimeout(() => setToasts((p) => p.filter((t) => t.id !== id)), 4500);
   }, []);
-  return { toast, show, dismiss: () => setToast(null) };
-};
-
-const Toast = ({ message: msg, type = "info", onDismiss }) => {
-  const styles = {
-    info:    "bg-blue-50 border-blue-200 text-blue-800",
-    success: "bg-emerald-50 border-emerald-200 text-emerald-800",
-    error:   "bg-red-50 border-red-200 text-red-800",
-    warning: "bg-amber-50 border-amber-200 text-amber-800",
-  };
-  const bars = {
-    info: "bg-blue-500", success: "bg-emerald-500",
-    error: "bg-red-500", warning: "bg-amber-500",
-  };
-  return (
-    <div className={`fixed bottom-4 left-4 right-4 z-50 flex items-center gap-3 p-3 rounded-xl border shadow-lg ${styles[type]}`}>
-      <div className={`w-1 h-10 rounded-full flex-shrink-0 ${bars[type]}`} />
-      <span className="text-sm flex-1">{msg}</span>
-      <button onClick={onDismiss} className="text-lg leading-none opacity-60 hover:opacity-100 px-1">×</button>
-    </div>
+  const dismiss = useCallback(
+    (id) => setToasts((p) => p.filter((t) => t.id !== id)),
+    []
   );
+  return { toasts, show, dismiss };
 };
 
-// ─── Primitives ───────────────────────────────────────────────────────────────
+const ToastContainer = ({ toasts, dismiss }) => (
+  <div className="fixed bottom-20 left-4 right-4 z-[100] flex flex-col gap-2 sm:bottom-6 sm:left-auto sm:right-6 sm:w-80">
+    {toasts.map((t) => {
+      const cfg = {
+        info:    { bar: "bg-sky-400",     icon: "ℹ" },
+        success: { bar: "bg-emerald-400", icon: "✓" },
+        error:   { bar: "bg-rose-400",    icon: "✕" },
+        warning: { bar: "bg-amber-400",   icon: "⚠" },
+      }[t.type] || { bar: "bg-sky-400", icon: "ℹ" };
+      return (
+        <div
+          key={t.id}
+          className="bg-slate-900 text-white rounded-xl overflow-hidden shadow-2xl flex items-stretch animate-slide-up"
+        >
+          <div className={`w-1 flex-shrink-0 ${cfg.bar}`} />
+          <div className="flex items-center gap-3 px-4 py-3 flex-1">
+            <span className={`text-sm font-bold ${cfg.bar.replace("bg-", "text-")}`}>{cfg.icon}</span>
+            <span className="text-sm flex-1 leading-snug">{t.message}</span>
+            <button onClick={() => dismiss(t.id)} className="opacity-40 hover:opacity-100 text-lg leading-none">×</button>
+          </div>
+        </div>
+      );
+    })}
+  </div>
+);
+
+// ─── Spinner ──────────────────────────────────────────────────────────────────
 const Spinner = ({ size = 16 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" className="animate-spin flex-shrink-0">
-    <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="30 62" />
+    <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="2.5" strokeDasharray="30 62" />
   </svg>
 );
 
-const Btn = ({ children, onClick, disabled, loading, variant = "primary", size = "md", className = "", type = "button" }) => {
-  const base = "inline-flex items-center justify-center gap-1.5 font-semibold rounded-xl transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed";
-  const sizes = { sm: "px-3 py-1.5 text-xs", md: "px-4 py-2.5 text-sm", lg: "px-5 py-3 text-base" };
+// ─── Button ───────────────────────────────────────────────────────────────────
+const Btn = ({
+  children, onClick, disabled, loading,
+  variant = "primary", size = "md", className = "", type = "button", fullWidth,
+}) => {
+  const base = `inline-flex items-center justify-center gap-2 font-bold rounded-xl transition-all duration-150 active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed select-none ${fullWidth ? "w-full" : ""}`;
+  const sizes = {
+    xs: "px-2.5 py-1.5 text-xs",
+    sm: "px-3.5 py-2 text-xs",
+    md: "px-4 py-2.5 text-sm",
+    lg: "px-5 py-3 text-sm",
+  };
   const variants = {
-    primary: "bg-blue-600 text-white hover:bg-blue-700",
-    success: "bg-emerald-600 text-white hover:bg-emerald-700",
-    ghost:   "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50",
-    danger:  "bg-red-50 text-red-700 border border-red-200 hover:bg-red-100",
-    purple:  "bg-purple-600 text-white hover:bg-purple-700",
+    primary: "bg-slate-900 text-white hover:bg-slate-700 shadow-sm",
+    success: "bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm shadow-emerald-200",
+    ghost:   "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50",
+    danger:  "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100",
+    purple:  "bg-violet-600 text-white hover:bg-violet-700 shadow-sm shadow-violet-200",
+    drive:   "bg-[#1a73e8] text-white hover:bg-[#1557b0] shadow-sm",
   };
   return (
     <button
@@ -81,67 +102,86 @@ const Btn = ({ children, onClick, disabled, loading, variant = "primary", size =
   );
 };
 
-const Card = ({ children, className = "" }) => (
-  <div className={`bg-white rounded-2xl border border-gray-100 shadow-sm p-4 ${className}`}>
+// ─── Card ─────────────────────────────────────────────────────────────────────
+const Card = ({ children, className = "", onClick, hoverable }) => (
+  <div
+    onClick={onClick}
+    className={`bg-white rounded-2xl border border-slate-100 shadow-sm ${
+      hoverable ? "cursor-pointer hover:border-violet-200 hover:shadow-md transition-all duration-150" : ""
+    } ${className}`}
+  >
     {children}
   </div>
 );
 
-const SectionLabel = ({ children, color = "blue" }) => {
-  const bars = {
-    blue: "bg-blue-600", green: "bg-emerald-500",
-    amber: "bg-amber-500", purple: "bg-purple-500", red: "bg-red-500",
-  };
-  return (
-    <div className="flex items-center gap-2 mb-3">
-      <div className={`w-1 h-4 rounded-full flex-shrink-0 ${bars[color]}`} />
-      <span className="text-sm font-semibold text-gray-700">{children}</span>
+// ─── SectionHeader ────────────────────────────────────────────────────────────
+const SectionHeader = ({ icon, title, subtitle, badge }) => (
+  <div className="flex items-center gap-3 mb-4">
+    <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center text-base flex-shrink-0">
+      {icon}
     </div>
-  );
-};
-
-const Field = ({ label, children, required }) => (
-  <div className="mb-3">
-    <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-      {label}{required && <span className="text-red-500 ml-0.5">*</span>}
-    </label>
-    {children}
+    <div className="flex-1 min-w-0">
+      <div className="flex items-center gap-2 flex-wrap">
+        <h3 className="text-sm font-bold text-slate-800">{title}</h3>
+        {badge}
+      </div>
+      {subtitle && <p className="text-xs text-slate-400 mt-0.5">{subtitle}</p>}
+    </div>
   </div>
 );
 
-// ─── Status dot ───────────────────────────────────────────────────────────────
+// ─── EmptyState ───────────────────────────────────────────────────────────────
+const EmptyState = ({ icon, title, subtitle }) => (
+  <div className="flex flex-col items-center justify-center py-12 text-center">
+    <div className="text-4xl mb-3 opacity-30">{icon}</div>
+    <p className="text-sm font-semibold text-slate-400">{title}</p>
+    {subtitle && <p className="text-xs text-slate-300 mt-1">{subtitle}</p>}
+  </div>
+);
+
+// ─── StatusDot ────────────────────────────────────────────────────────────────
 const StatusDot = ({ status }) => {
   const map = {
-    draft:       ["bg-gray-300",    "Draft"],
-    accepted:    ["bg-sky-400",     "Accepted"],
-    in_progress: ["bg-amber-400",   "In Progress"],
-    production:  ["bg-purple-400",  "Production"],
-    on_hold:     ["bg-orange-400",  "On Hold"],
-    completed:   ["bg-emerald-400", "Completed"],
-    delivery:    ["bg-blue-400",    "Delivery"],
-    rejected:    ["bg-red-400",     "Rejected"],
+    draft:       ["bg-slate-300",  "Draft"],
+    accepted:    ["bg-sky-400",    "Accepted"],
+    in_progress: ["bg-amber-400",  "In Progress"],
+    production:  ["bg-violet-500", "Production"],
+    on_hold:     ["bg-orange-400", "On Hold"],
+    completed:   ["bg-emerald-400","Completed"],
+    delivery:    ["bg-blue-400",   "Delivery"],
+    rejected:    ["bg-rose-400",   "Rejected"],
   };
-  const [color, label] = map[status] || ["bg-gray-300", status || "—"];
+  const [color, label] = map[status] || ["bg-slate-300", status || "—"];
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-600">
+    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600">
       <span className={`w-2 h-2 rounded-full flex-shrink-0 ${color}`} />
       {label}
     </span>
   );
 };
 
-// ─── Camera icon ──────────────────────────────────────────────────────────────
-const CameraIcon = () => (
-  <svg width="26" height="26" viewBox="0 0 24 24" fill="none"
-    stroke="#7c3aed" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+// ─── Icons ────────────────────────────────────────────────────────────────────
+const CameraIcon = ({ size = 26 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
     <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
     <circle cx="12" cy="13" r="4" />
   </svg>
 );
 
-// ─── Camera upload button ─────────────────────────────────────────────────────
-// Opens the device camera (capture="environment") and uploads to the server.
-// Calls onUploaded(url: string) on success.
+// Inline Google Drive logo — no external dependency
+const DriveIcon = ({ size = 14 }) => (
+  <svg width={size} height={size} viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg">
+    <path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3L28.35 52H0c0 1.55.4 3.1 1.2 4.5z"  fill="#0066da"/>
+    <path d="M43.65 25L29.05 0c-1.35.8-2.5 1.9-3.3 3.3L1.2 47.5A9.06 9.06 0 0 0 0 52h28.35z"  fill="#00ac47"/>
+    <path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75L85.1 56.5c.8-1.4 1.2-2.95 1.2-4.5H57.95l6.2 11.55z" fill="#ea4335"/>
+    <path d="M43.65 25L58.25 0H29.05z" fill="#00832d"/>
+    <path d="M57.95 52H87.3L73.55 27.3 58.95 2.6l-15.3 22.4z" fill="#2684fc"/>
+    <path d="M28.35 52l15.3-27H57.95L43.65 25z" fill="#ffba00"/>
+  </svg>
+);
+
+// ─── CameraUpload ─────────────────────────────────────────────────────────────
 const CameraUpload = ({ onUploaded, disabled = false }) => {
   const [loading, setLoading] = useState(false);
   const inputRef = useRef(null);
@@ -149,14 +189,12 @@ const CameraUpload = ({ onUploaded, disabled = false }) => {
   const handleFile = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    e.target.value = ""; // reset so the same file can be re-selected
-
+    e.target.value = "";
     const allowed = ["image/png", "image/jpeg", "image/jpg", "image/webp"];
     if (!allowed.includes(file.type)) {
       alert(`"${file.name}" is not a supported image type (PNG, JPG, WebP).`);
       return;
     }
-
     setLoading(true);
     try {
       const formData = new FormData();
@@ -187,17 +225,17 @@ const CameraUpload = ({ onUploaded, disabled = false }) => {
         type="button"
         disabled={loading || disabled}
         onClick={() => !loading && !disabled && inputRef.current?.click()}
-        className="w-24 h-24 bg-white border border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all hover:border-purple-400 hover:bg-purple-50 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-24 h-24 bg-slate-50 border-2 border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all hover:border-violet-400 hover:bg-violet-50 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed text-slate-400 hover:text-violet-500 flex-shrink-0"
       >
         {loading ? (
           <>
             <Spinner size={22} />
-            <span className="text-[10px] text-gray-400">Uploading…</span>
+            <span className="text-[10px] font-medium">Uploading…</span>
           </>
         ) : (
           <>
-            <CameraIcon />
-            <span className="text-[10px] text-gray-500 font-medium">Take photo</span>
+            <CameraIcon size={24} />
+            <span className="text-[10px] font-semibold">Take photo</span>
           </>
         )}
       </button>
@@ -205,13 +243,13 @@ const CameraUpload = ({ onUploaded, disabled = false }) => {
   );
 };
 
-// ─── Image thumbnail ──────────────────────────────────────────────────────────
+// ─── ImageThumb ───────────────────────────────────────────────────────────────
 const ImageThumb = ({ url, index, onRemove }) => (
   <div className="relative group flex-shrink-0">
     <img
       src={url}
       alt={`Production photo ${index + 1}`}
-      className="w-24 h-24 object-cover rounded-xl border border-gray-200 shadow-sm"
+      className="w-24 h-24 object-cover rounded-xl border border-slate-200 shadow-sm"
     />
     <span className="absolute bottom-1 left-1 bg-black/50 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md leading-none">
       #{index + 1}
@@ -219,34 +257,96 @@ const ImageThumb = ({ url, index, onRemove }) => (
     <button
       type="button"
       onClick={() => onRemove(index)}
-      className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center shadow opacity-0 group-hover:opacity-100 transition-opacity leading-none"
+      className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-rose-500 text-white rounded-full text-xs flex items-center justify-center shadow opacity-0 group-hover:opacity-100 active:opacity-100 transition-opacity leading-none"
     >
       ×
     </button>
   </div>
 );
 
-// ─── Design file card ─────────────────────────────────────────────────────────
-const DesignFileCard = ({ designFile, designStatus, jobNo }) => {
-  const [lightbox, setLightbox] = useState(false);
+// ─── DriveFileBanner ──────────────────────────────────────────────────────────
+// Shown when a job has a design_drive_link — prominent Drive button + 48-hr warning
+const DriveFileBanner = ({ driveLink }) => {
+  const [copied, setCopied] = useState(false);
 
+  const copyLink = () => {
+    navigator.clipboard.writeText(driveLink).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <div className="mt-3 rounded-xl overflow-hidden border border-amber-200">
+      {/* Header */}
+      <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border-b border-amber-100">
+        <DriveIcon size={13} />
+        <span className="text-xs font-bold text-amber-800 flex-1">Original File — Google Drive</span>
+        <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-rose-200 flex-shrink-0">
+          ⏱ 48 hr cleanup
+        </span>
+      </div>
+
+      {/* Body */}
+      <div className="bg-white px-3 py-3 space-y-2.5">
+        {/* Warning */}
+        <div className="flex items-start gap-2 bg-rose-50 border border-rose-100 rounded-lg px-3 py-2">
+          <span className="text-rose-500 text-sm flex-shrink-0 mt-px">⚠</span>
+          <p className="text-[11px] leading-relaxed text-rose-700">
+            <span className="font-bold">Auto-deleted after 48 hours.</span>{" "}
+            Download or move to permanent storage before it is removed.
+          </p>
+        </div>
+
+        {/* Link preview */}
+        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+          <DriveIcon size={12} />
+          <span className="text-[11px] text-slate-500 font-mono truncate flex-1">
+            {driveLink.length > 52 ? driveLink.slice(0, 52) + "…" : driveLink}
+          </span>
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-2">
+          <button
+            onClick={() => window.open(driveLink, "_blank")}
+            className="flex-1 inline-flex items-center justify-center gap-1.5 bg-[#1a73e8] hover:bg-[#1557b0] active:scale-[0.97] text-white text-xs font-bold py-2 rounded-lg transition-all"
+          >
+            <DriveIcon size={12} />
+            Open in Drive
+          </button>
+          <button
+            onClick={copyLink}
+            className="flex-1 inline-flex items-center justify-center gap-1.5 bg-slate-100 hover:bg-slate-200 active:scale-[0.97] text-slate-700 text-xs font-bold py-2 rounded-lg transition-all border border-slate-200"
+          >
+            {copied ? "✓ Copied!" : "⎘ Copy Link"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── DesignFileCard ───────────────────────────────────────────────────────────
+const DesignFileCard = ({ designFile, designDriveLink, designStatus, jobNo }) => {
+  const [lightbox, setLightbox] = useState(false);
   const fileName = designFile?.split("/").pop()?.split("?")[0] || `design_${jobNo}`;
   const isImage  = /\.(jpg|jpeg|png|webp|gif)$/i.test(fileName);
   const isPdf    = /\.pdf$/i.test(fileName);
 
   const statusMap = {
-    approved: { ring: "border-emerald-200 bg-emerald-50", text: "text-emerald-700", badge: "Approved" },
-    uploaded: { ring: "border-blue-200 bg-blue-50",       text: "text-blue-700",    badge: "Uploaded" },
-    pending:  { ring: "border-amber-200 bg-amber-50",     text: "text-amber-700",   badge: "Pending"  },
-    rejected: { ring: "border-red-200 bg-red-50",         text: "text-red-700",     badge: "Rejected" },
+    approved: { ring: "border-emerald-200 bg-emerald-50", text: "text-emerald-700", badge: "✓ Approved" },
+    uploaded: { ring: "border-sky-200 bg-sky-50",         text: "text-sky-700",     badge: "● Uploaded" },
+    pending:  { ring: "border-amber-200 bg-amber-50",     text: "text-amber-700",   badge: "◆ Pending"  },
+    rejected: { ring: "border-rose-200 bg-rose-50",       text: "text-rose-700",    badge: "✕ Rejected" },
   };
   const s = statusMap[designStatus] || statusMap.pending;
 
   const download = () => {
     const a = document.createElement("a");
-    a.href = designFile;
+    a.href     = designFile;
     a.download = fileName;
-    a.target = "_blank";
+    a.target   = "_blank";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -255,47 +355,72 @@ const DesignFileCard = ({ designFile, designStatus, jobNo }) => {
   return (
     <>
       <div className={`border rounded-xl overflow-hidden ${s.ring}`}>
-        {/* Header */}
-        <div className={`flex items-center justify-between px-3 py-2 border-b ${s.ring}`}>
-          <span className={`text-xs font-bold ${s.text}`}>{s.badge}</span>
-          <span className="text-[10px] text-gray-400 font-mono truncate max-w-[160px]">{fileName}</span>
+        {/* Status bar */}
+        <div className={`flex items-center justify-between gap-2 px-3 py-2 border-b ${s.ring}`}>
+          <span className={`text-xs font-bold flex-shrink-0 ${s.text}`}>{s.badge}</span>
+          <div className="flex items-center gap-2 min-w-0">
+            {/* Drive pill — visible at a glance */}
+            {designDriveLink && (
+              <span className="inline-flex items-center gap-1 bg-[#e8f0fe] text-[#1a73e8] text-[10px] font-bold px-2 py-0.5 rounded-full border border-[#c5d9f8] flex-shrink-0">
+                <DriveIcon size={10} />
+                Original on Drive
+              </span>
+            )}
+            <span className="text-[10px] text-slate-400 font-mono truncate">{fileName}</span>
+          </div>
         </div>
 
-        {/* Inline image preview */}
+        {/* Image preview */}
         {isImage && (
-          <div className="bg-gray-100">
+          <div className="bg-slate-100 relative">
             <img
               src={designFile}
               alt="Design"
               className="w-full max-h-52 object-contain cursor-zoom-in"
               onClick={() => setLightbox(true)}
             />
+            {/* Sample label */}
+            <div className="absolute top-2 left-2 bg-violet-600/80 text-white text-[9px] font-black px-2 py-0.5 rounded-md tracking-wider uppercase backdrop-blur-sm">
+              Sample · ≤1 MB
+            </div>
           </div>
         )}
 
-        {/* Non-image icon */}
+        {/* Non-image file */}
         {!isImage && (
           <div className="flex items-center gap-3 px-3 py-4 bg-white/60">
-            <div className="w-12 h-12 rounded-xl bg-white border border-gray-200 flex items-center justify-center shadow-sm flex-shrink-0">
+            <div className="w-12 h-12 rounded-xl bg-white border border-slate-200 flex items-center justify-center shadow-sm flex-shrink-0">
               <span className="text-2xl">{isPdf ? "📄" : "🎨"}</span>
             </div>
             <div className="min-w-0">
-              <div className="text-sm font-semibold text-gray-800 truncate">{fileName}</div>
-              <div className="text-xs text-gray-400 mt-0.5">
+              <div className="text-sm font-semibold text-slate-800 truncate">{fileName}</div>
+              <div className="text-xs text-slate-400 mt-0.5">
                 {isPdf ? "PDF Document" : "Design File"} — tap Preview to open
               </div>
             </div>
           </div>
         )}
 
-        {/* Actions */}
+        {/* Sample file actions */}
         <div className="flex gap-2 px-3 py-2.5 bg-white/80 border-t border-white/60">
           <Btn variant="ghost" size="sm" onClick={() => window.open(designFile, "_blank")} className="flex-1">
-            Preview
+            Preview Sample
           </Btn>
           <Btn variant="primary" size="sm" onClick={download} className="flex-1">
-            Download
+            Download Sample
           </Btn>
+        </div>
+
+        {/* ── Drive original section ── */}
+        <div className="px-3 pb-3">
+          {designDriveLink ? (
+            <DriveFileBanner driveLink={designDriveLink} />
+          ) : (
+            <div className="mt-3 flex items-center gap-1.5 text-[11px] text-slate-400 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+              <DriveIcon size={12} />
+              <span>No original Drive file attached to this job.</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -312,7 +437,7 @@ const DesignFileCard = ({ designFile, designStatus, jobNo }) => {
             onClick={(e) => e.stopPropagation()}
           />
           <button
-            className="absolute top-4 right-4 w-9 h-9 bg-white rounded-full flex items-center justify-center text-gray-700 shadow text-lg"
+            className="absolute top-4 right-4 w-9 h-9 bg-white rounded-full flex items-center justify-center text-slate-700 shadow text-lg"
             onClick={() => setLightbox(false)}
           >
             ×
@@ -323,126 +448,172 @@ const DesignFileCard = ({ designFile, designStatus, jobNo }) => {
   );
 };
 
-// ─── Job lookup ───────────────────────────────────────────────────────────────
-const JobLookup = ({ onJobSelected }) => {
-  const [query,     setQuery]     = useState("");
-  const [searching, setSearching] = useState(false);
-  const [results,   setResults]   = useState(null);
-  const [selected,  setSelected]  = useState(null);
-  const { toast, show, dismiss }  = useToast();
+// ─── JobSelector ─────────────────────────────────────────────────────────────
+const JobSelector = ({ onJobSelected }) => {
+  const [loading,  setLoading]  = useState(false);
+  const [jobs,     setJobs]     = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [filter,   setFilter]   = useState("");
+  const { toasts, show, dismiss } = useToast();
 
-  const doSearch = async () => {
-    const q = query.trim();
-    if (!q) return show("Enter a job number or customer name", "warning");
-    setSearching(true);
-    setResults(null);
-    setSelected(null);
+  const fetchProductionJobs = useCallback(async () => {
+    setLoading(true);
     try {
-      let res  = await api(`/jobs?job_no=${encodeURIComponent(q)}&limit=10`);
-      let jobs = res.data?.jobs || res.data || [];
-      if (!Array.isArray(jobs)) jobs = [];
-      if (jobs.length === 0) {
-        res  = await api(`/jobs?customer_name=${encodeURIComponent(q)}&limit=10`);
-        jobs = res.data?.jobs || res.data || [];
-        if (!Array.isArray(jobs)) jobs = [];
-      }
-      
-      const onlyProduction = jobs.filter((j) => j.job_status === "production");
-      setResults(onlyProduction);
-      if (onlyProduction.length === 0) show(`No production jobs found for "${q}"`, "warning");
+      const res  = await api(`/jobs?job_status=production&limit=100`);
+      let   list = res.data?.jobs || res.data || [];
+      if (!Array.isArray(list)) list = [];
+      const prodJobs = list.filter((j) => j.job_status === "production");
+      setJobs(prodJobs);
+      if (prodJobs.length === 0) show("No jobs currently in production", "warning");
     } catch (err) {
       show(err.message, "error");
-      setResults([]);
     } finally {
-      setSearching(false);
+      setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => { fetchProductionJobs(); }, []);
+
+  const filtered = useMemo(() => {
+    if (!filter.trim()) return jobs;
+    const q = filter.toLowerCase();
+    return jobs.filter(
+      (j) => j.job_no?.toLowerCase().includes(q) || j.customer_name?.toLowerCase().includes(q)
+    );
+  }, [jobs, filter]);
 
   const pickJob = async (job) => {
-    setSearching(true);
+    setLoading(true);
     try {
-      // Fetch the full document — list endpoints may omit design_file (AWS URL)
+      // Always fetch full job so design_drive_link is present
       const full    = await api(`/jobs/${job._id}`);
       const fullJob = full.data || job;
       setSelected(fullJob);
       onJobSelected(fullJob);
     } catch {
-      // Fall back to the list data if full fetch fails
       setSelected(job);
       onJobSelected(job);
     } finally {
-      setSearching(false);
-      setResults(null);
+      setLoading(false);
     }
   };
 
   const clear = () => {
     setSelected(null);
-    setQuery("");
-    setResults(null);
     onJobSelected(null);
+    setFilter("");
   };
 
   return (
     <div>
-      {toast && <Toast message={toast.message} type={toast.type} onDismiss={dismiss} />}
+      <ToastContainer toasts={toasts} dismiss={dismiss} />
 
-      {!selected && (
-        <div className="flex gap-2 mb-2">
-          <input
-            value={query}
-            onChange={(e) => { setQuery(e.target.value); if (results) setResults(null); }}
-            onKeyDown={(e) => e.key === "Enter" && doSearch()}
-            placeholder="Job number or customer name…"
-            className="flex-1 px-3 py-2.5 text-sm bg-white border border-gray-200 rounded-xl outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-50 transition-all placeholder:text-gray-400"
-          />
-          <Btn variant="ghost" onClick={doSearch} loading={searching}>Look up</Btn>
+      {!selected ? (
+        <div className="space-y-3">
+          {/* Status bar */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-violet-500 animate-pulse flex-shrink-0" />
+              <span className="text-xs font-bold text-violet-600 uppercase tracking-wide">
+                {loading ? "Loading…" : `${jobs.length} job${jobs.length !== 1 ? "s" : ""} in production`}
+              </span>
+            </div>
+            <Btn variant="ghost" size="xs" onClick={fetchProductionJobs} loading={loading}>
+              ↻ Refresh
+            </Btn>
+          </div>
+
+          {/* Filter */}
+          {jobs.length > 3 && (
+            <input
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Filter by job no or customer…"
+              className="w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-50 transition-all placeholder:text-slate-300"
+            />
+          )}
+
+          {/* List */}
+          {loading ? (
+            <div className="flex items-center justify-center py-10 gap-2 text-slate-400">
+              <Spinner size={16} />
+              <span className="text-sm">Fetching production jobs…</span>
+            </div>
+          ) : filtered.length === 0 ? (
+            <EmptyState
+              icon="🏭"
+              title="No production jobs"
+              subtitle="Jobs appear here once they enter production stage"
+            />
+          ) : (
+            <div className="border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100">
+              {filtered.map((job) => (
+                <div
+                  key={job._id}
+                  onClick={() => pickJob(job)}
+                  className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-violet-50 active:bg-violet-100 transition-colors"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-violet-600 flex items-center justify-center flex-shrink-0">
+                    <span className="text-[9px] font-black text-white tracking-wider">PROD</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-sm font-bold text-slate-800">{job.job_no}</p>
+                      {job.design_drive_link && (
+                        <span className="inline-flex items-center gap-0.5 bg-[#e8f0fe] text-[#1a73e8] text-[9px] font-bold px-1.5 py-0.5 rounded-full border border-[#c5d9f8] flex-shrink-0">
+                          <DriveIcon size={9} />Drive
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-400 truncate">
+                      {job.customer_name} · {job.cart_items?.length || 0} item(s)
+                    </p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-[10px] text-slate-400 mb-0.5">{job.current_stage?.stage || "—"}</p>
+                    <StatusDot status={job.job_status} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      )}
-
-      {results && results.length > 0 && !selected && (
-        <div className="border border-gray-200 rounded-xl overflow-hidden mb-2">
-          {results.map((job, idx) => (
-            <div
-              key={job._id}
-              onClick={() => pickJob(job)}
-              className={`flex items-center justify-between px-3 py-3 cursor-pointer hover:bg-gray-50 active:bg-gray-100 transition-colors ${idx < results.length - 1 ? "border-b border-gray-100" : ""}`}
+      ) : (
+        /* Selected job card */
+        <div className="bg-slate-900 rounded-xl p-4 text-white">
+          <div className="flex items-start justify-between mb-3">
+            <div className="flex gap-3 items-center">
+              <div className="w-10 h-10 rounded-xl bg-violet-500/30 flex items-center justify-center flex-shrink-0">
+                <span className="text-[9px] font-black text-violet-200 tracking-wider">PROD</span>
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-bold">{selected.job_no}</p>
+                  {selected.design_drive_link && (
+                    <span className="inline-flex items-center gap-1 bg-[#1a73e8]/20 border border-[#1a73e8]/40 text-[#93bbf8] text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0">
+                      <DriveIcon size={9} />Drive
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-white/50">{selected.customer_name}</p>
+              </div>
+            </div>
+            <button
+              onClick={clear}
+              className="text-xs text-violet-400 font-semibold hover:text-violet-300 flex-shrink-0"
             >
-              <div>
-                <div className="text-sm font-semibold text-gray-800">{job.job_no}</div>
-                <div className="text-xs text-gray-500">{job.customer_name}</div>
-              </div>
-              <StatusDot status={job.job_status} />
-            </div>
-          ))}
-        </div>
-      )}
-
-      {selected && (
-        <div className="bg-purple-50 border border-purple-100 rounded-xl p-3">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-purple-600 flex items-center justify-center flex-shrink-0">
-                <span className="text-[10px] font-bold text-white font-mono">JOB</span>
-              </div>
-              <div>
-                <div className="text-sm font-bold text-gray-800">{selected.job_no}</div>
-                <div className="text-xs text-gray-500">{selected.customer_name}</div>
-              </div>
-            </div>
-            <button onClick={clear} className="text-xs text-purple-600 font-semibold hover:underline flex-shrink-0">
               Change
             </button>
           </div>
-          <div className="grid grid-cols-3 gap-2 text-xs">
+          <div className="grid grid-cols-3 gap-2">
             {[
-              ["Status", <StatusDot status={selected.job_status} />],
+              ["Status", "Production"],
               ["Stage",  selected.current_stage?.stage || "—"],
               ["Items",  selected.cart_items?.length ?? 0],
             ].map(([k, v]) => (
-              <div key={k} className="bg-white rounded-lg p-2">
-                <div className="text-gray-400 mb-0.5">{k}</div>
-                <div className="font-semibold text-gray-700 truncate">{v}</div>
+              <div key={k} className="bg-white/10 rounded-lg p-2">
+                <p className="text-[10px] text-white/40 mb-0.5">{k}</p>
+                <p className="text-xs font-bold truncate">{v}</p>
               </div>
             ))}
           </div>
@@ -452,29 +623,25 @@ const JobLookup = ({ onJobSelected }) => {
   );
 };
 
-// ─── Main component ───────────────────────────────────────────────────────────
+// ─── Main Component ───────────────────────────────────────────────────────────
 const ProductionUploadPanel = () => {
-  // Pull authenticated user from Redux
   const { user } = useSelector((state) => state.authSlice);
-
-  const { toast, show: toastShow, dismiss } = useToast();
+  const { toasts, show, dismiss } = useToast();
 
   const [job,              setJob]              = useState(null);
-  const [productionImages, setProductionImages] = useState([]); // string[] of upload URLs
+  const [productionImages, setProductionImages] = useState([]);
   const [notes,            setNotes]            = useState("");
   const [submitting,       setSubmitting]       = useState(false);
   const [success,          setSuccess]          = useState(false);
 
-  // Append a newly uploaded URL (ignore duplicates)
   const handleImageUploaded = useCallback((url) => {
     if (url && typeof url === "string") {
       setProductionImages((prev) => (prev.includes(url) ? prev : [...prev, url]));
     }
   }, []);
 
-  const removeImage = (idx) => {
+  const removeImage = (idx) =>
     setProductionImages((prev) => prev.filter((_, i) => i !== idx));
-  };
 
   const resetForm = () => {
     setJob(null);
@@ -484,220 +651,360 @@ const ProductionUploadPanel = () => {
   };
 
   const handleSubmit = async () => {
-    if (!job)                           return toastShow("Select a job first", "error");
-    if (productionImages.length === 0)  return toastShow("Capture at least one production photo", "error");
-    if (!notes.trim())                  return toastShow("Add production notes before submitting", "error");
+    if (!job)                          return show("Select a job first", "error");
+    if (productionImages.length === 0) return show("Capture at least one production photo", "error");
+    if (!notes.trim())                 return show("Add production notes before submitting", "error");
 
     setSubmitting(true);
     try {
       const handledBy = {
-        user_id: user?._id || "",
+        user_id: user?._id  || "",
         name:    user?.name || "Production Team",
         role:    user?.role || "printing team",
       };
 
-      // 1. Record the primary production photo as the output/design file
-      await api(`/jobs/${job._id}/approve_design`, {
+      await api(`/jobs/${job._id}/approve_production`, {
         method: "POST",
-        body: JSON.stringify({
-          handled_by:  handledBy,
-          design_file: productionImages[0],
-        }),
+        body: JSON.stringify({ handled_by: handledBy, productionimg: productionImages[0] }),
       });
 
-      // 2. Update job status → delivery
       await api(`/jobs/${job._id}/status`, {
         method: "PATCH",
-        body: JSON.stringify({ job_status: "delivery" }),
+        body: JSON.stringify({ job_status: "quality_check" }),
       });
 
-      // 3. Close the current production stage and hand off to delivery
       await api(`/jobs/${job._id}/complete-stage`, {
         method: "POST",
         body: JSON.stringify({
           stage:      job.current_stage?.stage || "production",
           handled_by: handledBy,
           notes,
-          next_stage: "delivery",
+          next_stage: "quality_check",
         }),
       });
 
       setSuccess(true);
-      toastShow("Production submitted! Job moved to delivery.", "success");
+      show("Production submitted! Job moved to quality check.", "success");
       setTimeout(resetForm, 3500);
     } catch (err) {
-      toastShow(err.message, "error");
+      show(err.message, "error");
     } finally {
       setSubmitting(false);
     }
   };
 
-  const canSubmit = productionImages.length > 0 && notes.trim().length > 0;
+  // All three steps must be done
+  const canSubmit = !!job && productionImages.length > 0 && notes.trim().length > 0;
+
+  const steps = [
+    { n: 1, label: "Select Job",     done: !!job },
+    { n: 2, label: "Capture Photos", done: productionImages.length > 0 },
+    { n: 3, label: "Add Notes",      done: notes.trim().length > 0 },
+  ];
 
   return (
-    <div className="min- bg-gray-50 flex flex-col max-w-lg mx-auto relative">
-      {toast && <Toast message={toast.message} type={toast.type} onDismiss={dismiss} />}
+    <>
+      <style>{`
+        @keyframes slide-up {
+          from { opacity: 0; transform: translateY(10px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .animate-slide-up { animation: slide-up 0.25s ease-out; }
+      `}</style>
 
-      {/* ── Header ── */}
-      <div className="bg-white border-b border-gray-100 px-4 pt-10 pb-4 sticky top-0 z-30">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-purple-600 flex items-center justify-center flex-shrink-0">
-            <span className="text-xl">🖨️</span>
-          </div>
-          <div>
-            <h1 className="text-lg font-bold text-gray-900 leading-tight">Production Upload</h1>
-            <p className="text-xs text-gray-400 mt-0.5">Capture and submit completed print output</p>
-          </div>
-        </div>
-      </div>
+      <div className="min-h-screen bg-slate-50 flex flex-col">
+        <ToastContainer toasts={toasts} dismiss={dismiss} />
 
-      {/* ── Body ── */}
-      <div className="flex-1 px-3 pt-3 pb-28 space-y-3 overflow-y-auto">
-
-        {/* Success banner */}
-        {success && (
-          <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-6 text-center">
-            <div className="text-4xl mb-2">✅</div>
-            <div className="text-sm font-bold text-emerald-700">Production submitted!</div>
-            <div className="text-xs text-emerald-600 mt-1">Job has been moved to delivery stage.</div>
-          </div>
-        )}
-
-        {/* Step 1 — Job lookup */}
-        <Card>
-          <SectionLabel color="purple">Step 1 · Select job</SectionLabel>
-          <JobLookup onJobSelected={setJob} />
-        </Card>
-
-        {/* Design file — only after job selected */}
-        {job && (
-          <Card>
-            <SectionLabel color="amber">Design file</SectionLabel>
-            {job.design_file ? (
-              <DesignFileCard
-                designFile={job.design_file}
-                designStatus={job.design_status}
-                jobNo={job.job_no}
-              />
-            ) : (
-              <div className="flex items-center gap-3 bg-amber-50 border border-amber-100 rounded-xl p-3">
-                <span className="text-2xl flex-shrink-0">⚠️</span>
+        {/* ── Header ── */}
+        <header className="bg-white border-b border-slate-100 sticky top-0 z-30 shadow-sm">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between py-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-violet-600 flex items-center justify-center flex-shrink-0 shadow-sm shadow-violet-200">
+                  <span className="text-xl">🖨️</span>
+                </div>
                 <div>
-                  <div className="text-sm font-semibold text-amber-700">No design file attached</div>
-                  <div className="text-xs text-amber-600 mt-0.5">
-                    Ask admin to upload the approved design before printing.
-                  </div>
+                  <h1 className="text-base font-black text-slate-900 tracking-tight">Production Upload</h1>
+                  <p className="text-xs text-slate-400 hidden sm:block">Capture and submit completed print output</p>
                 </div>
               </div>
-            )}
-          </Card>
-        )}
 
-        {/* Step 2 — Capture photos */}
-        {job && (
-          <Card>
-            <SectionLabel color="purple">Step 2 · Capture production photos</SectionLabel>
-            <p className="text-xs text-gray-400 mb-3 leading-relaxed">
-              Tap the camera button to photograph the finished print. You can capture multiple photos.
-            </p>
-
-            {productionImages.length > 0 && (
-              <div className="flex flex-wrap gap-2 mb-3">
-                {productionImages.map((url, idx) => (
-                  <ImageThumb key={`${url}-${idx}`} url={url} index={idx} onRemove={removeImage} />
+              {/* Step progress — desktop */}
+              <div className="hidden sm:flex items-center gap-1">
+                {steps.map((s, i) => (
+                  <div key={s.n} className="flex items-center gap-1">
+                    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${s.done ? "bg-violet-100 text-violet-700" : "bg-slate-100 text-slate-400"}`}>
+                      <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black ${s.done ? "bg-violet-600 text-white" : "bg-slate-300 text-slate-500"}`}>
+                        {s.done ? "✓" : s.n}
+                      </span>
+                      {s.label}
+                    </div>
+                    {i < steps.length - 1 && (
+                      <span className={`text-xs ${steps[i + 1].done || s.done ? "text-violet-300" : "text-slate-200"}`}>›</span>
+                    )}
+                  </div>
                 ))}
               </div>
-            )}
-
-            <div className="flex items-center gap-3">
-              <CameraUpload onUploaded={handleImageUploaded} />
-              <div className="text-xs text-gray-400 leading-relaxed">
-                {productionImages.length === 0 ? (
-                  <>
-                    Tap to open camera
-                    <br />
-                    <span className="text-gray-300">PNG · JPG · WebP</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="font-semibold text-purple-600">
-                      {productionImages.length} photo{productionImages.length > 1 ? "s" : ""} captured
-                    </span>
-                    <br />
-                    Tap again to add more
-                  </>
-                )}
-              </div>
             </div>
-          </Card>
-        )}
 
-        {/* Step 3 — Notes */}
-        {job && (
-          <Card>
-            <SectionLabel color="purple">Step 3 · Production notes</SectionLabel>
-            <Field label="Notes" required>
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                rows={4}
-                placeholder="e.g. Printed on 13oz flex, colour adjusted for brightness. Ready for lamination and dispatch."
-                className="w-full px-3 py-2.5 text-sm bg-white border border-gray-200 rounded-xl outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-50 transition-all resize-none placeholder:text-gray-400"
-              />
-            </Field>
-
-            {/* Pre-submit summary */}
-            {canSubmit && (
-              <div className="bg-purple-50 border border-purple-100 rounded-xl p-3 mt-1">
-                <div className="text-xs font-semibold text-purple-600 mb-2">Ready to submit</div>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-                  <span className="text-gray-500">Job</span>
-                  <span className="font-semibold text-gray-700">{job.job_no}</span>
-                  <span className="text-gray-500">Customer</span>
-                  <span className="font-semibold text-gray-700">{job.customer_name}</span>
-                  <span className="text-gray-500">Photos</span>
-                  <span className="font-semibold text-gray-700">{productionImages.length} captured</span>
-                  <span className="text-gray-500">Next stage</span>
-                  <span className="font-semibold text-emerald-600">→ Delivery</span>
+            {/* Step progress — mobile */}
+            <div className="sm:hidden flex items-center gap-2 pb-3">
+              {steps.map((s, i) => (
+                <div key={s.n} className="flex items-center gap-1.5 flex-1">
+                  <div className={`flex-1 h-1.5 rounded-full transition-all ${s.done ? "bg-violet-500" : "bg-slate-200"}`} />
+                  {i < steps.length - 1 && (
+                    <span className={`text-[10px] font-bold ${s.done ? "text-violet-400" : "text-slate-300"}`}>{s.n}</span>
+                  )}
                 </div>
-              </div>
-            )}
-          </Card>
-        )}
-
-        {/* Submit */}
-        {job && (
-          <div className="pb-6">
-            <Btn
-              onClick={handleSubmit}
-              loading={submitting}
-              disabled={!canSubmit}
-              variant="success"
-              size="lg"
-              className="w-full"
-            >
-              🚚 Submit and move to delivery
-            </Btn>
-            {!canSubmit && (
-              <p className="text-xs text-center text-gray-400 mt-2">
-                {productionImages.length === 0
-                  ? "Capture at least one photo to continue"
-                  : "Add production notes to continue"}
-              </p>
-            )}
+              ))}
+              <span className="text-xs text-slate-400 font-medium ml-1 flex-shrink-0">
+                {steps.filter(s => s.done).length}/{steps.length}
+              </span>
+            </div>
           </div>
-        )}
+        </header>
 
-        {/* Empty state */}
-        {!job && !success && (
-          <div className="text-center py-16 text-gray-400 text-sm">
-            <div className="text-5xl mb-3">🖨️</div>
-            <div className="font-medium">Look up a job above</div>
-            <div className="text-xs mt-1 text-gray-300">then capture and submit production output</div>
+        {/* ── Body ── */}
+        <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-4 pb-24 sm:pb-8">
+
+          {/* Success banner */}
+          {success && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-8 text-center mb-4">
+              <div className="text-5xl mb-3">✅</div>
+              <p className="text-base font-black text-emerald-700">Production submitted!</p>
+              <p className="text-sm text-emerald-600 mt-1">Job has been moved to delivery stage.</p>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+
+            {/* ── Left column ── */}
+            <div className="space-y-4">
+
+              {/* Step 1 — Job selector */}
+              <Card className="p-5">
+                <SectionHeader
+                  icon="🏭"
+                  title="Production Jobs"
+                  subtitle="All jobs currently in production"
+                  badge={
+                    <span className="text-[10px] font-bold bg-violet-100 text-violet-600 px-2 py-0.5 rounded-full">
+                      Auto-loaded
+                    </span>
+                  }
+                />
+                <JobSelector onJobSelected={setJob} />
+              </Card>
+
+              {/* Design file — shows sample + Drive link */}
+              {job && (
+                <Card className="p-5">
+                  <SectionHeader
+                    icon="🎨"
+                    title="Design File"
+                    subtitle="Reference design for this job"
+                    badge={
+                      job.design_drive_link && (
+                        <span className="inline-flex items-center gap-1 bg-[#e8f0fe] text-[#1a73e8] text-[10px] font-bold px-2 py-0.5 rounded-full border border-[#c5d9f8]">
+                          <DriveIcon size={10} />
+                          Original on Drive
+                        </span>
+                      )
+                    }
+                  />
+                  {job.design_file ? (
+                    <DesignFileCard
+                      designFile={job.design_file}
+                      designDriveLink={job.design_drive_link || null}
+                      designStatus={job.design_status}
+                      jobNo={job.job_no}
+                    />
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3 bg-amber-50 border border-amber-100 rounded-xl p-4">
+                        <span className="text-2xl flex-shrink-0">⚠️</span>
+                        <div>
+                          <p className="text-sm font-bold text-amber-700">No design file attached</p>
+                          <p className="text-xs text-amber-600 mt-0.5">
+                            Ask admin to upload the approved design before printing.
+                          </p>
+                        </div>
+                      </div>
+                      {/* Drive link even when no sample file exists */}
+                      {job.design_drive_link && (
+                        <DriveFileBanner driveLink={job.design_drive_link} />
+                      )}
+                    </div>
+                  )}
+                </Card>
+              )}
+            </div>
+
+            {/* ── Right column ── */}
+            <div className="space-y-4">
+
+              {/* Step 2 — Production Photos */}
+              {job && (
+                <Card className="p-5">
+                  <SectionHeader
+                    icon="📸"
+                    title="Production Photos"
+                    subtitle="Photograph the finished print output"
+                    badge={
+                      productionImages.length > 0 ? (
+                        <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+                          {productionImages.length} captured
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold bg-rose-100 text-rose-600 px-2 py-0.5 rounded-full">
+                          Required
+                        </span>
+                      )
+                    }
+                  />
+
+                  {/* Captured thumbnails */}
+                  {productionImages.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {productionImages.map((url, idx) => (
+                        <ImageThumb key={`${url}-${idx}`} url={url} index={idx} onRemove={removeImage} />
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-4">
+                    <CameraUpload onUploaded={handleImageUploaded} />
+                    <div className="text-xs text-slate-400 leading-relaxed">
+                      {productionImages.length === 0 ? (
+                        <>
+                          Tap to open camera
+                          <br />
+                          <span className="text-slate-300">PNG · JPG · WebP supported</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="font-bold text-violet-600">
+                            {productionImages.length} photo{productionImages.length > 1 ? "s" : ""} captured
+                          </span>
+                          <br />
+                          Tap again to add more
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Tip */}
+                  <p className="text-[11px] text-slate-300 mt-3 leading-relaxed">
+                    💡 Capture the finished output clearly — these photos are saved with the job record.
+                  </p>
+                </Card>
+              )}
+
+              {/* Step 3 — Notes */}
+              {job && (
+                <Card className="p-5">
+                  <SectionHeader
+                    icon="📝"
+                    title="Production Notes"
+                    subtitle="Describe the completed output"
+                    badge={
+                      notes.trim().length > 0 ? (
+                        <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+                          ✓ Added
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold bg-rose-100 text-rose-600 px-2 py-0.5 rounded-full">
+                          Required
+                        </span>
+                      )
+                    }
+                  />
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows={4}
+                    placeholder="e.g. Printed on 13oz flex, colour adjusted for brightness. Ready for lamination and dispatch."
+                    className="w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-50 transition-all resize-none placeholder:text-slate-300"
+                  />
+
+                  {/* Pre-submit checklist */}
+                  <div className={`rounded-xl p-4 mt-3 border ${canSubmit ? "bg-violet-50 border-violet-100" : "bg-slate-50 border-slate-100"}`}>
+                    <p className={`text-xs font-bold mb-2.5 uppercase tracking-wide ${canSubmit ? "text-violet-600" : "text-slate-400"}`}>
+                      {canSubmit ? "✓ Ready to Submit" : "Checklist"}
+                    </p>
+                    <div className="space-y-1.5">
+                      {[
+                        { label: "Job selected",       done: !!job },
+                        { label: "Photo(s) captured",  done: productionImages.length > 0 },
+                        { label: "Notes added",        done: notes.trim().length > 0 },
+                      ].map(({ label, done }) => (
+                        <div key={label} className="flex items-center gap-2 text-xs">
+                          <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black flex-shrink-0 ${done ? "bg-emerald-500 text-white" : "bg-slate-200 text-slate-400"}`}>
+                            {done ? "✓" : "○"}
+                          </span>
+                          <span className={done ? "text-slate-700 font-semibold" : "text-slate-400"}>{label}</span>
+                          {done && label === "Job selected" && (
+                            <span className="text-slate-400 font-mono text-[10px] ml-auto">{job.job_no}</span>
+                          )}
+                          {done && label === "Photo(s) captured" && (
+                            <span className="text-slate-400 text-[10px] ml-auto">{productionImages.length} photo{productionImages.length > 1 ? "s" : ""}</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    {canSubmit && (
+                      <div className="mt-3 pt-3 border-t border-violet-100 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                        {[
+                          ["Customer",   job.customer_name],
+                          ["Next Stage", "→ Delivery"],
+                        ].map(([k, v]) => (
+                          <>
+                            <span key={`k-${k}`} className="text-slate-400">{k}</span>
+                            <span key={`v-${k}`} className={`font-bold ${k === "Next Stage" ? "text-emerald-600" : "text-slate-700"}`}>{v}</span>
+                          </>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-4">
+                    <Btn
+                      onClick={handleSubmit}
+                      loading={submitting}
+                      disabled={!canSubmit}
+                      variant="success"
+                      size="lg"
+                      fullWidth
+                    >
+                      🚚 Submit & Move to Delivery
+                    </Btn>
+                    {!canSubmit && (
+                      <p className="text-xs text-center text-slate-400 mt-2">
+                        {!job                        ? "Select a job to continue"
+                          : productionImages.length === 0 ? "Capture at least one photo to continue"
+                          : "Add production notes to continue"}
+                      </p>
+                    )}
+                  </div>
+                </Card>
+              )}
+
+              {/* Empty state — no job selected */}
+              {!job && !success && (
+                <Card className="p-8">
+                  <EmptyState
+                    icon="🖨️"
+                    title="Select a production job"
+                    subtitle="Choose a job from the list on the left to capture output"
+                  />
+                </Card>
+              )}
+            </div>
           </div>
-        )}
+        </main>
       </div>
-    </div>
+    </>
   );
 };
 

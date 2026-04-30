@@ -68,6 +68,22 @@ export const MENU_DATA = [
     special: ["staff"],
     for: ["super admin"],
   },
+  {
+    id: 10,
+    name: "delivery",
+    icon: ICON_HELPER.ADMIN_ICON,
+    to: "/delivery-panel",
+    special: ["delivery-panel"],
+    for: ["super admin"],
+  },
+  {
+    id: 11,
+    name: "erection",
+    icon: ICON_HELPER.ADMIN_ICON,
+    to: "/erection-panel",
+    special: ["erection-panel"],
+    for: ["super admin"],
+  },
 
  
 ];

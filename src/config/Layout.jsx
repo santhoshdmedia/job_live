@@ -37,7 +37,7 @@ const App = () => {
   const isMobile = useIsMobile();
 
   const isHideLayout = HIDDEN_LAYOUT_ROUTES.some((route) =>
-    path.includes(route)
+    path.includes(route),
   );
 
   useEffect(() => {
@@ -48,13 +48,13 @@ const App = () => {
       const accessiblePages = getAccessiblePages(user.pagePermissions);
       const filteredMenuData = MENU_DATA.reduce((acc, menu) => {
         const hasParentAccess = menu.special?.some((s) =>
-          accessiblePages.includes(s)
+          accessiblePages.includes(s),
         );
         if (!hasParentAccess) return acc;
         const menuCopy = { ...menu };
         if (menuCopy.children?.length) {
           menuCopy.children = menuCopy.children.filter((child) =>
-            child.special?.some((s) => accessiblePages.includes(s))
+            child.special?.some((s) => accessiblePages.includes(s)),
           );
         }
         acc.push(menuCopy);
@@ -63,7 +63,7 @@ const App = () => {
       setNew_menu_data(filteredMenuData);
     } else {
       setNew_menu_data(
-        MENU_DATA.filter((menu) => menu.for?.includes(user.role))
+        MENU_DATA.filter((menu) => menu.for?.includes(user.role)),
       );
     }
   }, [user]);
@@ -93,7 +93,7 @@ const App = () => {
 
   const selectedKey = (() => {
     const allItems = MENU_DATA.flatMap((menu) =>
-      menu.children?.length ? menu.children : [menu]
+      menu.children?.length ? menu.children : [menu],
     );
     const match = allItems.find((item) => path.includes(item.to));
     return match ? [String(match.id)] : [];
@@ -101,8 +101,16 @@ const App = () => {
 
   const MenuContent = () => (
     <>
-      
-      <Menu mode="inline" selectedKeys={selectedKey} className="pb-20 border-none">
+      <img
+        src={IMAGE_HELPER.Dlogo}
+        alt="logo"
+        className="h-[42px] object-contain ml-3 my-3"
+      />
+      <Menu
+        mode="inline"
+        selectedKeys={selectedKey}
+        className="pb-20 border-none"
+      >
         {new_menu_data.map((res) =>
           !_.isEmpty(_.get(res, "children", [])) ? (
             <Menu.SubMenu
@@ -124,7 +132,7 @@ const App = () => {
             >
               {res.name}
             </Menu.Item>
-          )
+          ),
         )}
       </Menu>
     </>
@@ -134,7 +142,6 @@ const App = () => {
 
   return (
     <Layout style={{ height: "100vh" }}>
-
       {/* ── Desktop: Ant Sider ── */}
       {!isMobile && (
         <Sider
@@ -164,21 +171,27 @@ const App = () => {
       )}
 
       <Layout className="!h-screen overflow-hidden">
-
         {/* ── Mobile hamburger bar — sits ABOVE TopNavbar ── */}
         {isMobile && (
           <div
-            className="flex items-center px-3 h-[48px]  shadow-sm fixed rounded-2xl top-3"
+            className="flex items-center px-3 h-[48px]   fixed top-3"
             style={{ zIndex: 10 }}
           >
             <Button
               type="text"
               icon={
-                mobileDrawerOpen
-                  ? <CloseOutlined style={{ fontSize: 20 }} />
-                  : <MenuOutlined style={{ fontSize: 20 }} />
+                mobileDrawerOpen ? (
+                  <CloseOutlined style={{ fontSize: 20 }} />
+                ) : (
+                  <MenuOutlined style={{ fontSize: 20 }} />
+                )
               }
               onClick={() => setMobileDrawerOpen((prev) => !prev)}
+            />
+            <img
+              src={IMAGE_HELPER.Dlogo}
+              alt="logo"
+              className="h-[32px] object-contain ml-3"
             />
           </div>
         )}

@@ -43,17 +43,15 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
 
   return (
     <>
-      <div className="group flex items-center justify-between px-6 py-4 bg-white border-b">
-        <div className="lg:block hidden">
-          <img src={IMAGE_HELPER.Dlogo} alt="Logo" className="h-10 w-auto" />
-        </div>
-        <div className="lg:hidden block ml-10">
-          <img src={IMAGE_HELPER.Dfav} alt="Logo" className="h-10 w-auto" />
-        </div>
-        
-
+      <div className="group flex items-center justify-end px-6 py-4 bg-white border-b">
         {/* Right section */}
-        <div className="flex items-center gap-x-3">
+        {/* Greeting - hidden on mobile */}
+        <div className="hidden md:flex items-center gap-x-4 mr-auto">
+          <div className="text-lg font-semibold text-gray-700">
+            {getGreeting(user?.name)}
+          </div>
+        </div>
+        <div className=" flex  items-center gap-x-3">
           {/* ── New Job button ── */}
           <Button
             type="primary"

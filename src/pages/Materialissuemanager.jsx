@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useSelector } from "react-redux";
 
-// ─── Constants ───────────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 const API_BASE = "https://job-server-cocj.onrender.com/api";
 
 const WASTAGE_REASONS = [
@@ -59,9 +59,8 @@ const generateSlipPDF = (issue, user) => {
   .big { font-size: 22px; font-weight: 900; }
   .unit { font-size: 11px; color: #555; }
   .footer { text-align: center; border-top: 1px dashed #999; padding-top: 8px; margin-top: 10px; font-size: 9px; color: #888; }
-  .sig-box { border: 1px solid #ddd; height: 30px; margin-top: 8px; border-radius: 3px; position: relative; }
+  .sig-box { border: 1px solid #ddd; height: 30px; margin-top: 8px; border-radius: 3px; }
   .sig-label { font-size: 9px; color: #999; text-align: center; margin-top: 2px; }
-  .barcode { text-align: center; font-size: 22px; letter-spacing: 4px; margin: 8px 0; color: #222; font-family: monospace; }
   @media print { body { -webkit-print-color-adjust: exact; } }
 </style>
 </head>
@@ -73,59 +72,37 @@ const generateSlipPDF = (issue, user) => {
     <div class="slip-no">${issue?.issue_no || "MIS-XXXXXX"}</div>
     <div class="meta">${dateStr} &nbsp;|&nbsp; ${timeStr}</div>
   </div>
-
   <div class="section">
     <div class="section-title">Job Details</div>
     <div class="row"><span class="label">Job No</span><span class="value">${issue?.job_no || "—"}</span></div>
     <div class="row"><span class="label">Cart Item</span><span class="value">#${(issue?.cart_item_index ?? 0) + 1}</span></div>
   </div>
-
   <div class="section">
     <div class="section-title">Material</div>
     <div class="row"><span class="label">Product</span><span class="value">${issue?.material?.product_name || "—"}</span></div>
     <div class="row"><span class="label">Unit</span><span class="value">${issue?.material?.unit || "sqft"}</span></div>
   </div>
-
   <div class="highlight">
     <div class="unit">Issued Quantity</div>
     <div class="big">${issue?.issued_qty ?? "—"}</div>
     <div class="unit">sq.ft</div>
   </div>
-
   <div class="section">
     <div class="section-title">Dimensions</div>
     <div class="row"><span class="label">Width</span><span class="value">${issue?.dimensions?.width ?? "—"} ft</span></div>
     <div class="row"><span class="label">Height</span><span class="value">${issue?.dimensions?.height ?? "—"} ft</span></div>
     <div class="row"><span class="label">Buffer</span><span class="value">${issue?.wastage_buffer_pct ?? 20}%</span></div>
   </div>
-
-  ${issue?.calculation ? `
-  <div class="section">
-    <div class="section-title">Calculation</div>
-    <div class="row"><span class="label">Job Area</span><span class="value">${issue.calculation.job_sqft} sqft</span></div>
-    <div class="row"><span class="label">Gross Area</span><span class="value">${issue.calculation.gross_sqft} sqft</span></div>
-    <div class="row"><span class="label">Recommended</span><span class="value">${issue.calculation.required_sqft} sqft</span></div>
-  </div>` : ""}
-
   <div class="section">
     <div class="section-title">Personnel</div>
     <div class="row"><span class="label">Issued By</span><span class="label">Issued To</span></div>
     <div class="row"><span class="value">${issue?.issued_by?.name || user?.name || "Store Manager"}</span><span class="value">${issue?.issued_to?.name || "—"}</span></div>
   </div>
-
-  ${issue?.issue_notes ? `
-  <div class="section">
-    <div class="section-title">Notes</div>
-    <div style="font-size:11px;color:#444;margin-top:4px;">${issue.issue_notes}</div>
-  </div>` : ""}
-
   <div class="section">
     <div class="section-title">Employee Signature</div>
     <div class="sig-box"></div>
     <div class="sig-label">Received by / Date</div>
   </div>
-
-
   <div class="footer">
     <div>This slip is system generated</div>
     <div style="margin-top:2px;">Keep this slip until material return</div>
@@ -139,101 +116,115 @@ const generateSlipPDF = (issue, user) => {
   const url = URL.createObjectURL(blob);
   const win = window.open(url, "_blank");
   if (win) {
-    win.onload = () => {
-      setTimeout(() => { win.print(); URL.revokeObjectURL(url); }, 500);
-    };
+    win.onload = () => { setTimeout(() => { win.print(); URL.revokeObjectURL(url); }, 500); };
   }
 };
 
 // ─── Toast ────────────────────────────────────────────────────────────────────
 const useToast = () => {
-  const [toast, setToast] = useState(null);
+  const [toasts, setToasts] = useState([]);
   const show = useCallback((message, type = "info") => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 4000);
+    const id = Date.now();
+    setToasts(p => [...p, { id, message, type }]);
+    setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 4500);
   }, []);
-  return { toast, show, dismiss: () => setToast(null) };
+  const dismiss = useCallback((id) => setToasts(p => p.filter(t => t.id !== id)), []);
+  return { toasts, show, dismiss };
 };
 
-const Toast = ({ message, type = "info", onDismiss }) => {
-  const colors = {
-    info: "bg-blue-50 border-blue-200 text-blue-800",
-    success: "bg-emerald-50 border-emerald-200 text-emerald-800",
-    error: "bg-red-50 border-red-200 text-red-800",
-    warning: "bg-amber-50 border-amber-200 text-amber-800",
-  };
-  const bar = {
-    info: "bg-blue-500", success: "bg-emerald-500", error: "bg-red-500", warning: "bg-amber-500",
-  };
-  return (
-    <div className={`fixed bottom-4 left-4 right-4 z-50 flex items-center gap-3 p-3 rounded-xl border shadow-lg ${colors[type]}`}>
-      <div className={`w-1 h-10 rounded-full flex-shrink-0 ${bar[type]}`} />
-      <span className="text-sm flex-1">{message}</span>
-      <button onClick={onDismiss} className="text-lg leading-none opacity-60 hover:opacity-100 px-1">×</button>
-    </div>
-  );
-};
+const ToastContainer = ({ toasts, dismiss }) => (
+  <div className="fixed bottom-20 left-4 right-4 z-[100] flex flex-col gap-2 md:left-auto md:right-6 md:w-80 md:bottom-6">
+    {toasts.map(t => {
+      const cfg = {
+        info: { bg: "bg-slate-800", bar: "bg-sky-400", icon: "ℹ" },
+        success: { bg: "bg-slate-800", bar: "bg-emerald-400", icon: "✓" },
+        error: { bg: "bg-slate-800", bar: "bg-rose-400", icon: "✕" },
+        warning: { bg: "bg-slate-800", bar: "bg-amber-400", icon: "⚠" },
+      }[t.type] || { bg: "bg-slate-800", bar: "bg-sky-400", icon: "ℹ" };
+      return (
+        <div key={t.id} className={`${cfg.bg} text-white rounded-xl overflow-hidden shadow-2xl flex items-stretch animate-slide-up`}>
+          <div className={`w-1 flex-shrink-0 ${cfg.bar}`} />
+          <div className="flex items-center gap-3 px-4 py-3 flex-1">
+            <span className={`text-sm font-bold ${cfg.bar.replace("bg-", "text-")}`}>{cfg.icon}</span>
+            <span className="text-sm flex-1 leading-snug">{t.message}</span>
+            <button onClick={() => dismiss(t.id)} className="opacity-40 hover:opacity-100 text-lg leading-none ml-1">×</button>
+          </div>
+        </div>
+      );
+    })}
+  </div>
+);
 
-// ─── Shared components ────────────────────────────────────────────────────────
-const Badge = ({ children, color = "blue" }) => {
-  const c = {
-    blue: "bg-blue-100 text-blue-700",
+// ─── Design System Components ─────────────────────────────────────────────────
+const Badge = ({ children, variant = "default" }) => {
+  const v = {
+    default: "bg-slate-100 text-slate-600",
+    blue: "bg-sky-100 text-sky-700",
     green: "bg-emerald-100 text-emerald-700",
     amber: "bg-amber-100 text-amber-700",
-    red: "bg-red-100 text-red-700",
-    gray: "bg-gray-100 text-gray-600",
-  }[color] || "bg-gray-100 text-gray-600";
-  return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${c}`}>{children}</span>;
-};
-
-const PerfBadge = ({ rating }) => {
-  const map = { good: ["green", "Good"], acceptable: ["amber", "Acceptable"], high_wastage: ["red", "High wastage"] };
-  const [color, label] = map[rating] || ["gray", "—"];
-  return <Badge color={color}>{label}</Badge>;
+    red: "bg-rose-100 text-rose-700",
+    purple: "bg-violet-100 text-violet-700",
+  }[variant] || "bg-slate-100 text-slate-600";
+  return <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${v}`}>{children}</span>;
 };
 
 const StatusBadge = ({ status }) => {
-  const map = { issued: ["blue", "Issued"], returned: ["green", "Returned"], partial_return: ["amber", "Partial"], no_return: ["red", "No return"] };
-  const [color, label] = map[status] || ["gray", status];
-  return <Badge color={color}>{label}</Badge>;
+  const map = {
+    issued: ["blue", "● Issued"],
+    returned: ["green", "✓ Returned"],
+    partial_return: ["amber", "◑ Partial"],
+    no_return: ["red", "✕ No Return"],
+  };
+  const [variant, label] = map[status] || ["default", status];
+  return <Badge variant={variant}>{label}</Badge>;
 };
 
-const Avatar = ({ name = "?" }) => {
+const PerfBadge = ({ rating }) => {
+  const map = {
+    good: ["green", "▲ Good"],
+    acceptable: ["amber", "◆ Acceptable"],
+    high_wastage: ["red", "▼ High Wastage"],
+  };
+  const [variant, label] = map[rating] || ["default", "—"];
+  return <Badge variant={variant}>{label}</Badge>;
+};
+
+const Avatar = ({ name = "?", size = "md" }) => {
   const initials = name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
-  return (
-    <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
-      {initials}
-    </div>
-  );
+  const sz = { sm: "w-7 h-7 text-[10px]", md: "w-9 h-9 text-xs", lg: "w-11 h-11 text-sm" }[size];
+  const colors = ["bg-sky-100 text-sky-700", "bg-violet-100 text-violet-700", "bg-emerald-100 text-emerald-700", "bg-rose-100 text-rose-700", "bg-amber-100 text-amber-700"];
+  const color = colors[name.charCodeAt(0) % colors.length];
+  return <div className={`${sz} ${color} rounded-full flex items-center justify-center font-bold flex-shrink-0`}>{initials}</div>;
 };
 
 const WastageBar = ({ pct = 0 }) => {
-  const color = pct <= 10 ? "bg-emerald-500" : pct <= 20 ? "bg-amber-500" : "bg-red-500";
-  const text = pct <= 10 ? "text-emerald-600" : pct <= 20 ? "text-amber-600" : "text-red-600";
+  const color = pct <= 10 ? "bg-emerald-500" : pct <= 20 ? "bg-amber-500" : "bg-rose-500";
+  const textColor = pct <= 10 ? "text-emerald-600" : pct <= 20 ? "text-amber-600" : "text-rose-600";
   return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 h-1.5 rounded-full bg-gray-100 overflow-hidden">
-        <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${Math.min(100, pct)}%` }} />
+    <div className="flex items-center gap-2.5">
+      <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+        <div className={`h-full rounded-full ${color} transition-all duration-500`} style={{ width: `${Math.min(100, pct)}%` }} />
       </div>
-      <span className={`text-xs font-semibold min-w-[36px] ${text}`}>{pct.toFixed(1)}%</span>
+      <span className={`text-xs font-bold tabular-nums ${textColor}`}>{pct.toFixed(1)}%</span>
     </div>
   );
 };
 
 const Spinner = ({ size = 16 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" className="animate-spin">
-    <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="30 62" />
+    <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="2.5" strokeDasharray="30 62" />
   </svg>
 );
 
-const Btn = ({ children, onClick, disabled, loading, variant = "primary", size = "md", className = "", type = "button" }) => {
-  const base = "inline-flex items-center justify-center gap-1.5 font-semibold rounded-xl transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed";
-  const sizes = { sm: "px-3 py-1.5 text-xs", md: "px-4 py-2.5 text-sm", lg: "px-5 py-3 text-base" };
+const Btn = ({ children, onClick, disabled, loading, variant = "primary", size = "md", className = "", type = "button", fullWidth }) => {
+  const base = `inline-flex items-center justify-center gap-2 font-semibold rounded-xl transition-all duration-150 active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed select-none ${fullWidth ? "w-full" : ""}`;
+  const sizes = { xs: "px-2.5 py-1.5 text-xs", sm: "px-3.5 py-2 text-xs", md: "px-4 py-2.5 text-sm", lg: "px-5 py-3 text-sm" };
   const variants = {
-    primary: "bg-blue-600 text-white shadow-sm shadow-blue-200 hover:bg-blue-700",
-    danger: "bg-red-50 text-red-700 border border-red-200 hover:bg-red-100",
-    ghost: "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50",
-    success: "bg-emerald-600 text-white shadow-sm shadow-emerald-200 hover:bg-emerald-700",
+    primary: "bg-slate-900 text-white hover:bg-slate-700 shadow-sm",
+    danger: "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100",
+    ghost: "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50",
+    success: "bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm shadow-emerald-200",
+    accent: "bg-sky-600 text-white hover:bg-sky-700 shadow-sm shadow-sky-200",
   };
   return (
     <button type={type} onClick={!disabled && !loading ? onClick : undefined} disabled={disabled || loading}
@@ -243,185 +234,271 @@ const Btn = ({ children, onClick, disabled, loading, variant = "primary", size =
   );
 };
 
-const Input = ({ className = "", ...props }) => (
-  <input className={`w-full px-3 py-2.5 text-sm bg-white border border-gray-200 rounded-xl outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all placeholder:text-gray-400 ${className}`} {...props} />
-);
-
-const NumberInput = ({ value, onChange, suffix, min = 0, step = 0.1 }) => (
-  <div className="flex items-center bg-white border border-gray-200 rounded-xl overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-50 transition-all">
-    <input type="number" value={value} min={min} step={step}
-      onChange={e => onChange(parseFloat(e.target.value) || 0)}
-      className="flex-1 px-3 py-2.5 text-sm bg-transparent outline-none min-w-0" />
-    {suffix && <span className="px-3 py-2.5 text-xs text-gray-400 border-l border-gray-200 bg-gray-50 whitespace-nowrap">{suffix}</span>}
+const Input = ({ label, suffix, prefix, error, className = "", ...props }) => (
+  <div>
+    {label && <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">{label}</label>}
+    <div className={`flex items-stretch bg-white border rounded-xl overflow-hidden transition-all focus-within:ring-2 focus-within:ring-sky-500/20 focus-within:border-sky-400 ${error ? "border-rose-300" : "border-slate-200"}`}>
+      {prefix && <span className="px-3 py-2.5 text-xs text-slate-400 border-r border-slate-200 bg-slate-50 flex items-center">{prefix}</span>}
+      <input className={`flex-1 px-3 py-2.5 text-sm bg-transparent outline-none placeholder:text-slate-300 min-w-0 ${className}`} {...props} />
+      {suffix && <span className="px-3 py-2.5 text-xs text-slate-400 border-l border-slate-200 bg-slate-50 flex items-center whitespace-nowrap">{suffix}</span>}
+    </div>
+    {error && <p className="text-xs text-rose-500 mt-1">{error}</p>}
   </div>
 );
 
-const SelectInput = ({ value, onChange, options = [], placeholder }) => (
-  <select value={value} onChange={e => onChange(e.target.value)}
-    className="w-full px-3 py-2.5 text-sm bg-white border border-gray-200 rounded-xl outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all appearance-none">
-    {placeholder && <option value="">{placeholder}</option>}
-    {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-  </select>
+const NumberInput = ({ value, onChange, suffix, min = 0, step = 0.1, label }) => (
+  <div>
+    {label && <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">{label}</label>}
+    <div className="flex items-stretch bg-white border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-sky-500/20 focus-within:border-sky-400 transition-all">
+      <input type="number" value={value} min={min} step={step}
+        onChange={e => onChange(parseFloat(e.target.value) || 0)}
+        className="flex-1 px-3 py-2.5 text-sm bg-transparent outline-none min-w-0" />
+      {suffix && <span className="px-2.5 py-2.5 text-xs text-slate-400 border-l border-slate-200 bg-slate-50 flex items-center whitespace-nowrap">{suffix}</span>}
+    </div>
+  </div>
 );
 
-const Field = ({ label, children, required }) => (
-  <div className="mb-3">
-    <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-      {label}{required && <span className="text-red-500 ml-0.5">*</span>}
-    </label>
+const Select = ({ label, value, onChange, options = [], placeholder, required }) => (
+  <div>
+    {label && (
+      <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">
+        {label}{required && <span className="text-rose-400 ml-0.5">*</span>}
+      </label>
+    )}
+    <div className="relative">
+      <select value={value} onChange={e => onChange(e.target.value)}
+        className="w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-400 transition-all appearance-none pr-8">
+        {placeholder && <option value="">{placeholder}</option>}
+        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none text-xs">▾</span>
+    </div>
+  </div>
+);
+
+const Card = ({ children, className = "", onClick, hoverable }) => (
+  <div onClick={onClick}
+    className={`bg-white rounded-2xl border border-slate-100 shadow-sm ${hoverable ? "cursor-pointer hover:border-sky-200 hover:shadow-md transition-all duration-150" : ""} ${className}`}>
     {children}
   </div>
 );
 
-const Card = ({ children, className = "" }) => (
-  <div className={`bg-white rounded-2xl border border-gray-100 shadow-sm p-4 ${className}`}>{children}</div>
+const SectionHeader = ({ icon, title, subtitle }) => (
+  <div className="flex items-center gap-3 mb-4">
+    <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center text-base flex-shrink-0">
+      {icon}
+    </div>
+    <div>
+      <h3 className="text-sm font-bold text-slate-800">{title}</h3>
+      {subtitle && <p className="text-xs text-slate-400">{subtitle}</p>}
+    </div>
+  </div>
 );
 
-const SectionLabel = ({ children, color = "blue" }) => {
-  const colors = { blue: "bg-blue-600", green: "bg-emerald-500", red: "bg-red-500", amber: "bg-amber-500" };
+const Divider = ({ label }) => (
+  <div className="flex items-center gap-3 my-4">
+    <div className="flex-1 h-px bg-slate-100" />
+    {label && <span className="text-xs text-slate-400 font-medium">{label}</span>}
+    <div className="flex-1 h-px bg-slate-100" />
+  </div>
+);
+
+const StatTile = ({ label, value, suffix, trend, color = "default" }) => {
+  const colors = {
+    default: "bg-slate-50 border-slate-100",
+    sky: "bg-sky-50 border-sky-100",
+    emerald: "bg-emerald-50 border-emerald-100",
+    rose: "bg-rose-50 border-rose-100",
+    amber: "bg-amber-50 border-amber-100",
+  };
+  const textColors = {
+    default: "text-slate-800",
+    sky: "text-sky-700",
+    emerald: "text-emerald-700",
+    rose: "text-rose-700",
+    amber: "text-amber-700",
+  };
   return (
-    <div className="flex items-center gap-2 mb-3">
-      <div className={`w-1 h-4 rounded-full ${colors[color]}`} />
-      <span className="text-sm font-semibold text-gray-700">{children}</span>
+    <div className={`rounded-2xl border p-4 ${colors[color]}`}>
+      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5">{label}</p>
+      <p className={`text-2xl font-black ${textColors[color]}`}>
+        {value}
+        {suffix && <span className="text-sm font-medium text-slate-400 ml-1">{suffix}</span>}
+      </p>
+      {trend && <p className="text-xs text-slate-400 mt-1">{trend}</p>}
     </div>
   );
 };
 
+const EmptyState = ({ icon, title, subtitle }) => (
+  <div className="flex flex-col items-center justify-center py-16 text-center">
+    <div className="text-5xl mb-4 opacity-30">{icon}</div>
+    <p className="text-sm font-semibold text-slate-400">{title}</p>
+    {subtitle && <p className="text-xs text-slate-300 mt-1">{subtitle}</p>}
+  </div>
+);
+
+// ─── CalcPreview ──────────────────────────────────────────────────────────────
 const CalcPreview = ({ calc, issuedQty }) => {
   if (!calc) return null;
   const diff = issuedQty ? issuedQty - calc.required_sqft : 0;
   const overFlag = diff > 0.01;
   const underFlag = diff < -0.01;
   return (
-    <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 mt-2">
-      <div className="text-xs font-semibold text-blue-600 mb-2">System calculation</div>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs mb-2">
-        {[["Job area", `${calc.job_sqft} sqft`], ["Gross area", `${calc.gross_sqft} sqft`], ["Margin area", `${calc.margin_sqft} sqft`]].map(([k, v]) => (
-          <><span className="text-gray-500">{k}</span><span className="font-semibold text-gray-800">{v}</span></>
+    <div className="bg-sky-50 border border-sky-100 rounded-xl p-4 mt-3">
+      <p className="text-xs font-bold text-sky-600 mb-3 uppercase tracking-wide">System Calculation</p>
+      <div className="grid grid-cols-3 gap-3 mb-3">
+        {[["Job Area", `${calc.job_sqft}`], ["Gross Area", `${calc.gross_sqft}`], ["Margin", `${calc.margin_sqft}`]].map(([k, v]) => (
+          <div key={k} className="bg-white rounded-lg p-2 text-center">
+            <p className="text-[10px] text-slate-400 mb-0.5">{k}</p>
+            <p className="text-sm font-bold text-slate-700">{v} <span className="text-[10px] font-normal text-slate-400">sqft</span></p>
+          </div>
         ))}
       </div>
-      <div className="flex items-center justify-between pt-2 border-t border-blue-100">
-        <span className="text-xs font-semibold text-blue-600">Recommended</span>
-        <span className="text-sm font-bold text-gray-800">{calc.required_sqft} sqft</span>
+      <div className="flex items-center justify-between bg-white rounded-lg px-3 py-2">
+        <span className="text-xs font-semibold text-sky-600">Recommended</span>
+        <span className="text-base font-black text-slate-800">{calc.required_sqft} <span className="text-xs font-normal text-slate-400">sqft</span></span>
       </div>
       {(overFlag || underFlag) && (
-        <div className={`mt-1.5 text-xs font-medium ${overFlag ? "text-amber-600" : "text-emerald-600"}`}>
-          {overFlag ? `+${diff.toFixed(2)} sqft above recommendation` : `${Math.abs(diff).toFixed(2)} sqft below recommendation`}
-        </div>
+        <p className={`mt-2 text-xs font-semibold ${overFlag ? "text-amber-600" : "text-emerald-600"}`}>
+          {overFlag ? `⬆ +${diff.toFixed(2)} sqft above recommendation` : `⬇ ${Math.abs(diff).toFixed(2)} sqft below recommendation`}
+        </p>
       )}
     </div>
   );
 };
 
-const Modal = ({ open, title, onClose, children }) => {
+// ─── Modal ────────────────────────────────────────────────────────────────────
+const Modal = ({ open, title, onClose, children, size = "md" }) => {
+  useEffect(() => {
+    if (open) document.body.style.overflow = "hidden";
+    else document.body.style.overflow = "";
+    return () => { document.body.style.overflow = ""; };
+  }, [open]);
+
   if (!open) return null;
+  const sizeClass = { md: "max-w-lg", lg: "max-w-2xl", xl: "max-w-4xl" }[size];
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-0 sm:px-4"
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4"
       onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="bg-white w-full max-w-lg lg:max-w-7xl rounded-t-3xl sm:rounded-2xl border border-gray-100 shadow-2xl max-h-[90vh] overflow-auto">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 sticky top-0 bg-white rounded-t-3xl sm:rounded-t-2xl z-10">
-          <span className="font-semibold text-sm text-gray-800">{title}</span>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 text-lg leading-none">×</button>
+      <div className={`bg-white w-full ${sizeClass} rounded-t-3xl sm:rounded-2xl shadow-2xl max-h-[92vh] flex flex-col`}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0">
+          <h2 className="font-bold text-sm text-slate-800">{title}</h2>
+          <button onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 text-lg leading-none transition-colors">
+            ×
+          </button>
         </div>
-        <div className="p-5">{children}</div>
+        <div className="overflow-y-auto flex-1 p-6">{children}</div>
       </div>
     </div>
   );
 };
-
-const StatCard = ({ label, value, suffix, danger }) => (
-  <div className={`rounded-2xl p-3 ${danger ? "bg-red-50 border border-red-100" : "bg-gray-50 border border-gray-100"}`}>
-    <div className={`text-xs font-semibold uppercase tracking-wide mb-1 ${danger ? "text-red-500" : "text-gray-400"}`}>{label}</div>
-    <div className={`text-xl font-bold ${danger ? "text-red-700" : "text-gray-800"}`}>
-      {value}{suffix && <span className="text-sm font-medium text-gray-400 ml-1">{suffix}</span>}
-    </div>
-  </div>
-);
 
 // ─── Job Lookup ────────────────────────────────────────────────────────────────
 const JobLookup = ({ onJobSelected }) => {
-  const [query, setQuery] = useState("");
-  const [searching, setSearching] = useState(false);
-  const [results, setResults] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [jobs, setJobs] = useState([]);
   const [selected, setSelected] = useState(null);
-  const { toast, show: toastShow, dismiss } = useToast();
+  const [filter, setFilter] = useState("");
+  const { toasts, show, dismiss } = useToast();
 
-  const doSearch = async () => {
-    const q = query.trim();
-    if (!q) return toastShow("Enter a job number or customer name", "warning");
-    setSearching(true); setResults(null); setSelected(null);
+  const fetchProductionJobs = useCallback(async () => {
+    setLoading(true);
     try {
-      const res = await api(`/jobs?job_no=${encodeURIComponent(q)}&limit=10`);
-      let jobs = res.data?.jobs || res.data || [];
-      if (!Array.isArray(jobs)) jobs = [];
-      if (jobs.length === 0) {
-        const res2 = await api(`/jobs?customer_name=${encodeURIComponent(q)}&limit=10`);
-        jobs = res2.data?.jobs || res2.data || [];
-        if (!Array.isArray(jobs)) jobs = [];
-      }
-      setResults(jobs);
-      if (jobs.length === 0) toastShow(`No jobs found for "${q}"`, "warning");
-    } catch (err) { toastShow(err.message, "error"); setResults([]); }
-    finally { setSearching(false); }
-  };
+      const res = await api(`/jobs?job_status=production&limit=100`);
+      let list = res.data?.jobs || res.data || [];
+      if (!Array.isArray(list)) list = [];
+      setJobs(list);
+      if (list.length === 0) show("No jobs currently in production", "warning");
+    } catch (err) { show(err.message, "error"); }
+    finally { setLoading(false); }
+  }, []);
 
-  const selectJob = (job) => { setSelected(job); onJobSelected(job); setResults(null); };
-  const clearJob = () => { setSelected(null); setQuery(""); setResults(null); onJobSelected(null); };
+  useEffect(() => { fetchProductionJobs(); }, []);
 
-  const statusColor = (s) => ({ accepted: "text-blue-600", in_progress: "text-amber-600", completed: "text-emerald-600", on_hold: "text-amber-600", rejected: "text-red-600" }[s] || "text-gray-500");
+  const filtered = useMemo(() => {
+    if (!filter.trim()) return jobs;
+    const q = filter.toLowerCase();
+    return jobs.filter(j => j.job_no?.toLowerCase().includes(q) || j.customer_name?.toLowerCase().includes(q));
+  }, [jobs, filter]);
+
+  const selectJob = (job) => { setSelected(job); onJobSelected(job); };
+  const clearJob = () => { setSelected(null); onJobSelected(null); };
 
   return (
     <div>
-      {toast && <Toast message={toast.message} type={toast.type} onDismiss={dismiss} />}
-      {!selected && (
-        <div className="flex gap-2 mb-2">
-          <Input value={query} onChange={e => { setQuery(e.target.value); if (results) setResults(null); }}
-            onKeyDown={e => e.key === "Enter" && doSearch()}
-            placeholder="Job number or customer name…" className="flex-1" />
-          <Btn variant="ghost" onClick={doSearch} loading={searching}>Look up</Btn>
-        </div>
-      )}
-      {results && results.length > 0 && !selected && (
-        <div className="border border-gray-200 rounded-xl overflow-hidden mb-2">
-          {results.map((job, idx) => (
-            <div key={job._id} onClick={() => selectJob(job)}
-              className={`flex items-center justify-between px-3 py-3 cursor-pointer hover:bg-gray-50 active:bg-gray-100 transition-colors ${idx < results.length - 1 ? "border-b border-gray-100" : ""}`}>
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center">
-                  <span className="text-[10px] font-bold text-blue-600 font-mono">JOB</span>
-                </div>
-                <div>
-                  <div className="text-sm font-semibold text-gray-800">{job.job_no}</div>
-                  <div className="text-xs text-gray-500">{job.customer_name} · {job.cart_items?.length || 0} item(s)</div>
-                </div>
-              </div>
-              <div className="text-right">
-                <div className={`text-xs font-semibold ${statusColor(job.job_status)}`}>{job.job_status?.replace(/_/g, " ")}</div>
-                <div className="text-xs text-gray-400">{job.current_stage?.stage || "—"}</div>
-              </div>
+      <ToastContainer toasts={toasts} dismiss={dismiss} />
+
+      {!selected ? (
+        <div className="space-y-3">
+          {/* Header row */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse" />
+              <span className="text-xs font-bold text-violet-600 uppercase tracking-wide">
+                {loading ? "Loading…" : `${jobs.length} job${jobs.length !== 1 ? "s" : ""} in production`}
+              </span>
             </div>
-          ))}
+            <Btn variant="ghost" size="xs" onClick={fetchProductionJobs} loading={loading}>↻ Refresh</Btn>
+          </div>
+
+          {/* Filter */}
+          {jobs.length > 3 && (
+            <Input value={filter} onChange={e => setFilter(e.target.value)}
+              placeholder="Filter by job no or customer…" />
+          )}
+
+          {/* Job list */}
+          {loading ? (
+            <div className="flex items-center justify-center py-8 gap-2 text-slate-400">
+              <Spinner size={16} />
+              <span className="text-sm">Fetching production jobs…</span>
+            </div>
+          ) : filtered.length === 0 ? (
+            <EmptyState icon="🏭" title="No production jobs" subtitle="Jobs move here once accepted and in progress" />
+          ) : (
+            <div className="border border-slate-200 rounded-xl overflow-hidden">
+              {filtered.map((job, idx) => (
+                <div key={job._id} onClick={() => selectJob(job)}
+                  className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-violet-50 active:bg-violet-100 transition-colors ${idx < filtered.length - 1 ? "border-b border-slate-100" : ""}`}>
+                  <div className="w-10 h-10 rounded-xl bg-violet-600 flex items-center justify-center flex-shrink-0">
+                    <span className="text-[9px] font-black text-white tracking-wider">PROD</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-slate-800">{job.job_no}</p>
+                    <p className="text-xs text-slate-400 truncate">{job.customer_name} · {job.cart_items?.length || 0} item(s)</p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-xs text-slate-400">{job.current_stage?.stage || "—"}</p>
+                    <span className="text-[10px] font-bold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-full">Production</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      )}
-      {selected && (
-        <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
-          <div className="flex items-start justify-between mb-2">
-            <div className="flex gap-2.5 items-center">
-              <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center">
-                <span className="text-[10px] font-bold text-white font-mono">JOB</span>
+      ) : (
+        <div className="bg-slate-900 rounded-xl p-4 text-white">
+          <div className="flex items-start justify-between">
+            <div className="flex gap-3 items-center">
+              <div className="w-10 h-10 rounded-xl bg-violet-500/30 flex items-center justify-center">
+                <span className="text-[9px] font-black text-violet-200 tracking-wider">PROD</span>
               </div>
               <div>
-                <div className="text-sm font-bold text-gray-800">{selected.job_no}</div>
-                <div className="text-xs text-gray-500">{selected.customer_name}</div>
+                <p className="text-sm font-bold">{selected.job_no}</p>
+                <p className="text-xs text-white/50">{selected.customer_name}</p>
               </div>
             </div>
-            <button onClick={clearJob} className="text-xs text-blue-600 font-semibold hover:underline">Change</button>
+            <button onClick={clearJob} className="text-xs text-violet-400 font-semibold hover:text-violet-300">
+              Change
+            </button>
           </div>
-          <div className="grid grid-cols-3 gap-2 text-xs">
-            {[["Status", selected.job_status?.replace(/_/g, " ")], ["Stage", selected.current_stage?.stage || "—"], ["Items", selected.cart_items?.length || 0]].map(([k, v]) => (
-              <div key={k} className="bg-white rounded-lg p-2">
-                <div className="text-gray-400 mb-0.5">{k}</div>
-                <div className="font-semibold text-gray-700 truncate">{v}</div>
+          <div className="grid grid-cols-3 gap-2 mt-3">
+            {[["Status", "Production"], ["Stage", selected.current_stage?.stage || "—"], ["Items", selected.cart_items?.length || 0]].map(([k, v]) => (
+              <div key={k} className="bg-white/10 rounded-lg p-2">
+                <p className="text-[10px] text-white/40 mb-0.5">{k}</p>
+                <p className="text-xs font-bold truncate">{v}</p>
               </div>
             ))}
           </div>
@@ -432,7 +509,8 @@ const JobLookup = ({ onJobSelected }) => {
 };
 
 // ─── Issue Panel ────────────────────────────────────────────────────────────
-const IssuePanel = ({ products, employees, onIssued, currentUser }) => {
+const IssuePanel = ({ products, employees, onIssued }) => {
+  const { user } = useSelector((state) => state.authSlice);
   const [loading, setLoading] = useState(false);
   const [calcLoading, setCalcLoading] = useState(false);
   const [calc, setCalc] = useState(null);
@@ -447,12 +525,8 @@ const IssuePanel = ({ products, employees, onIssued, currentUser }) => {
   const [issuedQty, setIssuedQty] = useState("");
   const [empId, setEmpId] = useState("");
   const [issueNotes, setIssueNotes] = useState("");
-  const { toast, show: toastShow, dismiss } = useToast();
+  const { toasts, show, dismiss } = useToast();
   const calcTimer = useRef(null);
-    const { user }   = useSelector((state) => state.authSlice);
-
-
-  // const user = currentUser || { _id: user?._id, name: user?.name, role: user?.role };
 
   const handleCartItemChange = (idxStr) => {
     const idx = parseInt(idxStr, 10);
@@ -485,7 +559,7 @@ const IssuePanel = ({ products, employees, onIssued, currentUser }) => {
         });
         setCalc(res.data);
         if (!issuedQty) setIssuedQty(res.data.required_sqft);
-      } catch { /* silent */ }
+      } catch { }
       finally { setCalcLoading(false); }
     }, 600);
   }, [width, height, marginTop, marginBot, buffer, issuedQty]);
@@ -496,15 +570,14 @@ const IssuePanel = ({ products, employees, onIssued, currentUser }) => {
   const selectedEmp = employees.find(e => e._id === empId);
   const cartItem = job?.cart_items?.[cartItemIdx];
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!job) return toastShow("Look up and select a job first", "error");
-    if (!productId) return toastShow("Select a material product", "error");
-    if (!issuedQty || issuedQty <= 0) return toastShow("Issued qty must be > 0", "error");
-    if (!empId) return toastShow("Select an employee", "error");
-    if (!width || !height) return toastShow("Dimensions are required", "error");
+  const handleSubmit = async () => {
+    if (!job) return show("Look up and select a job first", "error");
+    if (!productId) return show("Select a material product", "error");
+    if (!issuedQty || issuedQty <= 0) return show("Issued qty must be > 0", "error");
+    if (!empId) return show("Select an employee", "error");
+    if (!width || !height) return show("Dimensions are required", "error");
     if (selectedProduct && selectedProduct.stock_count < parseFloat(issuedQty))
-      return toastShow(`Insufficient stock. Available: ${selectedProduct.stock_count} sqft`, "error");
+      return show(`Insufficient stock. Available: ${selectedProduct.stock_count} sqft`, "error");
 
     setLoading(true);
     try {
@@ -517,41 +590,43 @@ const IssuePanel = ({ products, employees, onIssued, currentUser }) => {
         margin_bottom_in: parseFloat(marginBot),
         wastage_buffer_pct: parseFloat(buffer),
         issued_to: { user_id: empId, name: selectedEmp?.name || "", role: selectedEmp?.role || "" },
-        issued_by: { user_id: user._id, name: user.name || "Store Manager", role: user.role || "store manager" },
+        issued_by: { user_id: user?._id, name: user?.name || "Store Manager", role: user?.role || "store manager" },
         issue_notes: issueNotes,
       };
       const res = await api(`/jobs/${job._id}/material/issue`, { method: "POST", body: JSON.stringify(payload) });
-      toastShow(res.message || "Material issued successfully", "success");
+      show(res.message || "Material issued successfully", "success");
       const newIssue = { ...res.data, calculation: calc };
       onIssued(newIssue, productId, parseFloat(issuedQty));
-      // Auto-download slip
       setTimeout(() => generateSlipPDF(newIssue, user), 400);
       setProductId(""); setIssuedQty(""); setEmpId(""); setIssueNotes(""); setCalc(null);
-    } catch (err) { toastShow(err.message, "error"); }
+    } catch (err) { show(err.message, "error"); }
     finally { setLoading(false); }
   };
 
   return (
-    <div className="space-y-3">
-      {toast && <Toast message={toast.message} type={toast.type} onDismiss={dismiss} />}
-      <Card>
-        <SectionLabel color="blue">Job lookup</SectionLabel>
+    <div className="space-y-4">
+      <ToastContainer toasts={toasts} dismiss={dismiss} />
+
+      {/* Job Lookup */}
+      <Card className="p-5">
+        <SectionHeader icon="🏭" title="Production Jobs" subtitle="All jobs currently in production" />
         <JobLookup onJobSelected={handleJobSelected} />
         {job && job.cart_items?.length > 1 && (
-          <div className="mt-3">
-            <Field label="Cart item">
-              <SelectInput value={String(cartItemIdx)} onChange={handleCartItemChange}
-                options={job.cart_items.map((item, idx) => ({
-                  value: String(idx),
-                  label: `#${idx + 1} · ${item.product_name || "Item"}${item.size ? ` · ${item.size}` : ""}`,
-                }))} />
-            </Field>
+          <div className="mt-4">
+            <Select label="Cart Item" value={String(cartItemIdx)} onChange={handleCartItemChange}
+              options={job.cart_items.map((item, idx) => ({
+                value: String(idx),
+                label: `#${idx + 1} · ${item.product_name || "Item"}${item.size ? ` · ${item.size}` : ""}`,
+              }))} />
           </div>
         )}
         {job && cartItem && (
-          <div className="mt-3 bg-gray-50 rounded-xl p-3 grid grid-cols-2 gap-2 text-xs">
+          <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
             {[["Product", cartItem.product_name], ["Size", cartItem.size], ["Type", cartItem.printing_type], ["Qty", cartItem.quantity]].filter(([, v]) => v).map(([k, v]) => (
-              <div key={k}><span className="text-gray-400">{k}: </span><span className="font-semibold text-gray-700">{v}</span></div>
+              <div key={k} className="bg-slate-50 rounded-xl p-2.5">
+                <p className="text-[10px] text-slate-400 mb-0.5 uppercase tracking-wide">{k}</p>
+                <p className="text-xs font-semibold text-slate-700 truncate">{v}</p>
+              </div>
             ))}
           </div>
         )}
@@ -559,91 +634,93 @@ const IssuePanel = ({ products, employees, onIssued, currentUser }) => {
 
       {job && (
         <>
-          <Card>
-            <SectionLabel color="blue">Material</SectionLabel>
-            <Field label="Product" required>
-              <SelectInput value={productId} onChange={setProductId} placeholder="Select material…"
+          {/* Material */}
+          <Card className="p-5">
+            <SectionHeader icon="📦" title="Material Selection" subtitle="Choose product and quantity" />
+            <div className="space-y-4">
+              <Select label="Product" required value={productId} onChange={setProductId} placeholder="Select material…"
                 options={products.map(p => ({ value: p._id, label: `${p.name} (${p.stock_count || 0} sqft)` }))} />
               {selectedProduct && (
-                <p className={`text-xs mt-1 font-medium ${selectedProduct.stock_count > 50 ? "text-emerald-600" : selectedProduct.stock_count > 10 ? "text-amber-600" : "text-red-600"}`}>
-                  {selectedProduct.stock_count} sqft available
-                </p>
+                <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold ${selectedProduct.stock_count > 50 ? "bg-emerald-50 text-emerald-700" : selectedProduct.stock_count > 10 ? "bg-amber-50 text-amber-700" : "bg-rose-50 text-rose-700"}`}>
+                  <span>{selectedProduct.stock_count > 50 ? "●" : selectedProduct.stock_count > 10 ? "◆" : "▲"}</span>
+                  {selectedProduct.stock_count} sqft in stock
+                </div>
               )}
-            </Field>
-            <Field label="Issue notes">
-              <Input value={issueNotes} onChange={e => setIssueNotes(e.target.value)} placeholder="e.g. Day 1 of 3-day job" />
-            </Field>
+              <Input label="Issue Notes" value={issueNotes} onChange={e => setIssueNotes(e.target.value)} placeholder="e.g. Day 1 of 3-day job" />
+            </div>
           </Card>
 
-          <Card>
-            <SectionLabel color="green">Dimensions & margins</SectionLabel>
+          {/* Dimensions */}
+          <Card className="p-5">
+            <SectionHeader icon="📐" title="Dimensions & Margins" subtitle="Set print area and wastage buffer" />
             {cartItem?.size && (
-              <div className="mb-3 text-xs text-emerald-700 bg-emerald-50 rounded-lg px-3 py-2 border border-emerald-100">
-                ✓ Dimensions auto-filled from "{cartItem.size}"
+              <div className="mb-4 flex items-center gap-2 bg-emerald-50 text-emerald-700 rounded-xl px-3 py-2.5 text-xs font-semibold border border-emerald-100">
+                <span>✓</span> Dimensions auto-filled from "{cartItem.size}"
               </div>
             )}
-            <div className="grid grid-cols-3 gap-2">
-              <Field label="Width" required><NumberInput value={width} onChange={setWidth} min={0.1} step={0.1} suffix="ft" /></Field>
-              <Field label="Height" required><NumberInput value={height} onChange={setHeight} min={0.1} step={0.1} suffix="ft" /></Field>
-              <Field label="Buffer"><NumberInput value={buffer} onChange={setBuffer} min={0} max={50} step={1} suffix="%" /></Field>
+            <div className="grid grid-cols-3 gap-3 mb-3">
+              <NumberInput label="Width" value={width} onChange={setWidth} min={0.1} step={0.1} suffix="ft" />
+              <NumberInput label="Height" value={height} onChange={setHeight} min={0.1} step={0.1} suffix="ft" />
+              <NumberInput label="Buffer" value={buffer} onChange={setBuffer} min={0} max={50} step={1} suffix="%" />
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="Top margin"><NumberInput value={marginTop} onChange={setMarginTop} min={0} step={0.5} suffix="in" /></Field>
-              <Field label="Bottom margin"><NumberInput value={marginBot} onChange={setMarginBot} min={0} step={0.5} suffix="in" /></Field>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <NumberInput label="Top Margin" value={marginTop} onChange={setMarginTop} min={0} step={0.5} suffix="in" />
+              <NumberInput label="Bottom Margin" value={marginBot} onChange={setMarginBot} min={0} step={0.5} suffix="in" />
             </div>
-            {calcLoading && <p className="text-xs text-gray-400 py-1">Calculating…</p>}
+            {calcLoading && (
+              <div className="flex items-center gap-2 text-xs text-slate-400 py-1">
+                <Spinner size={12} /> Calculating…
+              </div>
+            )}
             <CalcPreview calc={calc} issuedQty={parseFloat(issuedQty)} />
-            <div className="mt-3">
-              <Field label="Actual qty to issue" required>
-                <NumberInput value={issuedQty} onChange={setIssuedQty} min={0.01} step={0.1} suffix="sqft" />
-              </Field>
+            <div className="mt-4">
+              <NumberInput label="Actual Qty to Issue *" value={issuedQty} onChange={setIssuedQty} min={0.01} step={0.1} suffix="sqft" />
             </div>
           </Card>
 
-          <Card>
-            <SectionLabel color="red">Personnel</SectionLabel>
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="Issue to" required>
-                <SelectInput value={empId} onChange={setEmpId} placeholder="Employee…"
-                  options={employees.map(e => ({ value: e._id, label: e.name }))} />
-              </Field>
-              <Field label="Issued by">
-                <Input value={user?.name || "—"} disabled className="bg-gray-50 opacity-70" />
-              </Field>
+          {/* Personnel */}
+          <Card className="p-5">
+            <SectionHeader icon="👤" title="Personnel" subtitle="Who is this material being issued to" />
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <Select label="Issue To" required value={empId} onChange={setEmpId} placeholder="Select employee…"
+                options={employees.map(e => ({ value: e._id, label: e.name }))} />
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Issued By</label>
+                <div className="px-3 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl text-slate-500 font-medium">
+                  {user?.name || "—"}
+                </div>
+              </div>
             </div>
             {selectedEmp && (
-              <div className="flex items-center gap-3 bg-gray-50 rounded-xl p-3 mt-1">
-                <Avatar name={selectedEmp.name} />
+              <div className="flex items-center gap-3 bg-slate-50 rounded-xl p-3 border border-slate-100">
+                <Avatar name={selectedEmp.name} size="lg" />
                 <div>
-                  <div className="text-sm font-semibold text-gray-800">{selectedEmp.name}</div>
-                  <div className="text-xs text-gray-500">{selectedEmp.role}</div>
+                  <p className="text-sm font-bold text-slate-800">{selectedEmp.name}</p>
+                  <p className="text-xs text-slate-400">{selectedEmp.role}</p>
                 </div>
               </div>
             )}
           </Card>
 
-          <div className="pb-6">
-            <Btn type="submit" onClick={handleSubmit} loading={loading} variant="primary" size="lg" className="w-full">
-              📋 Issue material & print slip
+          <div className="pb-4">
+            <Btn variant="primary" size="lg" onClick={handleSubmit} loading={loading} fullWidth>
+              📋 Issue Material & Print Slip
             </Btn>
           </div>
         </>
       )}
 
       {!job && (
-        <div className="text-center py-12 text-gray-400 text-sm">
-          <div className="text-4xl mb-3">🔍</div>
-          Look up a job above to continue
-        </div>
+        <EmptyState icon="🔍" title="No job selected" subtitle="Search for a job above to continue" />
       )}
     </div>
   );
 };
 
 // ─── Return Panel ─────────────────────────────────────────────────────────────
-const ReturnPanel = ({ issues, employees, onReturned, currentUser }) => {
-  const { toast, show: toastShow, dismiss } = useToast();
-  const user = currentUser || { _id: "user1", name: "Store Manager" };
+const ReturnPanel = ({ issues, employees, onReturned }) => {
+  const { user } = useSelector((state) => state.authSlice);
+  const { toasts, show, dismiss } = useToast();
   const [selectedId, setSelectedId] = useState("");
   const [retQty, setRetQty] = useState("");
   const [reason, setReason] = useState("margin_trim");
@@ -662,46 +739,59 @@ const ReturnPanel = ({ issues, employees, onReturned, currentUser }) => {
     const used = issued - returned;
     const wastage = Math.max(0, used - jobSqft);
     const ratio = issued > 0 ? (wastage / issued) * 100 : 0;
-    return { used: parseFloat(used.toFixed(4)), wastage: parseFloat(wastage.toFixed(4)), ratio: parseFloat(ratio.toFixed(2)), perf: ratio <= 10 ? "good" : ratio <= 20 ? "acceptable" : "high_wastage" };
+    return {
+      used: parseFloat(used.toFixed(4)),
+      wastage: parseFloat(wastage.toFixed(4)),
+      ratio: parseFloat(ratio.toFixed(2)),
+      perf: ratio <= 10 ? "good" : ratio <= 20 ? "acceptable" : "high_wastage"
+    };
   }, [selectedIssue, retQty]);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!selectedId) return toastShow("Select an issue", "error");
-    if (retQty === "") return toastShow("Enter returned qty", "error");
+  const handleSubmit = async () => {
+    if (!selectedId) return show("Select an issue", "error");
+    if (retQty === "") return show("Enter returned qty", "error");
     const qty = parseFloat(retQty);
-    if (isNaN(qty) || qty < 0) return toastShow("Returned qty must be ≥ 0", "error");
+    if (isNaN(qty) || qty < 0) return show("Returned qty must be ≥ 0", "error");
     if (selectedIssue && qty > selectedIssue.issued_qty)
-      return toastShow(`Cannot return more than issued (${selectedIssue.issued_qty} sqft)`, "error");
+      return show(`Cannot return more than issued (${selectedIssue.issued_qty} sqft)`, "error");
+
     setLoading(true);
     const retBy = employees.find(e => e._id === retById);
     try {
       const payload = {
         returned_qty: qty, wastage_reason: reason, wastage_reason_notes: notes,
-        returned_by: { user_id: retById || user._id, name: retBy?.name || user.name || "Employee", role: retBy?.role || "printing team" },
+        returned_by: { user_id: retById || user?._id, name: retBy?.name || user?.name || "Employee", role: retBy?.role || "printing team" },
       };
       const res = await api(`/material/${selectedId}/return`, { method: "POST", body: JSON.stringify(payload) });
-      toastShow(res.message || "Return recorded", "success");
+      show(res.message || "Return recorded", "success");
       onReturned(selectedId, res.data);
       setSelectedId(""); setRetQty(""); setNotes(""); setRetById("");
-    } catch (err) { toastShow(err.message, "error"); }
+    } catch (err) { show(err.message, "error"); }
     finally { setLoading(false); }
   };
 
   return (
-    <div className="space-y-3">
-      {toast && <Toast message={toast.message} type={toast.type} onDismiss={dismiss} />}
-      <Card>
-        <SectionLabel color="green">Select open issue</SectionLabel>
-        <Field label="Issue" required>
-          <SelectInput value={selectedId} onChange={v => { setSelectedId(v); setRetQty(""); }}
-            placeholder="Choose an open issue…"
-            options={openIssues.map(i => ({ value: i._id, label: `${i.issue_no} · ${i.job_no} · ${i.issued_qty} sqft` }))} />
-        </Field>
+    <div className="space-y-4">
+      <ToastContainer toasts={toasts} dismiss={dismiss} />
+
+      <Card className="p-5">
+        <SectionHeader icon="↩" title="Select Issue" subtitle="Choose an open issue to process return" />
+        <Select label="Open Issue" required value={selectedId}
+          onChange={v => { setSelectedId(v); setRetQty(""); }}
+          placeholder="Choose an open issue…"
+          options={openIssues.map(i => ({ value: i._id, label: `${i.issue_no} · ${i.job_no} · ${i.issued_qty} sqft` }))} />
+
+        {openIssues.length === 0 && (
+          <EmptyState icon="✓" title="No pending returns" subtitle="All issues have been returned" />
+        )}
+
         {selectedIssue && (
-          <div className="grid grid-cols-2 gap-2 bg-gray-50 rounded-xl p-3 text-xs">
+          <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
             {[["Job", selectedIssue.job_no], ["Product", selectedIssue.material?.product_name], ["Issued", `${selectedIssue.issued_qty} sqft`], ["Employee", selectedIssue.issued_to?.name]].map(([k, v]) => (
-              <div key={k}><span className="text-gray-400">{k}: </span><span className="font-semibold text-gray-700">{v}</span></div>
+              <div key={k} className="bg-slate-50 rounded-xl p-2.5">
+                <p className="text-[10px] text-slate-400 mb-0.5 uppercase tracking-wide">{k}</p>
+                <p className="text-xs font-semibold text-slate-700 truncate">{v}</p>
+              </div>
             ))}
           </div>
         )}
@@ -709,33 +799,41 @@ const ReturnPanel = ({ issues, employees, onReturned, currentUser }) => {
 
       {selectedIssue && (
         <>
-          <Card>
-            <SectionLabel color="red">Return details</SectionLabel>
-            <Field label="Returned qty" required>
-              <NumberInput value={retQty} onChange={setRetQty} min={0} step={0.1} suffix="sqft" />
-              <p className="text-xs text-gray-400 mt-1">Issued: {selectedIssue.issued_qty} sqft. Enter 0 if nothing returned.</p>
-            </Field>
-            {derived && (
-              <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 mb-3">
-                <div className="text-xs font-semibold text-amber-600 mb-2">Wastage preview</div>
-                <div className="grid grid-cols-2 gap-y-1.5 text-xs">
-                  <span className="text-gray-500">Actual used</span><span className="font-semibold">{derived.used} sqft</span>
-                  <span className="text-gray-500">Wastage</span><span className="font-semibold">{derived.wastage} sqft</span>
-                  <span className="text-gray-500">Wastage ratio</span><span className="font-semibold">{derived.ratio}%</span>
-                  <span className="text-gray-500">Performance</span><PerfBadge rating={derived.perf} />
-                </div>
+          <Card className="p-5">
+            <SectionHeader icon="📏" title="Return Details" subtitle="Enter returned quantity and wastage info" />
+            <div className="space-y-4">
+              <div>
+                <NumberInput label="Returned Qty *" value={retQty} onChange={setRetQty} min={0} step={0.1} suffix="sqft" />
+                <p className="text-xs text-slate-400 mt-1.5">Issued: {selectedIssue.issued_qty} sqft · Enter 0 if nothing returned</p>
               </div>
-            )}
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="Wastage reason"><SelectInput value={reason} onChange={setReason} options={WASTAGE_REASONS} /></Field>
-              <Field label="Returned by">
-                <SelectInput value={retById} onChange={setRetById} placeholder="Employee (opt.)" options={employees.map(e => ({ value: e._id, label: e.name }))} />
-              </Field>
+
+              {derived && (
+                <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
+                  <p className="text-xs font-bold text-amber-600 mb-3 uppercase tracking-wide">Wastage Preview</p>
+                  <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-xs mb-3">
+                    {[["Actual Used", `${derived.used} sqft`], ["Wastage", `${derived.wastage} sqft`], ["Wastage Ratio", `${derived.ratio}%`]].map(([k, v]) => (
+                      <><span className="text-slate-500">{k}</span><span className="font-bold text-slate-700">{v}</span></>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-slate-500">Performance</span>
+                    <PerfBadge rating={derived.perf} />
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Select label="Wastage Reason" value={reason} onChange={setReason} options={WASTAGE_REASONS} />
+                <Select label="Returned By" value={retById} onChange={setRetById} placeholder="Employee (opt.)" options={employees.map(e => ({ value: e._id, label: e.name }))} />
+              </div>
+              <Input label="Notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Additional notes…" />
             </div>
-            <Field label="Notes"><Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Additional notes…" /></Field>
           </Card>
-          <div className="pb-6">
-            <Btn onClick={handleSubmit} variant="success" size="lg" loading={loading} className="w-full">Record return</Btn>
+
+          <div className="pb-4">
+            <Btn variant="success" size="lg" onClick={handleSubmit} loading={loading} fullWidth>
+              Record Return
+            </Btn>
           </div>
         </>
       )}
@@ -743,86 +841,139 @@ const ReturnPanel = ({ issues, employees, onReturned, currentUser }) => {
   );
 };
 
-// ─── Issues Panel ─────────────────────────────────────────────────────────────
+// ─── Issues Panel (Records) ────────────────────────────────────────────────────
 const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
   const [statusFilter, setStatusFilter] = useState("");
+  const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const PER_PAGE = 8;
+  const PER_PAGE = 10;
 
   const filtered = useMemo(() => {
-    if (statusFilter === "flagged") return issues.filter(i => i.return?.is_flagged && !i.return?.manager_reviewed);
-    if (statusFilter) return issues.filter(i => i.status === statusFilter);
-    return issues;
-  }, [issues, statusFilter]);
+    let list = issues;
+    if (statusFilter === "flagged") list = list.filter(i => i.return?.is_flagged && !i.return?.manager_reviewed);
+    else if (statusFilter) list = list.filter(i => i.status === statusFilter);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(i => i.issue_no?.toLowerCase().includes(q) || i.job_no?.toLowerCase().includes(q) || i.issued_to?.name?.toLowerCase().includes(q));
+    }
+    return list;
+  }, [issues, statusFilter, search]);
 
   const paginated = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
   const totalPages = Math.ceil(filtered.length / PER_PAGE);
 
+  const filterOptions = [
+    { value: "issued", label: "Issued" },
+    { value: "returned", label: "Returned" },
+    { value: "no_return", label: "No Return" },
+    { value: "flagged", label: "🚩 Flagged" },
+  ];
+
   return (
-    <div>
-      <div className="flex gap-2 mb-3 items-center">
-        <div className="flex-1">
-          <SelectInput value={statusFilter} onChange={v => { setStatusFilter(v); setPage(1); }}
-            placeholder="All statuses"
-            options={[{ value: "issued", label: "Issued" }, { value: "returned", label: "Returned" }, { value: "no_return", label: "No return" }, { value: "flagged", label: "Flagged" }]} />
+    <div className="space-y-3">
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-2">
+        <Input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
+          placeholder="Search by issue no, job, employee…"
+          className="flex-1" />
+        <div className="flex gap-2">
+          <div className="flex-1 sm:w-36">
+            <Select value={statusFilter} onChange={v => { setStatusFilter(v); setPage(1); }}
+              placeholder="All statuses" options={filterOptions} />
+          </div>
+          <Btn variant="ghost" onClick={onRefresh} loading={loading} size="md" className="flex-shrink-0">↻</Btn>
         </div>
-        <Btn variant="ghost" onClick={onRefresh} size="sm" loading={loading}>↻</Btn>
-        <span className="text-xs text-gray-400 whitespace-nowrap">{filtered.length} rec.</span>
       </div>
 
-      <div className="space-y-2">
-        {paginated.length === 0 ? (
-          <div className="text-center py-12 text-gray-400 text-sm">
-            <div className="text-4xl mb-2">📭</div>No records found
-          </div>
-        ) : paginated.map(issue => (
-          <Card key={issue._id} className="cursor-pointer hover:border-blue-200 active:bg-gray-50 transition-all"
-            onClick={() => onViewIssue(issue, "view")}>
-            <div className="flex items-start justify-between mb-2">
-              <div>
-                <span className="text-xs font-bold text-blue-600 font-mono">{issue.issue_no}</span>
-                {issue.return?.is_flagged && !issue.return?.manager_reviewed && (
-                  <Badge color="red" className="ml-2">flagged</Badge>
-                )}
-                <div className="text-sm font-semibold text-gray-800 mt-0.5">{issue.job_no}</div>
-              </div>
-              <StatusBadge status={issue.status} />
-            </div>
-            <div className="flex items-center gap-2 mb-2">
-              <Avatar name={issue.issued_to?.name || "?"} />
-              <div>
-                <div className="text-xs font-semibold text-gray-700">{issue.issued_to?.name}</div>
-                <div className="text-xs text-gray-400">{issue.issued_to?.role}</div>
-              </div>
-              <div className="ml-auto text-right">
-                <div className="text-xs font-semibold text-gray-700">{issue.material?.product_name}</div>
-                <div className="text-xs text-gray-400">{issue.issued_qty} sqft</div>
-              </div>
-            </div>
-            {issue.return ? (
-              <WastageBar pct={issue.return.wastage_ratio_pct || 0} />
-            ) : (
-              <div className="text-xs text-gray-400">Pending return</div>
-            )}
-            <div className="flex gap-2 mt-2">
-              <Btn size="sm" variant="ghost" onClick={e => { e.stopPropagation(); onViewIssue(issue, "view"); }}>View</Btn>
-              {issue.return?.is_flagged && !issue.return?.manager_reviewed && (
-                <Btn size="sm" variant="danger" onClick={e => { e.stopPropagation(); onViewIssue(issue, "review"); }}>Review</Btn>
-              )}
-              <Btn size="sm" variant="ghost" onClick={e => { e.stopPropagation(); generateSlipPDF(issue, null); }} className="ml-auto">📄 Slip</Btn>
-            </div>
-          </Card>
-        ))}
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-slate-400 font-medium">{filtered.length} record{filtered.length !== 1 ? "s" : ""}</p>
+        {filtered.length !== issues.length && (
+          <button onClick={() => { setStatusFilter(""); setSearch(""); }} className="text-xs text-sky-500 font-semibold">Clear filters</button>
+        )}
       </div>
+
+      {paginated.length === 0 ? (
+        <EmptyState icon="📭" title="No records found" subtitle="Try adjusting your filters" />
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          {paginated.map(issue => (
+            <Card key={issue._id} hoverable className="p-4" onClick={() => onViewIssue(issue, "view")}>
+              {/* Header */}
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black text-sky-600 font-mono tracking-wide">{issue.issue_no}</span>
+                    {issue.return?.is_flagged && !issue.return?.manager_reviewed && (
+                      <Badge variant="red">🚩 Review</Badge>
+                    )}
+                  </div>
+                  <p className="text-sm font-bold text-slate-800 mt-0.5">{issue.job_no}</p>
+                </div>
+                <StatusBadge status={issue.status} />
+              </div>
+
+              {/* Employee + Material */}
+              <div className="flex items-center gap-3 mb-3">
+                <Avatar name={issue.issued_to?.name || "?"} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-slate-700 truncate">{issue.issued_to?.name}</p>
+                  <p className="text-xs text-slate-400">{issue.issued_to?.role}</p>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <p className="text-xs font-semibold text-slate-700 truncate max-w-[100px]">{issue.material?.product_name}</p>
+                  <p className="text-xs text-slate-400">{issue.issued_qty} sqft</p>
+                </div>
+              </div>
+
+              {/* Wastage */}
+              {issue.return ? (
+                <WastageBar pct={issue.return.wastage_ratio_pct || 0} />
+              ) : (
+                <div className="flex items-center gap-2 text-xs text-slate-400">
+                  <div className="flex-1 h-1.5 rounded-full bg-slate-100" />
+                  Pending return
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex gap-2 mt-3 pt-3 border-t border-slate-50">
+                <Btn size="xs" variant="ghost" onClick={e => { e.stopPropagation(); onViewIssue(issue, "view"); }}>
+                  View Details
+                </Btn>
+                {issue.return?.is_flagged && !issue.return?.manager_reviewed && (
+                  <Btn size="xs" variant="danger" onClick={e => { e.stopPropagation(); onViewIssue(issue, "review"); }}>
+                    Review
+                  </Btn>
+                )}
+                <Btn size="xs" variant="ghost" className="ml-auto"
+                  onClick={e => { e.stopPropagation(); generateSlipPDF(issue, null); }}>
+                  📄 Slip
+                </Btn>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {totalPages > 1 && (
-        <div className="flex justify-center gap-1.5 mt-4 pb-4">
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-            <button key={p} onClick={() => setPage(p)}
-              className={`w-8 h-8 text-xs rounded-lg font-semibold transition-all ${p === page ? "bg-blue-600 text-white" : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"}`}>
-              {p}
-            </button>
-          ))}
+        <div className="flex justify-center items-center gap-1.5 pt-2 pb-4">
+          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+            className="w-8 h-8 rounded-lg text-xs font-semibold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+            ‹
+          </button>
+          {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+            const p = Math.min(Math.max(page - 2 + i, 1), totalPages - Math.min(4, totalPages - 1) + i);
+            return (
+              <button key={p} onClick={() => setPage(p)}
+                className={`w-8 h-8 rounded-lg text-xs font-bold transition-all ${p === page ? "bg-slate-900 text-white" : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+                {p}
+              </button>
+            );
+          })}
+          <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+            className="w-8 h-8 rounded-lg text-xs font-semibold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+            ›
+          </button>
         </div>
       )}
     </div>
@@ -835,7 +986,7 @@ const ReportPanel = () => {
   const [loading, setLoading] = useState(false);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const { toast, show: toastShow, dismiss } = useToast();
+  const { toasts, show, dismiss } = useToast();
 
   const fetchReport = useCallback(async () => {
     setLoading(true);
@@ -845,7 +996,7 @@ const ReportPanel = () => {
       if (dateTo) params.append("to", dateTo);
       const res = await api(`/material/report/wastage${params.toString() ? "?" + params.toString() : ""}`);
       setReport(res.data);
-    } catch (e) { toastShow(e.message, "error"); }
+    } catch (e) { show(e.message, "error"); }
     finally { setLoading(false); }
   }, [dateFrom, dateTo]);
 
@@ -854,70 +1005,74 @@ const ReportPanel = () => {
   const o = report?.overall;
 
   return (
-    <div className="space-y-3">
-      {toast && <Toast message={toast.message} type={toast.type} onDismiss={dismiss} />}
-      <Card>
-        <div className="grid grid-cols-2 gap-2 mb-3">
-          <Field label="From"><Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} /></Field>
-          <Field label="To"><Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} /></Field>
+    <div className="space-y-4">
+      <ToastContainer toasts={toasts} dismiss={dismiss} />
+
+      <Card className="p-5">
+        <SectionHeader icon="📊" title="Wastage Report" subtitle="Filter by date range" />
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <Input label="From" type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+          <Input label="To" type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} />
         </div>
-        <Btn variant="primary" onClick={fetchReport} loading={loading} size="sm" className="w-full">Apply filter</Btn>
+        <Btn variant="primary" onClick={fetchReport} loading={loading} fullWidth>Apply Filter</Btn>
       </Card>
 
       {o && (
         <>
-          <div className="grid grid-cols-2 gap-2">
-            <StatCard label="Total issued" value={parseFloat((o.total_issued_qty || 0).toFixed(1))} suffix="sqft" />
-            <StatCard label="Avg wastage" value={(o.avg_wastage_ratio || 0).toFixed(1)} suffix="%" />
-            <StatCard label="Total wastage" value={parseFloat((o.total_actual_wastage || 0).toFixed(1))} suffix="sqft" />
-            <StatCard label="Needs review" value={o.flagged_count || 0} danger={o.flagged_count > 0} />
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <StatTile label="Total Issued" value={parseFloat((o.total_issued_qty || 0).toFixed(1))} suffix="sqft" color="sky" />
+            <StatTile label="Avg Wastage" value={(o.avg_wastage_ratio || 0).toFixed(1)} suffix="%" color="amber" />
+            <StatTile label="Total Wastage" value={parseFloat((o.total_actual_wastage || 0).toFixed(1))} suffix="sqft" />
+            <StatTile label="Needs Review" value={o.flagged_count || 0} color={o.flagged_count > 0 ? "rose" : "emerald"} />
           </div>
-          <div className="grid grid-cols-3 gap-2">
-            {[["Good", o.good_count, "green"], ["Acceptable", o.acceptable_count, "amber"], ["High", o.high_wastage_count, "red"]].map(([l, count, color]) => (
-              <Card key={l} className="text-center">
-                <div className="text-xs text-gray-400 mb-1">{l}</div>
-                <div className="text-2xl font-bold text-gray-800">{count || 0}</div>
-              </Card>
+
+          <div className="grid grid-cols-3 gap-3">
+            {[["✓ Good", o.good_count, "emerald"], ["◆ Acceptable", o.acceptable_count, "amber"], ["▼ High Wastage", o.high_wastage_count, "rose"]].map(([l, count, color]) => (
+              <StatTile key={l} label={l} value={count || 0} color={color} />
             ))}
           </div>
         </>
       )}
 
       {report?.by_employee?.length > 0 && (
-        <Card>
-          <SectionLabel color="blue">Employee performance</SectionLabel>
-          {report.by_employee.map(emp => (
-            <div key={emp._id} className="flex items-center gap-3 py-2.5 border-b border-gray-50 last:border-0">
-              <Avatar name={emp.employee_name || "?"} />
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold text-gray-800 truncate">{emp.employee_name}</div>
-                <div className="text-xs text-gray-400">{emp.total_issues} issues</div>
+        <Card className="p-5">
+          <SectionHeader icon="👥" title="Employee Performance" />
+          <div className="space-y-3">
+            {report.by_employee.map(emp => (
+              <div key={emp._id} className="flex items-center gap-3 py-2 border-b border-slate-50 last:border-0">
+                <Avatar name={emp.employee_name || "?"} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-slate-800 truncate">{emp.employee_name}</p>
+                  <p className="text-xs text-slate-400">{emp.total_issues} issues</p>
+                </div>
+                <div className="w-24 flex-shrink-0"><WastageBar pct={emp.avg_wastage_ratio || 0} /></div>
+                <PerfBadge rating={emp.overall_rating || "acceptable"} />
               </div>
-              <div className="w-20"><WastageBar pct={emp.avg_wastage_ratio || 0} /></div>
-              <PerfBadge rating={emp.overall_rating || "acceptable"} />
-            </div>
-          ))}
+            ))}
+          </div>
         </Card>
       )}
 
       {report?.by_wastage_reason?.length > 0 && (
-        <Card className="pb-6">
-          <SectionLabel color="red">Wastage reasons</SectionLabel>
-          {report.by_wastage_reason.map(r => {
-            const label = WASTAGE_REASONS.find(w => w.value === r._id)?.label || r._id || "Unknown";
-            const max = Math.max(...report.by_wastage_reason.map(x => x.count));
-            return (
-              <div key={r._id} className="mb-3">
-                <div className="flex justify-between text-xs mb-1">
-                  <span className="text-gray-600 font-medium">{label}</span>
-                  <span className="text-gray-400">{r.count}×</span>
+        <Card className="p-5 pb-6">
+          <SectionHeader icon="📉" title="Wastage Reasons" />
+          <div className="space-y-3">
+            {report.by_wastage_reason.map(r => {
+              const label = WASTAGE_REASONS.find(w => w.value === r._id)?.label || r._id || "Unknown";
+              const max = Math.max(...report.by_wastage_reason.map(x => x.count));
+              return (
+                <div key={r._id}>
+                  <div className="flex justify-between text-xs mb-1.5">
+                    <span className="text-slate-600 font-medium">{label}</span>
+                    <span className="text-slate-400 font-semibold">{r.count}×</span>
+                  </div>
+                  <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-slate-700 rounded-full transition-all duration-700" style={{ width: `${(r.count / max) * 100}%` }} />
+                  </div>
                 </div>
-                <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-blue-500 rounded-full" style={{ width: `${(r.count / max) * 100}%` }} />
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </Card>
       )}
     </div>
@@ -925,105 +1080,122 @@ const ReportPanel = () => {
 };
 
 // ─── Issue Detail Modal ───────────────────────────────────────────────────────
-const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved, currentUser }) => {
-  const { toast, show: toastShow, dismiss } = useToast();
-  const { user }   = useSelector((state) => state.authSlice);
+const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
+  const { user } = useSelector((state) => state.authSlice);
+  const { toasts, show, dismiss } = useToast();
   const [override, setOverride] = useState("");
   const [manNotes, setManNotes] = useState("");
   const [loading, setLoading] = useState(false);
   if (!issue) return null;
 
-  const handleReview = async (e) => {
-    e.preventDefault();
+  const handleReview = async () => {
     setLoading(true);
     try {
-      const payload = { manager_by: { user_id: user?._id || "unknown", name: user?.name || "Store Manager" }, manager_notes: manNotes, override_rating: override || null };
+      const payload = {
+        manager_by: { user_id: user?._id || "unknown", name: user?.name || "Store Manager" },
+        manager_notes: manNotes, override_rating: override || null
+      };
       const method = issue.return?.manager_reviewed ? "PUT" : "POST";
       const res = await api(`/material/${issue._id}/review`, { method, body: JSON.stringify(payload) });
-      toastShow(res.message || "Review saved", "success");
+      show(res.message || "Review saved", "success");
       onReviewSaved(issue._id, { manager_notes: manNotes, override_rating: override });
       onClose();
-    } catch (err) { toastShow(err.message, "error"); }
+    } catch (err) { show(err.message, "error"); }
     finally { setLoading(false); }
   };
 
   const r = issue.return;
 
   return (
-    <Modal open title={`${issue.issue_no} · ${issue.job_no}`} onClose={onClose}>
-      {toast && <Toast message={toast.message} type={toast.type} onDismiss={dismiss} />}
+    <Modal open title={`${issue.issue_no} · ${issue.job_no}`} onClose={onClose} size="md">
+      <ToastContainer toasts={toasts} dismiss={dismiss} />
 
-      <div className="mb-4">
-        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Issue summary</div>
-        <div className="space-y-2">
-          {[["Employee", issue.issued_to?.name], ["Material", issue.material?.product_name], ["Issued qty", `${issue.issued_qty} sqft`], ["Dimensions", `${issue.dimensions?.width}ft × ${issue.dimensions?.height}ft`]].map(([k, v]) => (
-            <div key={k} className="flex justify-between items-center py-1.5 border-b border-gray-50">
-              <span className="text-xs text-gray-500">{k}</span>
-              <span className="text-sm font-semibold text-gray-800">{v}</span>
+      <div className="space-y-5">
+        {/* Issue Summary */}
+        <div>
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Issue Summary</p>
+          <div className="space-y-1">
+            {[
+              ["Employee", issue.issued_to?.name],
+              ["Material", issue.material?.product_name],
+              ["Issued Qty", `${issue.issued_qty} sqft`],
+              ["Dimensions", `${issue.dimensions?.width}ft × ${issue.dimensions?.height}ft`],
+            ].map(([k, v]) => (
+              <div key={k} className="flex justify-between items-center py-2 border-b border-slate-50">
+                <span className="text-xs text-slate-400">{k}</span>
+                <span className="text-sm font-semibold text-slate-800">{v}</span>
+              </div>
+            ))}
+            <div className="flex justify-between items-center py-2">
+              <span className="text-xs text-slate-400">Status</span>
+              <StatusBadge status={issue.status} />
             </div>
-          ))}
-          <div className="flex justify-between items-center py-1.5">
-            <span className="text-xs text-gray-500">Status</span>
-            <StatusBadge status={issue.status} />
           </div>
         </div>
-      </div>
 
-      <div className="mb-3">
-        <Btn variant="ghost" size="sm" className="w-full" onClick={() => generateSlipPDF(issue, user)}>
-          📄 Download / Print slip
+        <Btn variant="ghost" size="sm" fullWidth onClick={() => generateSlipPDF(issue, user)}>
+          📄 Download / Print Slip
         </Btn>
-      </div>
 
-      {r && (
-        <>
-          <div className="border-t border-gray-100 pt-4 mb-4">
-            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Return details</div>
-            <div className="space-y-2">
-              {[["Returned", `${r.returned_qty} sqft`], ["Used", `${r.actual_used_qty} sqft`], ["Wastage", `${r.actual_wastage_qty} sqft`], ["Ratio", `${r.wastage_ratio_pct}%`], ["Reason", WASTAGE_REASONS.find(x => x.value === r.wastage_reason)?.label || r.wastage_reason]].map(([k, v]) => (
-                <div key={k} className="flex justify-between py-1.5 border-b border-gray-50">
-                  <span className="text-xs text-gray-500">{k}</span>
-                  <span className="text-sm font-semibold text-gray-800">{v}</span>
+        {/* Return Details */}
+        {r && (
+          <div>
+            <Divider label="Return Details" />
+            <div className="space-y-1">
+              {[
+                ["Returned", `${r.returned_qty} sqft`],
+                ["Used", `${r.actual_used_qty} sqft`],
+                ["Wastage", `${r.actual_wastage_qty} sqft`],
+                ["Ratio", `${r.wastage_ratio_pct}%`],
+                ["Reason", WASTAGE_REASONS.find(x => x.value === r.wastage_reason)?.label || r.wastage_reason],
+              ].map(([k, v]) => (
+                <div key={k} className="flex justify-between py-2 border-b border-slate-50">
+                  <span className="text-xs text-slate-400">{k}</span>
+                  <span className="text-sm font-semibold text-slate-800">{v}</span>
                 </div>
               ))}
-              <div className="flex justify-between py-1.5">
-                <span className="text-xs text-gray-500">Performance</span>
+              <div className="flex justify-between py-2">
+                <span className="text-xs text-slate-400">Performance</span>
                 <PerfBadge rating={r.performance_rating} />
               </div>
             </div>
+
             {r.is_flagged && (
-              <div className={`mt-3 px-3 py-2 rounded-lg text-xs font-medium ${r.manager_reviewed ? "bg-gray-50 text-gray-600" : "bg-red-50 text-red-700"}`}>
-                {r.manager_reviewed ? "✓ Reviewed by manager" : "⚑ Flagged · pending review"}
+              <div className={`mt-3 flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold ${r.manager_reviewed ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
+                {r.manager_reviewed ? "✓ Reviewed by manager" : "🚩 Flagged · pending review"}
               </div>
             )}
           </div>
+        )}
 
-          {mode === "review" && (
-            <div className="border-t border-gray-100 pt-4">
-              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Manager review</div>
-              <Field label="Override rating">
-                <SelectInput value={override} onChange={setOverride} placeholder="Keep auto-rating"
-                  options={[{ value: "good", label: "Good" }, { value: "acceptable", label: "Acceptable" }, { value: "high_wastage", label: "High wastage" }]} />
-              </Field>
-              <Field label="Notes">
+        {/* Manager Review */}
+        {mode === "review" && r && (
+          <div>
+            <Divider label="Manager Review" />
+            <div className="space-y-3">
+              <Select label="Override Rating" value={override} onChange={setOverride}
+                placeholder="Keep auto-rating"
+                options={[{ value: "good", label: "Good" }, { value: "acceptable", label: "Acceptable" }, { value: "high_wastage", label: "High Wastage" }]} />
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Manager Notes</label>
                 <textarea value={manNotes} onChange={e => setManNotes(e.target.value)} rows={3}
-                  className="w-full px-3 py-2.5 text-sm bg-white border border-gray-200 rounded-xl outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all resize-none"
+                  className="w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-400 transition-all resize-none"
                   placeholder="Explain the override rationale…" />
-              </Field>
-              <Btn onClick={handleReview} variant="primary" loading={loading} className="w-full">Save review</Btn>
+              </div>
+              <Btn variant="primary" onClick={handleReview} loading={loading} fullWidth>
+                Save Review
+              </Btn>
             </div>
-          )}
-        </>
-      )}
+          </div>
+        )}
+      </div>
     </Modal>
   );
 };
 
-// ─── Root component ───────────────────────────────────────────────────────────
+// ─── Root Component ────────────────────────────────────────────────────────────
 export default function MaterialIssueManager() {
-  // Replace this with useSelector from Redux in your app:
-    const { user }   = useSelector((state) => state.authSlice);
-  const currentUser = { _id: user?._id, name: user?.name, role: user?.role };
+  const { user } = useSelector((state) => state.authSlice);
 
   const [tab, setTab] = useState("issue");
   const [issues, setIssues] = useState([]);
@@ -1032,41 +1204,47 @@ export default function MaterialIssueManager() {
   const [issLoading, setIssLoading] = useState(false);
   const [modalIssue, setModalIssue] = useState(null);
   const [modalMode, setModalMode] = useState("view");
-  const { toast, show: toastShow, dismiss } = useToast();
+  const { toasts, show, dismiss } = useToast();
 
   const fetchProducts = useCallback(async () => {
     try { const res = await api("/product/get_product"); setProducts(res.data || []); } catch { }
   }, []);
+
   const fetchEmployees = useCallback(async () => {
-    try { const res = await api("/admin/get_admin"); setEmployees(res.data || []); } catch { }
+    try { 
+      const res = await api("/admin/get_admin"); 
+      const pro_team = res.data?.filter(e => e.role === "production team") || [];
+      setEmployees(pro_team || []); 
+    } catch { }
   }, []);
+
   const fetchIssues = useCallback(async () => {
     setIssLoading(true);
     try { const res = await api("/material?limit=100"); setIssues(res.data?.issues || []); }
-    catch (e) { toastShow(e.message, "error"); }
+    catch (e) { show(e.message, "error"); }
     finally { setIssLoading(false); }
   }, []);
 
   useEffect(() => { fetchProducts(); fetchEmployees(); fetchIssues(); }, []);
-const handleIssued = async (newIssue, productId, qty) => {
-  setIssues(prev => [newIssue, ...prev]);
-  setProducts(prev => prev.map(p => p._id === productId ? { ...p, stock_count: Math.max(0, (p.stock_count || 0) - qty) } : p));
 
-  // Update job status to "production" when material is issued
-  try {
-    await api(`/jobs/${newIssue.job_id}/status`, {
-      method: "PATCH",
-      body: JSON.stringify({ job_status: "production" }),
-    });
-  } catch (err) {
-    toastShow(`Material issued, but failed to update job status: ${err.message}`, "warning");
-  }
+  const handleIssued = async (newIssue, productId, qty) => {
+    setIssues(prev => [newIssue, ...prev]);
+    setProducts(prev => prev.map(p => p._id === productId ? { ...p, stock_count: Math.max(0, (p.stock_count || 0) - qty) } : p));
+    try {
+      await api(`/jobs/${newIssue.job_id}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ job_status: "production" }),
+      });
+    } catch (err) {
+      show(`Material issued, but failed to update job status: ${err.message}`, "warning");
+    }
+    setTab("issues");
+  };
 
-  setTab("issues");
-};
   const handleReturned = (issueId, data) => {
     setIssues(prev => prev.map(i => i._id === issueId ? { ...i, status: data.status || "returned", return: data } : i));
   };
+
   const handleReviewSaved = (issueId, data) => {
     setIssues(prev => prev.map(i =>
       i._id === issueId && i.return
@@ -1087,69 +1265,129 @@ const handleIssued = async (newIssue, productId, qty) => {
 
   const TABS = [
     { key: "issue", label: "Issue", icon: "📋" },
-    { key: "issues", label: "Records", icon: "📦", count: issues.length },
-    { key: "returns", label: "Return", icon: "↩", count: stats.pending },
+    { key: "issues", label: "Records", icon: "📦", badge: issues.length },
+    { key: "returns", label: "Returns", icon: "↩", badge: stats.pending, badgeColor: stats.pending > 0 ? "bg-amber-500" : "" },
     { key: "report", label: "Report", icon: "📊" },
   ];
 
   return (
-    <div className="min- bg-gray-50 flex flex-col max-w-lg lg:max-w-7xl mx-auto relative">
-      {toast && <Toast message={toast.message} type={toast.type} onDismiss={dismiss} />}
+    <>
+      <style>{`
+        @keyframes slide-up {
+          from { opacity: 0; transform: translateY(12px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-slide-up { animation: slide-up 0.25s ease-out; }
+      `}</style>
 
-      {/* Header */}
-      <div className="bg-white border-b border-gray-100 px-4 pt-12 pb-4 sticky top-0 z-30">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-bold text-gray-900 leading-tight">Material Issuance</h1>
-            <p className="text-xs text-gray-400 mt-0.5">Flex roll & print tracker</p>
+      <div className="min-h-screen bg-slate-50 flex flex-col">
+        <ToastContainer toasts={toasts} dismiss={dismiss} />
+
+        {/* ── Header ─────────────────────────────────────────── */}
+        <header className="bg-white border-b border-slate-100 sticky top-0 z-30 shadow-sm">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            {/* Top bar */}
+            <div className="flex items-center justify-between py-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-slate-900 flex items-center justify-center flex-shrink-0">
+                  <span className="text-white text-xs font-black">DM</span>
+                </div>
+                <div>
+                  <h1 className="text-base font-black text-slate-900 leading-tight tracking-tight">Material Issuance</h1>
+                  <p className="text-xs text-slate-400 hidden sm:block">Flex roll & print tracker</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                {stats.flagged > 0 && (
+                  <button onClick={() => setTab("issues")}
+                    className="flex items-center gap-1.5 bg-rose-50 border border-rose-100 rounded-full px-3 py-1.5 transition-colors hover:bg-rose-100">
+                    <div className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                    <span className="text-xs font-bold text-rose-600">{stats.flagged} to review</span>
+                  </button>
+                )}
+                {user?.name && (
+                  <div className="hidden sm:flex items-center gap-2">
+                    <Avatar name={user.name} size="sm" />
+                    <span className="text-xs font-semibold text-slate-600">{user.name}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Stats strip */}
+            <div className="grid grid-cols-4 gap-2 pb-3">
+              {[
+                { label: "Issued", value: stats.totalIssued, suffix: "sqft", color: "text-sky-600" },
+                { label: "Pending", value: stats.pending, suffix: "", color: stats.pending > 0 ? "text-amber-600" : "text-slate-700" },
+                { label: "Avg Waste", value: `${stats.avgWaste}%`, suffix: "", color: stats.avgWaste > 20 ? "text-rose-600" : "text-slate-700" },
+                { label: "Review", value: stats.flagged, suffix: "", color: stats.flagged > 0 ? "text-rose-600" : "text-slate-700" },
+              ].map(s => (
+                <div key={s.label} className="bg-slate-50 rounded-xl px-3 py-2 text-center border border-slate-100">
+                  <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">{s.label}</p>
+                  <p className={`text-sm font-black ${s.color}`}>{s.value}<span className="text-[10px] font-normal text-slate-400 ml-0.5">{s.suffix}</span></p>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop tab bar */}
+            <div className="hidden sm:flex gap-1 pb-0">
+              {TABS.map(t => (
+                <button key={t.key} onClick={() => setTab(t.key)}
+                  className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-t-xl transition-all relative border-b-2 ${
+                    tab === t.key
+                      ? "text-slate-900 border-slate-900 bg-slate-50"
+                      : "text-slate-400 border-transparent hover:text-slate-600 hover:bg-slate-50"
+                  }`}>
+                  <span>{t.icon}</span>
+                  <span>{t.label}</span>
+                  {t.badge > 0 && (
+                    <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${t.badgeColor || "bg-slate-200 text-slate-600"} ${t.badgeColor ? "text-white" : ""}`}>
+                      {t.badge > 99 ? "99+" : t.badge}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
           </div>
-          {stats.flagged > 0 && (
-            <div className="flex items-center gap-1.5 bg-red-50 border border-red-100 rounded-full px-3 py-1.5">
-              <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-              <span className="text-xs font-semibold text-red-600">{stats.flagged} review</span>
-            </div>
-          )}
-        </div>
+        </header>
 
-        {/* Stats strip */}
-        <div className="grid grid-cols-4 gap-2 mt-3">
-          {[["Issued", `${stats.totalIssued}`, "sqft"], ["Pending", `${stats.pending}`, ""], ["Waste", `${stats.avgWaste}%`, ""], ["Review", `${stats.flagged}`, ""]].map(([l, v, s]) => (
-            <div key={l} className="bg-gray-50 rounded-xl p-2 text-center">
-              <div className="text-xs text-gray-400 truncate">{l}</div>
-              <div className="text-base font-bold text-gray-800">{v}<span className="text-xs font-normal text-gray-400">{s}</span></div>
-            </div>
-          ))}
-        </div>
+        {/* ── Main Content ──────────────────────────────────── */}
+        <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-4 pb-24 sm:pb-6">
+          {tab === "issue" && <IssuePanel products={products} employees={employees} onIssued={handleIssued} />}
+          {tab === "issues" && <IssuesPanel issues={issues} onViewIssue={(i, m) => { setModalIssue(i); setModalMode(m); }} onRefresh={fetchIssues} loading={issLoading} />}
+          {tab === "returns" && <ReturnPanel issues={issues} employees={employees} onReturned={handleReturned} />}
+          {tab === "report" && <ReportPanel />}
+        </main>
+
+        {/* ── Mobile Bottom Nav ─────────────────────────────── */}
+        <nav className="sm:hidden fixed bottom-0 inset-x-0 bg-white border-t border-slate-100 z-30 shadow-[0_-1px_20px_rgba(0,0,0,0.06)]">
+          <div className="grid grid-cols-4 max-w-md mx-auto">
+            {TABS.map(t => (
+              <button key={t.key} onClick={() => setTab(t.key)}
+                className={`flex flex-col items-center gap-1 py-3 px-2 relative transition-all ${tab === t.key ? "text-slate-900" : "text-slate-400"}`}>
+                {tab === t.key && (
+                  <div className="absolute top-0 left-1/4 right-1/4 h-0.5 bg-slate-900 rounded-full" />
+                )}
+                <span className="text-xl leading-none">{t.icon}</span>
+                <span className="text-[10px] font-bold">{t.label}</span>
+                {t.badge > 0 && (
+                  <span className={`absolute top-2 right-3 min-w-[16px] h-4 rounded-full text-[9px] font-black flex items-center justify-center px-1 ${t.badgeColor ? `${t.badgeColor} text-white` : "bg-slate-200 text-slate-600"}`}>
+                    {t.badge > 9 ? "9+" : t.badge}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </nav>
+
+        <IssueDetailModal
+          issue={modalIssue}
+          mode={modalMode}
+          onClose={() => setModalIssue(null)}
+          onReviewSaved={handleReviewSaved}
+        />
       </div>
-
-      {/* Tab content */}
-      <div className="flex-1 px-3 pt-3 pb-24 overflow-y-auto">
-        {tab === "issue" && <IssuePanel products={products} employees={employees} onIssued={handleIssued} currentUser={currentUser} />}
-        {tab === "issues" && <IssuesPanel issues={issues} onViewIssue={(i, m) => { setModalIssue(i); setModalMode(m); }} onRefresh={fetchIssues} loading={issLoading} />}
-        {tab === "returns" && <ReturnPanel issues={issues} employees={employees} onReturned={handleReturned} currentUser={currentUser} />}
-        {tab === "report" && <ReportPanel />}
-      </div>
-
-      {/* Bottom nav */}
-      <div className="fixed bottom-0 left-0 right-0 max-w-lg lg:max-w-7xl mx-auto bg-white border-t border-gray-100 px-2 pb-safe z-30">
-        <div className="grid grid-cols-4">
-          {TABS.map(t => (
-            <button key={t.key} onClick={() => setTab(t.key)}
-              className={`flex flex-col items-center gap-0.5 py-3 px-1 relative transition-all ${tab === t.key ? "text-blue-600" : "text-gray-400"}`}>
-              <span className="text-xl leading-none">{t.icon}</span>
-              <span className="text-[10px] font-semibold">{t.label}</span>
-              {t.count > 0 && (
-                <span className={`absolute top-2 right-3 w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center ${tab === t.key ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-600"}`}>
-                  {t.count > 9 ? "9+" : t.count}
-                </span>
-              )}
-              {tab === t.key && <div className="absolute top-0 left-1/4 right-1/4 h-0.5 bg-blue-600 rounded-full" />}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <IssueDetailModal issue={modalIssue} mode={modalMode} onClose={() => setModalIssue(null)} onReviewSaved={handleReviewSaved} currentUser={currentUser} />
-    </div>
+    </>
   );
 }

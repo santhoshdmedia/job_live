@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
   Button, Tag, Modal, Input, Spin, Empty,
-  Tooltip, Divider, message, Popconfirm,
+  Tooltip, Divider, message, Popconfirm, Alert,
 } from "antd";
 import {
   ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined,
@@ -9,7 +9,8 @@ import {
   FileImageOutlined, UserOutlined,
   ShoppingCartOutlined, CalendarOutlined, PhoneOutlined,
   ReloadOutlined, PauseCircleOutlined,
-  HistoryOutlined, DownloadOutlined,
+  HistoryOutlined, DownloadOutlined, CloudUploadOutlined,
+  WarningOutlined, LinkOutlined, PictureOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import duration from "dayjs/plugin/duration";
@@ -32,6 +33,63 @@ const profile    = () => {
   try { return JSON.parse(localStorage.getItem("userprofile") || "{}"); } catch { return {}; }
 };
 const BASE = "https://job-server-cocj.onrender.com/api/jobs";
+
+// ─── Google Drive shared folder ID for design uploads (configure this) ────────
+// Set this to your shared Google Drive folder ID where designers upload originals.
+// The folder should be shared with "Anyone with the link can upload".
+const DRIVE_FOLDER_ID = "118wOyN-T0N9IZbiQUER7khCOaEH9GfRQ"; // ← replace with actual folder ID
+
+// ─── Image compression utility ────────────────────────────────────────────────
+/**
+ * Compresses an image File/Blob to a JPEG under maxSizeBytes.
+ * Returns a { blob, dataUrl, sizeKB } object.
+ */
+const compressImage = (file, maxSizeBytes = 900 * 1024) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let quality  = 0.85;
+        let scale    = 1;
+
+        // Downscale if very large (keep aspect ratio)
+        const MAX_DIM = 2400;
+        if (img.width > MAX_DIM || img.height > MAX_DIM) {
+          scale = MAX_DIM / Math.max(img.width, img.height);
+        }
+        canvas.width  = Math.round(img.width  * scale);
+        canvas.height = Math.round(img.height * scale);
+
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        const tryCompress = (q) => {
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) { reject(new Error("Canvas compression failed")); return; }
+              if (blob.size <= maxSizeBytes || q <= 0.2) {
+                const url = URL.createObjectURL(blob);
+                resolve({ blob, dataUrl: url, sizeKB: Math.round(blob.size / 1024) });
+              } else {
+                tryCompress(Math.max(q - 0.12, 0.2));
+              }
+            },
+            "image/jpeg",
+            q
+          );
+        };
+
+        tryCompress(quality);
+      };
+      img.onerror = reject;
+      img.src     = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+};
 
 // ─── Status config ─────────────────────────────────────────────────────────────
 const STATUS = {
@@ -62,7 +120,6 @@ const StatusBadge = ({ status }) => {
 const DailySummaryBar = ({ dailySummary = [], totalSecs = 0, workedDays = 0 }) => {
   if (!dailySummary.length) return null;
   const maxSecs = Math.max(...dailySummary.map(d => d.seconds), 1);
-
   return (
     <div style={{
       background: "#f0f9ff", border: "1px solid #bae6fd",
@@ -125,9 +182,8 @@ const SessionStatusPill = ({ sessionData }) => {
 };
 
 // ─── Design File Preview ───────────────────────────────────────────────────────
-const DesignFilePreview = ({ fileUrl, label = "Uploaded Design" }) => {
+const DesignFilePreview = ({ fileUrl, label = "Uploaded Design", isSample = false }) => {
   if (!fileUrl) return null;
-
   const isImage = /\.(png|jpe?g|gif|webp|svg|bmp)(\?.*)?$/i.test(fileUrl);
   const isPdf   = /\.pdf(\?.*)?$/i.test(fileUrl);
 
@@ -139,83 +195,253 @@ const DesignFilePreview = ({ fileUrl, label = "Uploaded Design" }) => {
       const ext      = fileUrl.split("?")[0].split(".").pop() || "file";
       const filename = `design_${Date.now()}.${ext}`;
       const a        = document.createElement("a");
-      a.href         = url;
-      a.download     = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch {
-      // fallback: open in new tab
-      window.open(fileUrl, "_blank");
-    }
+      a.href         = url; a.download = filename;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(url);
+    } catch { window.open(fileUrl, "_blank"); }
   };
 
   return (
     <div style={{
-      border: "1px solid #c4b5fd", borderRadius: 10,
+      border: `1px solid ${isSample ? "#a5b4fc" : "#c4b5fd"}`, borderRadius: 10,
       overflow: "hidden", marginBottom: 14,
-      background: "#faf5ff",
+      background: isSample ? "#f0f0ff" : "#faf5ff",
     }}>
       <div style={{
         padding: "8px 12px",
-        background: "linear-gradient(135deg,#7c3aed,#9333ea)",
+        background: isSample
+          ? "linear-gradient(135deg,#4f46e5,#6366f1)"
+          : "linear-gradient(135deg,#7c3aed,#9333ea)",
         display: "flex", justifyContent: "space-between", alignItems: "center",
       }}>
         <span style={{ fontSize: 11, fontWeight: 700, color: "#f5f3ff", letterSpacing: "0.05em" }}>
-          <FileImageOutlined style={{ marginRight: 5 }} />{label}
+          {isSample
+            ? <><PictureOutlined style={{ marginRight: 5 }} />Sample Preview (≤1 MB)</>
+            : <><FileImageOutlined style={{ marginRight: 5 }} />{label}</>
+          }
         </span>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <a
-            href={fileUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              fontSize: 10, color: "#e9d5ff", fontWeight: 600,
-              display: "flex", alignItems: "center", gap: 4,
-              textDecoration: "none",
-            }}
-          >
+          <a href={fileUrl} target="_blank" rel="noopener noreferrer"
+            style={{ fontSize: 10, color: "#e9d5ff", fontWeight: 600, display: "flex", alignItems: "center", gap: 4, textDecoration: "none" }}>
             <EyeOutlined /> Open
           </a>
-          <span
-            onClick={handleDownload}
-            style={{
-              fontSize: 10, color: "#e9d5ff", fontWeight: 600,
-              display: "flex", alignItems: "center", gap: 4,
-              cursor: "pointer",
-            }}
-          >
+          <span onClick={handleDownload}
+            style={{ fontSize: 10, color: "#e9d5ff", fontWeight: 600, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
             <DownloadOutlined /> Download
           </span>
         </div>
       </div>
-
       {isImage ? (
-        <div style={{ padding: 10, textAlign: "center", background: "#f5f3ff" }}>
-          <img
-            src={fileUrl}
-            alt="Design preview"
-            style={{
-              maxWidth: "100%", maxHeight: 220,
-              objectFit: "contain", borderRadius: 6,
-              boxShadow: "0 2px 8px rgba(124,58,237,0.15)",
-            }}
-          />
+        <div style={{ padding: 10, textAlign: "center", background: isSample ? "#eef0ff" : "#f5f3ff" }}>
+          <img src={fileUrl} alt="Design preview"
+            style={{ maxWidth: "100%", maxHeight: 220, objectFit: "contain", borderRadius: 6, boxShadow: "0 2px 8px rgba(124,58,237,0.15)" }} />
+          {isSample && (
+            <div style={{ fontSize: 10, color: "#6366f1", fontWeight: 600, marginTop: 6 }}>
+              ℹ Compressed preview — upload original via Google Drive below
+            </div>
+          )}
         </div>
       ) : isPdf ? (
         <div style={{ padding: "10px 12px", fontSize: 12, color: "#6b7280" }}>
-          📄 PDF file —{" "}
-          <a href={fileUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#7c3aed" }}>
-            Click to view
-          </a>
+          📄 PDF file — <a href={fileUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#7c3aed" }}>Click to view</a>
         </div>
       ) : (
         <div style={{ padding: "10px 12px", fontSize: 12, color: "#6b7280" }}>
-          📎 File attached —{" "}
-          <a href={fileUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#7c3aed" }}>
-            Download / View
-          </a>
+          📎 File attached — <a href={fileUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#7c3aed" }}>Download / View</a>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── Google Drive Upload Section ──────────────────────────────────────────────
+/**
+ * Renders a panel that:
+ * 1. Opens the shared Drive folder so the designer can upload the original file.
+ * 2. Lets them paste back the Drive share link so it's saved with the job.
+ * 3. Shows a 48-hour auto-cleanup warning.
+ */
+const DriveUploadSection = ({ jobNo, driveLinkValue, onDriveLinkChange }) => {
+  const driveUrl = DRIVE_FOLDER_ID !== "YOUR_GOOGLE_DRIVE_FOLDER_ID"
+    ? `https://drive.google.com/drive/folders/${DRIVE_FOLDER_ID}`
+    : "https://drive.google.com"; // fallback to Drive home if not configured
+
+  return (
+    <div style={{
+      border: "1px solid #fbbf24", borderRadius: 12,
+      overflow: "hidden", marginBottom: 16,
+    }}>
+      {/* Header */}
+      <div style={{
+        padding: "10px 14px",
+        background: "linear-gradient(135deg,#d97706,#f59e0b)",
+        display: "flex", alignItems: "center", gap: 8,
+      }}>
+        <CloudUploadOutlined style={{ color: "#fffbeb", fontSize: 16 }} />
+        <span style={{ fontWeight: 800, color: "#fffbeb", fontSize: 12, letterSpacing: "0.04em" }}>
+          Original Quality — Google Drive Upload
+        </span>
+      </div>
+
+      <div style={{ padding: "12px 14px", background: "#fffbeb" }}>
+        {/* 48-hr cleanup warning */}
+        <div style={{
+          display: "flex", alignItems: "flex-start", gap: 8,
+          background: "#fef2f2", border: "1px solid #fca5a5",
+          borderRadius: 8, padding: "8px 10px", marginBottom: 12,
+        }}>
+          <WarningOutlined style={{ color: "#ef4444", fontSize: 13, marginTop: 1, flexShrink: 0 }} />
+          <div style={{ fontSize: 11, color: "#991b1b", lineHeight: 1.5 }}>
+            <strong>Auto-cleanup in 48 hours.</strong> Files uploaded to the shared Drive folder are
+            automatically deleted after 48 hours to keep storage clean.
+            Download or move the original to permanent storage before then.
+          </div>
+        </div>
+
+        {/* Steps */}
+        <div style={{ marginBottom: 12 }}>
+          {[
+            { n: "1", text: "Click the button below to open the shared Drive folder" },
+            { n: "2", text: `Upload your original high-quality design file for job ${jobNo}` },
+            { n: "3", text: 'Right-click the file → "Get link" → copy and paste it below' },
+          ].map(({ n, text }) => (
+            <div key={n} style={{ display: "flex", gap: 8, marginBottom: 6, alignItems: "flex-start" }}>
+              <span style={{
+                width: 18, height: 18, borderRadius: "50%",
+                background: "#f59e0b", color: "#fff",
+                fontSize: 10, fontWeight: 800, display: "flex",
+                alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1,
+              }}>{n}</span>
+              <span style={{ fontSize: 12, color: "#374151" }}>{text}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Open Drive button */}
+        <Button
+          icon={<CloudUploadOutlined />}
+          onClick={() => window.open(driveUrl, "_blank")}
+          style={{
+            width: "100%", height: 36, marginBottom: 10,
+            background: "#1a73e8", border: "none", borderRadius: 8,
+            color: "#fff", fontWeight: 700, fontSize: 12,
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+          }}
+        >
+          Open Shared Drive Folder
+        </Button>
+
+        {/* Paste drive link */}
+        <label style={{
+          display: "block", fontSize: 10, fontWeight: 700, color: "#6b7280",
+          marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em",
+        }}>
+          <LinkOutlined style={{ marginRight: 4 }} />Paste Drive Share Link (optional)
+        </label>
+        <Input
+          placeholder="https://drive.google.com/file/d/..."
+          value={driveLinkValue}
+          onChange={e => onDriveLinkChange(e.target.value)}
+          style={{ borderRadius: 8, borderColor: "#fcd34d", fontSize: 12 }}
+          prefix={<LinkOutlined style={{ color: "#f59e0b" }} />}
+        />
+        {driveLinkValue && (
+          <div style={{ marginTop: 6, fontSize: 11, color: "#16a34a", display: "flex", alignItems: "center", gap: 4 }}>
+            <CheckCircleOutlined /> Drive link recorded — will be saved with the job.
+          </div>
+        )}
+
+        {/* 48hr countdown note */}
+        <div style={{
+          marginTop: 10, fontSize: 10, color: "#92400e",
+          textAlign: "center", fontStyle: "italic",
+        }}>
+          ⏱ Drive files auto-deleted 48 hrs after upload — save originals elsewhere promptly.
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Compressed Sample Upload Panel ───────────────────────────────────────────
+/**
+ * Wraps file selection + in-browser compression.
+ * Calls onSampleReady({ blob, dataUrl, sizeKB }) when compression succeeds.
+ * Calls onFileSelected(file) with the original file reference.
+ */
+const SampleUploadPanel = ({ onSampleReady, onFileSelected, sampleInfo }) => {
+  const [compressing, setCompressing] = useState(false);
+  const inputRef = useRef();
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const isImage = file.type.startsWith("image/");
+    onFileSelected(file);
+
+    if (isImage) {
+      setCompressing(true);
+      try {
+        const result = await compressImage(file, 900 * 1024); // 900 KB target
+        onSampleReady(result);
+        message.success(`Sample compressed to ${result.sizeKB} KB`);
+      } catch (err) {
+        message.error("Compression failed: " + err.message);
+      } finally {
+        setCompressing(false);
+      }
+    } else {
+      // For non-image files (PDF etc.) skip compression
+      onSampleReady(null);
+    }
+    // Reset input so same file can be re-selected
+    e.target.value = "";
+  };
+
+  return (
+    <div style={{
+      border: "2px dashed #c4b5fd", borderRadius: 10,
+      padding: "14px", background: "#faf5ff", marginBottom: 10,
+      textAlign: "center", cursor: "pointer",
+      transition: "border-color 0.2s",
+    }}
+      onClick={() => inputRef.current?.click()}
+      onDragOver={e => e.preventDefault()}
+      onDrop={e => {
+        e.preventDefault();
+        const file = e.dataTransfer.files?.[0];
+        if (file) {
+          const synth = { target: { files: [file] } };
+          handleFileChange(synth);
+        }
+      }}
+    >
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*,.pdf"
+        style={{ display: "none" }}
+        onChange={handleFileChange}
+      />
+      {compressing ? (
+        <div style={{ color: "#7c3aed", fontSize: 12 }}>
+          <Spin size="small" style={{ marginRight: 8 }} />Compressing to sample…
+        </div>
+      ) : sampleInfo ? (
+        <div style={{ color: "#16a34a", fontSize: 12, fontWeight: 600 }}>
+          <CheckCircleOutlined style={{ marginRight: 6 }} />
+          Sample ready ({sampleInfo.sizeKB} KB) — click to replace
+        </div>
+      ) : (
+        <div>
+          <UploadOutlined style={{ fontSize: 22, color: "#7c3aed", marginBottom: 6 }} />
+          <div style={{ fontSize: 12, color: "#7c3aed", fontWeight: 600 }}>
+            Click or drag design file here
+          </div>
+          <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 4 }}>
+            Images auto-compressed to ≤1 MB sample · PDF accepted as-is
+          </div>
         </div>
       )}
     </div>
@@ -228,7 +454,6 @@ const JobCard = ({ job, sessionData, onOpenSession, onCloseSession, onViewUpload
   const isOverdue  = delivDate && delivDate.isBefore(dayjs());
   const isLive     = sessionData?.has_open_session;
   const isOnHold   = job.job_status === "on_hold";
-  const isAccepted = job.job_status === "accepted";
   const hasDesign  = !!(job.design_file || job.cart_items?.some(i => i.design_file));
 
   return (
@@ -238,7 +463,6 @@ const JobCard = ({ job, sessionData, onOpenSession, onCloseSession, onViewUpload
       boxShadow: isLive ? "0 0 0 2px #dcfce7, 0 4px 12px rgba(0,0,0,0.08)" : "0 2px 8px rgba(0,0,0,0.06)",
       overflow: "hidden", transition: "all 0.2s",
     }}>
-      {/* Top bar */}
       <div style={{
         padding: "10px 14px",
         background: isLive
@@ -249,9 +473,7 @@ const JobCard = ({ job, sessionData, onOpenSession, onCloseSession, onViewUpload
         <span style={{
           fontFamily: "monospace", fontWeight: 800, fontSize: 13,
           color: isLive ? "#bbf7d0" : "#93c5fd", letterSpacing: "0.05em",
-        }}>
-          {job.job_no}
-        </span>
+        }}>{job.job_no}</span>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           {isLive && (
             <span style={{
@@ -263,9 +485,7 @@ const JobCard = ({ job, sessionData, onOpenSession, onCloseSession, onViewUpload
         </div>
       </div>
 
-      {/* Body */}
       <div style={{ padding: "12px 14px" }}>
-        {/* Customer */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
           <div style={{
             width: 34, height: 34, borderRadius: "50%",
@@ -279,8 +499,7 @@ const JobCard = ({ job, sessionData, onOpenSession, onCloseSession, onViewUpload
               {job.customer_name || "—"}
             </div>
             <div style={{ fontSize: 11, color: "#6b7280", display: "flex", alignItems: "center", gap: 4 }}>
-              <PhoneOutlined style={{ fontSize: 10 }} />
-              {job.customer_phone || "—"}
+              <PhoneOutlined style={{ fontSize: 10 }} />{job.customer_phone || "—"}
             </div>
           </div>
           <div style={{ marginLeft: "auto" }}>
@@ -288,7 +507,6 @@ const JobCard = ({ job, sessionData, onOpenSession, onCloseSession, onViewUpload
           </div>
         </div>
 
-        {/* Items */}
         <div style={{
           background: "#f8fafc", borderRadius: 8,
           padding: "8px 10px", marginBottom: 10, border: "1px solid #e5e7eb",
@@ -315,7 +533,6 @@ const JobCard = ({ job, sessionData, onOpenSession, onCloseSession, onViewUpload
           )}
         </div>
 
-        {/* Time logged */}
         {sessionData && (sessionData.total_duration_seconds > 0 || sessionData.worked_days > 0) && (
           <div style={{
             display: "flex", justifyContent: "space-between",
@@ -333,7 +550,6 @@ const JobCard = ({ job, sessionData, onOpenSession, onCloseSession, onViewUpload
           </div>
         )}
 
-        {/* Delivery */}
         <div style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 11, color: isOverdue ? "#ef4444" : "#6b7280" }}>
             <CalendarOutlined style={{ marginRight: 4 }} />
@@ -342,14 +558,11 @@ const JobCard = ({ job, sessionData, onOpenSession, onCloseSession, onViewUpload
           </div>
         </div>
 
-        {/* Design status badge if exists */}
         {hasDesign && (
           <div style={{
             fontSize: 11, color: "#7c3aed", fontWeight: 600,
-            marginBottom: 10,
-            background: "#faf5ff", border: "1px solid #c4b5fd",
-            borderRadius: 6, padding: "4px 8px",
-            display: "inline-block",
+            marginBottom: 10, background: "#faf5ff", border: "1px solid #c4b5fd",
+            borderRadius: 6, padding: "4px 8px", display: "inline-block",
           }}>
             <FileImageOutlined style={{ marginRight: 4 }} />
             Design Uploaded
@@ -359,29 +572,24 @@ const JobCard = ({ job, sessionData, onOpenSession, onCloseSession, onViewUpload
           </div>
         )}
 
-        {/* Actions */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {!isLive && (
             <Button
-              type="primary"
-              icon={<PlayCircleOutlined />}
-              size="small"
+              type="primary" icon={<PlayCircleOutlined />} size="small"
               onClick={() => onOpenSession(job)}
               style={{
                 flex: 1, minWidth: 90, height: 32, fontWeight: 600, fontSize: 12,
-                background: isOnHold ? "#d97706" : "#1e40af",
+                background: job.job_status === "on_hold" ? "#d97706" : "#1e40af",
                 border: "none", borderRadius: 8,
               }}
             >
-              {isOnHold ? "Resume" : "Start"}
+              {job.job_status === "on_hold" ? "Resume" : "Start"}
             </Button>
           )}
 
           {isLive && (
             <Button
-              icon={<PauseCircleOutlined />}
-              size="small"
-              danger
+              icon={<PauseCircleOutlined />} size="small" danger
               onClick={() => onCloseSession(job, "on_hold")}
               style={{ flex: 1, minWidth: 90, height: 32, fontWeight: 600, fontSize: 12, borderRadius: 8 }}
             >
@@ -397,8 +605,7 @@ const JobCard = ({ job, sessionData, onOpenSession, onCloseSession, onViewUpload
               okButtonProps={{ style: { background: "#16a34a", border: "none" } }}
             >
               <Button
-                icon={<CheckCircleOutlined />}
-                size="small"
+                icon={<CheckCircleOutlined />} size="small"
                 style={{
                   flex: 1, minWidth: 90, height: 32, fontWeight: 600, fontSize: 12,
                   borderRadius: 8, color: "#16a34a", borderColor: "#86efac", background: "#f0fdf4",
@@ -411,13 +618,8 @@ const JobCard = ({ job, sessionData, onOpenSession, onCloseSession, onViewUpload
 
           <Tooltip title="Upload / View Design">
             <Button
-              icon={<UploadOutlined />}
-              size="small"
-              onClick={() => onViewUpload(job)}
-              style={{
-                height: 32, borderRadius: 8,
-                color: "#7c3aed", borderColor: "#c4b5fd", background: "#faf5ff",
-              }}
+              icon={<UploadOutlined />} size="small" onClick={() => onViewUpload(job)}
+              style={{ height: 32, borderRadius: 8, color: "#7c3aed", borderColor: "#c4b5fd", background: "#faf5ff" }}
             >
               Design
             </Button>
@@ -448,15 +650,21 @@ const DesignerJobDashboard = () => {
   const [actioning, setActioning]         = useState(false);
 
   // Design modal
-  const [designModal, setDesignModal]         = useState(false);
-  const [designJob, setDesignJob]             = useState(null);
-  const [designFilePath, setDesignFilePath]   = useState("");   // path from UploadHelper
-  const [designNotes, setDesignNotes]         = useState("");
-  const [uploading, setUploading]             = useState(false);
-  const [approving, setApproving]             = useState(false);
-  const [rejecting, setRejecting]             = useState(false);
-  const [rejectReason, setRejectReason]       = useState("");
-  const [showRejectInput, setShowRejectInput] = useState(false);
+  const [designModal, setDesignModal]           = useState(false);
+  const [designJob, setDesignJob]               = useState(null);
+  const [designFilePath, setDesignFilePath]     = useState("");   // path from UploadHelper (sample)
+  const [designNotes, setDesignNotes]           = useState("");
+  const [uploading, setUploading]               = useState(false);
+  const [approving, setApproving]               = useState(false);
+  const [rejecting, setRejecting]               = useState(false);
+  const [rejectReason, setRejectReason]         = useState("");
+  const [showRejectInput, setShowRejectInput]   = useState(false);
+
+  // New: sample compression + drive link
+  const [sampleInfo, setSampleInfo]           = useState(null);   // { blob, dataUrl, sizeKB }
+  const [originalFile, setOriginalFile]       = useState(null);   // original File object
+  const [driveLink, setDriveLink]             = useState("");      // pasted Drive share link
+  const [samplePreviewUrl, setSamplePreviewUrl] = useState("");    // compressed preview URL
 
   // Live timers
   const [liveTimers, setLiveTimers] = useState({});
@@ -530,11 +738,10 @@ const DesignerJobDashboard = () => {
     return (entry.base || 0) + (entry.currentSessionSecs || 0);
   };
 
-  // ─── Open session ─────────────────────────────────────────────────────────
+  // ─── Open / Close session ─────────────────────────────────────────────────
   const handleOpenSession = (job) => {
     setPendingAction({ job, action: "open" });
-    setActionNotes("");
-    setNotesModal(true);
+    setActionNotes(""); setNotesModal(true);
   };
 
   const confirmOpenSession = async () => {
@@ -555,18 +762,13 @@ const DesignerJobDashboard = () => {
       setNotesModal(false);
       startLiveTimer(job._id, new Date(), sessionMap[job._id]?.total_duration_seconds || 0);
       await loadJobs();
-    } catch (err) {
-      message.error(err.message);
-    } finally {
-      setActioning(false);
-    }
+    } catch (err) { message.error(err.message); }
+    finally { setActioning(false); }
   };
 
-  // ─── Close session ────────────────────────────────────────────────────────
   const handleCloseSession = (job, action) => {
     setPendingAction({ job, action });
-    setActionNotes("");
-    setNotesModal(true);
+    setActionNotes(""); setNotesModal(true);
   };
 
   const confirmCloseSession = async () => {
@@ -588,11 +790,8 @@ const DesignerJobDashboard = () => {
       setNotesModal(false);
       stopLiveTimer(job._id);
       await loadJobs();
-    } catch (err) {
-      message.error(err.message);
-    } finally {
-      setActioning(false);
-    }
+    } catch (err) { message.error(err.message); }
+    finally { setActioning(false); }
   };
 
   const handleConfirmAction = () => {
@@ -605,21 +804,36 @@ const DesignerJobDashboard = () => {
   const openDesignModal = (job) => {
     setDesignJob(job);
     setDesignFilePath(job.design_file || "");
-    setDesignNotes("");
-    setShowRejectInput(false);
-    setRejectReason("");
+    setDesignNotes(""); setShowRejectInput(false); setRejectReason("");
+    setSampleInfo(null); setOriginalFile(null); setDriveLink(job.design_drive_link || "");
+    setSamplePreviewUrl("");
     setDesignModal(true);
   };
 
   const closeDesignModal = () => {
-    setDesignModal(false);
-    setDesignJob(null);
-    setDesignFilePath("");
+    // Revoke any object URLs created for sample preview
+    if (sampleInfo?.dataUrl) URL.revokeObjectURL(sampleInfo.dataUrl);
+    setDesignModal(false); setDesignJob(null);
+    setDesignFilePath(""); setSampleInfo(null); setOriginalFile(null);
+    setDriveLink(""); setSamplePreviewUrl("");
   };
 
-  // ─── Upload design (path already set by UploadHelper) ────────────────────
+  // Handle compression result from SampleUploadPanel
+  const handleSampleReady = (info) => {
+    if (sampleInfo?.dataUrl) URL.revokeObjectURL(sampleInfo.dataUrl);
+    setSampleInfo(info);
+    setSamplePreviewUrl(info?.dataUrl || "");
+    // We don't automatically set designFilePath here —
+    // the designer must upload via UploadHelper to get a server path.
+    // But we show the local compressed preview immediately.
+  };
+
+  // ─── Upload design ────────────────────────────────────────────────────────
   const handleUploadDesign = async () => {
-    if (!designFilePath) { message.warning("Please upload a design file first"); return; }
+    if (!designFilePath && !samplePreviewUrl) {
+      message.warning("Please upload a design file first");
+      return;
+    }
     setUploading(true);
     try {
       const liveSecs = getLiveDisplaySecs(designJob._id);
@@ -627,27 +841,26 @@ const DesignerJobDashboard = () => {
         method: "POST", headers: jsonHeader(),
         body: JSON.stringify({
           design_file:       designFilePath,
+          design_drive_link: driveLink || null,  // ← save drive link alongside
           notes:             designNotes,
           duration_seconds:  liveSecs,
           duration_display:  fmtSecs(liveSecs),
           handled_by:        { user_id: userId, name: userName },
           stage:             designJob.current_stage?.stage || "design",
+          is_sample:         true,  // flag indicating the stored file is compressed
         }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.message || "Upload failed");
-      message.success("Design saved successfully!");
+      message.success("Design saved! Sample stored; original available via Drive link.");
       stopLiveTimer(designJob._id);
       closeDesignModal();
       loadJobs();
-    } catch (err) {
-      message.error(err.message);
-    } finally {
-      setUploading(false);
-    }
+    } catch (err) { message.error(err.message); }
+    finally { setUploading(false); }
   };
 
-  const updateStutusAfterDesignUpload = async (newStatus) => {
+  const updateStatusAfterDesignUpload = async (newStatus) => {
     try {
       const res  = await fetch(`${BASE}/${designJob._id}/status`, {
         method: "PATCH", headers: jsonHeader(),
@@ -655,9 +868,7 @@ const DesignerJobDashboard = () => {
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.message || "Status update failed");
-    } catch (err) {
-      message.error("Failed to update design status: " + err.message);
-    }
+    } catch (err) { message.error("Failed to update design status: " + err.message); }
   };
 
   const handleApproveDesign = async () => {
@@ -669,15 +880,11 @@ const DesignerJobDashboard = () => {
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.message || "Approval failed");
-      await updateStutusAfterDesignUpload("production");
+      await updateStatusAfterDesignUpload("production");
       message.success("Design approved!");
-      closeDesignModal();
-      loadJobs();
-    } catch (err) {
-      message.error(err.message);
-    } finally {
-      setApproving(false);
-    }
+      closeDesignModal(); loadJobs();
+    } catch (err) { message.error(err.message); }
+    finally { setApproving(false); }
   };
 
   const handleRejectDesign = async () => {
@@ -691,23 +898,18 @@ const DesignerJobDashboard = () => {
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.message || "Rejection failed");
       message.success("Design rejected with feedback.");
-      closeDesignModal();
-      loadJobs();
-    } catch (err) {
-      message.error(err.message);
-    } finally {
-      setRejecting(false);
-    }
+      closeDesignModal(); loadJobs();
+    } catch (err) { message.error(err.message); }
+    finally { setRejecting(false); }
   };
 
-  // Derived values for design modal
+  // Derived values
   const existingDesignFile = designJob?.design_file;
   const cartDesignFile     = designJob?.cart_items?.find(i => i.design_file)?.design_file;
   const hasExistingDesign  = !!(existingDesignFile || cartDesignFile);
   const designSessData     = designJob ? sessionMap[designJob._id] : null;
   const designLiveSecs     = designJob ? getLiveDisplaySecs(designJob._id) : 0;
-
-  const liveCount = Object.values(sessionMap).filter(s => s?.has_open_session).length;
+  const liveCount          = Object.values(sessionMap).filter(s => s?.has_open_session).length;
 
   return (
     <div style={{
@@ -838,12 +1040,9 @@ const DesignerJobDashboard = () => {
                 pendingAction?.action === "completed" ? "#16a34a" : "#1e40af",
               border: "none",
             }}
-          >
-            Confirm
-          </Button>,
+          >Confirm</Button>,
         ]}
-        width={440}
-        destroyOnClose
+        width={440} destroyOnClose
       >
         {pendingAction?.job && (() => {
           const sessData = sessionMap[pendingAction.job._id];
@@ -896,9 +1095,7 @@ const DesignerJobDashboard = () => {
               <label style={{
                 display: "block", fontSize: 11, fontWeight: 700, color: "#6b7280",
                 marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em",
-              }}>
-                Notes (optional)
-              </label>
+              }}>Notes (optional)</label>
               <TextArea
                 rows={3}
                 placeholder={
@@ -931,9 +1128,9 @@ const DesignerJobDashboard = () => {
           </div>
         }
         footer={null}
-        width={580}
+        width={600}
         destroyOnClose
-        styles={{ body: { maxHeight: "80vh", overflowY: "auto", padding: "16px 20px" } }}
+        styles={{ body: { maxHeight: "82vh", overflowY: "auto", padding: "16px 20px" } }}
       >
         {designJob && (
           <div>
@@ -1013,7 +1210,7 @@ const DesignerJobDashboard = () => {
               />
             )}
 
-            {/* ── Reference / cart design files preview ── */}
+            {/* Reference design files from cart */}
             {(designJob.cart_items || []).some(i => i.design_file) && (
               <>
                 <div style={{
@@ -1032,34 +1229,78 @@ const DesignerJobDashboard = () => {
               </>
             )}
 
-            {/* ── Upload Design section using UploadHelper ── */}
-            <div style={{ marginBottom: 16 }}>
+            {/* ── Divider: two-track upload ── */}
+            <Divider style={{ margin: "4px 0 14px" }}>
+              <span style={{ fontSize: 11, color: "#6b7280", fontWeight: 600 }}>Design Upload</span>
+            </Divider>
+
+            {/* Two-column explanation banner */}
+            <div style={{
+              display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14,
+            }}>
+              <div style={{
+                background: "#f5f3ff", border: "1px solid #c4b5fd",
+                borderRadius: 8, padding: "8px 10px", fontSize: 11, color: "#5b21b6",
+              }}>
+                <strong style={{ display: "block", marginBottom: 3 }}>
+                  <PictureOutlined style={{ marginRight: 4 }} />Sample (stored in system)
+                </strong>
+                Compressed JPEG ≤ 1 MB for quick preview inside the app.
+              </div>
+              <div style={{
+                background: "#fffbeb", border: "1px solid #fcd34d",
+                borderRadius: 8, padding: "8px 10px", fontSize: 11, color: "#78350f",
+              }}>
+                <strong style={{ display: "block", marginBottom: 3 }}>
+                  <CloudUploadOutlined style={{ marginRight: 4 }} />Original (Google Drive)
+                </strong>
+                Full-quality file on Drive. Auto-deleted after 48 hrs.
+              </div>
+            </div>
+
+            {/* ── Track 1: Sample upload ── */}
+            <div style={{ marginBottom: 6 }}>
               <div style={{
                 fontSize: 10, fontWeight: 700, color: "#6b7280",
                 textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8,
               }}>
-                <UploadOutlined style={{ marginRight: 4 }} />
-                {existingDesignFile ? "Update Design File" : "Upload Design File"}
+                <PictureOutlined style={{ marginRight: 4 }} />
+                {existingDesignFile ? "Update Sample File" : "Upload Sample File"} (auto-compressed ≤ 1 MB)
               </div>
 
-              {/* Show existing uploaded design preview */}
-              {existingDesignFile && (
-                <DesignFilePreview fileUrl={existingDesignFile} label="Current Uploaded Design" />
+              {/* Show existing sample preview */}
+              {existingDesignFile && !samplePreviewUrl && (
+                <DesignFilePreview fileUrl={existingDesignFile} label="Current Sample" isSample />
               )}
 
-              {/* UploadHelper replaces old Upload.Dragger */}
-              <UploadHelper
-                setImagePath={(path) => setDesignFilePath(path)}
-                image_path={designFilePath}
+              {/* Show live compressed preview */}
+              {samplePreviewUrl && (
+                <DesignFilePreview fileUrl={samplePreviewUrl} label="New Sample Preview" isSample />
+              )}
+
+              {/* Compression-aware upload panel */}
+              <SampleUploadPanel
+                onSampleReady={handleSampleReady}
+                onFileSelected={setOriginalFile}
+                sampleInfo={sampleInfo}
               />
 
-              <div style={{ marginTop: 10 }}>
+              {/* UploadHelper to actually push compressed sample to server */}
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4, fontStyle: "italic" }}>
+                  After selecting your file above, use the uploader below to save the sample to the server:
+                </div>
+                <UploadHelper
+                  setImagePath={(path) => setDesignFilePath(path)}
+                  image_path={designFilePath}
+                />
+              </div>
+
+              <div style={{ marginTop: 6 }}>
                 <label style={{
                   display: "block", fontSize: 10, fontWeight: 700, color: "#6b7280",
                   marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em",
-                }}>
-                  Upload Notes
-                </label>
+                }}>Upload Notes</label>
                 <TextArea
                   rows={2}
                   placeholder="Describe the design, version notes…"
@@ -1070,10 +1311,9 @@ const DesignerJobDashboard = () => {
               </div>
 
               <Button
-                type="primary"
-                icon={<UploadOutlined />}
+                type="primary" icon={<UploadOutlined />}
                 loading={uploading}
-                disabled={!designFilePath}
+                disabled={!designFilePath && !samplePreviewUrl}
                 onClick={handleUploadDesign}
                 style={{
                   marginTop: 10, width: "100%", height: 38,
@@ -1081,10 +1321,50 @@ const DesignerJobDashboard = () => {
                   borderRadius: 8, fontWeight: 600,
                 }}
               >
-                {existingDesignFile ? "Update Design" : "Save Design"}
+                {existingDesignFile ? "Update Sample" : "Save Sample"}
                 {designLiveSecs > 0 && ` (${fmtSecs(designLiveSecs)} logged)`}
               </Button>
             </div>
+
+            {/* ── Track 2: Google Drive upload ── */}
+            <div style={{ marginTop: 16 }}>
+              <DriveUploadSection
+                jobNo={designJob.job_no}
+                driveLinkValue={driveLink}
+                onDriveLinkChange={setDriveLink}
+              />
+            </div>
+
+            {/* Save Drive link separately if already saved a sample */}
+            {driveLink && existingDesignFile && (
+              <Button
+                icon={<LinkOutlined />}
+                onClick={async () => {
+                  try {
+                    const res = await fetch(`${BASE}/${designJob._id}/upload_design`, {
+                      method: "POST", headers: jsonHeader(),
+                      body: JSON.stringify({
+                        design_file:       designJob.design_file,
+                        design_drive_link: driveLink,
+                        handled_by:        { user_id: userId, name: userName },
+                        stage:             designJob.current_stage?.stage || "design",
+                      }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok || !data.success) throw new Error(data.message);
+                    message.success("Drive link saved!");
+                    loadJobs();
+                  } catch (err) { message.error(err.message); }
+                }}
+                style={{
+                  width: "100%", height: 34, marginBottom: 14,
+                  borderRadius: 8, fontWeight: 600, fontSize: 12,
+                  color: "#d97706", borderColor: "#fcd34d", background: "#fffbeb",
+                }}
+              >
+                Save Drive Link (without re-uploading sample)
+              </Button>
+            )}
 
             {/* ── Approve / Reject ── */}
             {hasExistingDesign && (
@@ -1115,21 +1395,14 @@ const DesignerJobDashboard = () => {
                       okButtonProps={{ style: { background: "#16a34a", border: "none" } }}
                     >
                       <Button
-                        type="primary"
-                        icon={<CheckCircleOutlined />}
-                        loading={approving}
+                        type="primary" icon={<CheckCircleOutlined />} loading={approving}
                         style={{ flex: 1, height: 38, background: "#16a34a", border: "none", borderRadius: 8, fontWeight: 600 }}
-                      >
-                        Approve Design
-                      </Button>
+                      >Approve Design</Button>
                     </Popconfirm>
                     <Button
-                      icon={<CloseCircleOutlined />}
-                      onClick={() => setShowRejectInput(true)}
+                      icon={<CloseCircleOutlined />} onClick={() => setShowRejectInput(true)}
                       style={{ flex: 1, height: 38, color: "#ef4444", borderColor: "#fca5a5", borderRadius: 8, fontWeight: 600 }}
-                    >
-                      Reject Design
-                    </Button>
+                    >Reject Design</Button>
                   </div>
                 ) : (
                   <div style={{
@@ -1151,19 +1424,14 @@ const DesignerJobDashboard = () => {
                     />
                     <div style={{ display: "flex", gap: 8 }}>
                       <Button
-                        danger icon={<CloseCircleOutlined />}
-                        loading={rejecting}
+                        danger icon={<CloseCircleOutlined />} loading={rejecting}
                         onClick={handleRejectDesign}
                         style={{ flex: 1, borderRadius: 8, fontWeight: 600 }}
-                      >
-                        Confirm Reject
-                      </Button>
+                      >Confirm Reject</Button>
                       <Button
                         onClick={() => { setShowRejectInput(false); setRejectReason(""); }}
                         style={{ borderRadius: 8 }}
-                      >
-                        Back
-                      </Button>
+                      >Back</Button>
                     </div>
                   </div>
                 )}

@@ -11,6 +11,7 @@ import Productionuploadpanel from "../pages/Productionuploadpanel";
 import DeliveryPanel from "../pages/DeliveryPanel";
 import MyJobs from "../pages/Myjobs";
 import QualityCheckDashboard from "../pages/QualityCheckDashboard";
+import ErectionPanel from "../pages/Erectionpanel";
 
 // Wrapper component for permission-protected routes
 const ProtectedRoute = ({ children, pageName }) => (
@@ -97,6 +98,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute pageName="delivery-panel">
             <DeliveryPanel />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "erection-panel",
+        element: (
+          <ProtectedRoute pageName="erection-panel">
+            <ErectionPanel />
           </ProtectedRoute>
         ),
       },
