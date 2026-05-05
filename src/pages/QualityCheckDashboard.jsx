@@ -1,20 +1,17 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   Button, Tag, Modal, Input, Spin, Empty,
   Tooltip, Divider, message, Popconfirm, Image,
 } from "antd";
 import {
-  ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined,
-  PlayCircleOutlined, EyeOutlined, FileImageOutlined,
+  CheckCircleOutlined, CloseCircleOutlined,
+  EyeOutlined, FileImageOutlined,
   UserOutlined, CameraOutlined, ShoppingCartOutlined,
-  CalendarOutlined, PhoneOutlined, ReloadOutlined,
-  PauseCircleOutlined, HistoryOutlined, DeleteOutlined, DownloadOutlined,
+  CalendarOutlined, ReloadOutlined,
+  DeleteOutlined, DownloadOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
-import duration from "dayjs/plugin/duration";
 import CapUploadHelper from "../helper/CapUploadHelper";
-
-dayjs.extend(duration);
 
 const { TextArea } = Input;
 
@@ -22,12 +19,6 @@ const { TextArea } = Input;
 // Constants & Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 const BASE = "https://job-server-cocj.onrender.com/api/jobs";
-
-const pad     = (n) => String(n).padStart(2, "0");
-const fmtSecs = (s) => {
-  s = Math.max(0, Math.floor(s));
-  return `${pad(Math.floor(s / 3600))}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}`;
-};
 
 const authHeader = () => ({
   Authorization: `Bearer ${localStorage.getItem("authToken")}`,
@@ -41,11 +32,6 @@ const profile = () => {
   catch { return {}; }
 };
 
-/**
- * Resolve any image/file URL to a full absolute URL.
- * - If already absolute (http/https), return as-is.
- * - If a relative path starting with /, prepend the API origin.
- */
 const resolveUrl = (url) => {
   if (!url) return "";
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
@@ -84,80 +70,6 @@ const StatusBadge = ({ status }) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DailySummaryBar
-// ─────────────────────────────────────────────────────────────────────────────
-const DailySummaryBar = ({ dailySummary = [], totalSecs = 0, workedDays = 0 }) => {
-  if (!dailySummary.length) return null;
-  const maxSecs = Math.max(...dailySummary.map((d) => d.seconds), 1);
-  return (
-    <div style={{
-      background: "#f0f9ff", border: "1px solid #bae6fd",
-      borderRadius: 10, padding: "10px 12px", marginBottom: 12,
-    }}>
-      <div style={{
-        fontSize: 10, fontWeight: 700, color: "#0369a1",
-        textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8,
-        display: "flex", justifyContent: "space-between",
-      }}>
-        <span>
-          <HistoryOutlined style={{ marginRight: 4 }} />
-          Inspection History ({workedDays} day{workedDays !== 1 ? "s" : ""})
-        </span>
-        <span style={{ color: "#1e40af" }}>Total: {fmtSecs(totalSecs)}</span>
-      </div>
-      {dailySummary.map((day, i) => {
-        const pct = Math.round((day.seconds / maxSecs) * 100);
-        return (
-          <div key={day.date} style={{ marginBottom: i < dailySummary.length - 1 ? 6 : 0 }}>
-            <div style={{
-              display: "flex", justifyContent: "space-between",
-              fontSize: 11, color: "#374151", marginBottom: 2, fontWeight: 600,
-            }}>
-              <span>Day {i + 1} — {dayjs(day.date).format("DD MMM")}</span>
-              <span style={{ color: "#0369a1" }}>{day.display}</span>
-            </div>
-            <div style={{ height: 6, background: "#e0f2fe", borderRadius: 4, overflow: "hidden" }}>
-              <div style={{
-                height: "100%", width: `${pct}%`,
-                background: "linear-gradient(90deg, #3b82f6, #0ea5e9)",
-                borderRadius: 4, transition: "width 0.4s ease",
-              }} />
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SessionStatusPill
-// ─────────────────────────────────────────────────────────────────────────────
-const SessionStatusPill = ({ sessionData }) => {
-  if (!sessionData) return null;
-  const hasOpen = sessionData.has_open_session;
-  return (
-    <div style={{
-      display: "inline-flex", alignItems: "center", gap: 5,
-      padding: "2px 8px", borderRadius: 12,
-      background: hasOpen ? "#dcfce7" : "#fef3c7",
-      border: `1px solid ${hasOpen ? "#86efac" : "#fcd34d"}`,
-      fontSize: 10, fontWeight: 700,
-      color: hasOpen ? "#16a34a" : "#92400e",
-    }}>
-      <span style={{
-        width: 5, height: 5, borderRadius: "50%",
-        background: hasOpen ? "#16a34a" : "#f59e0b",
-        animation: hasOpen ? "pulse 1.5s infinite" : "none",
-      }} />
-      {hasOpen
-        ? "Inspecting Live"
-        : `${sessionData.worked_days || 0} day${(sessionData.worked_days || 0) !== 1 ? "s" : ""} logged`}
-    </div>
-  );
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
 // DesignFilePreview
 // ─────────────────────────────────────────────────────────────────────────────
 const DesignFilePreview = ({ fileUrl, label = "Reference Design" }) => {
@@ -189,7 +101,6 @@ const DesignFilePreview = ({ fileUrl, label = "Reference Design" }) => {
       border: "1px solid #c4b5fd", borderRadius: 10,
       overflow: "hidden", marginBottom: 14, background: "#faf5ff",
     }}>
-      {/* Header bar */}
       <div style={{
         padding: "8px 12px",
         background: "linear-gradient(135deg, #7c3aed, #9333ea)",
@@ -210,7 +121,6 @@ const DesignFilePreview = ({ fileUrl, label = "Reference Design" }) => {
         </div>
       </div>
 
-      {/* Content */}
       {isImage ? (
         <div style={{ padding: 10, textAlign: "center", background: "#f5f3ff" }}>
           <img
@@ -275,52 +185,37 @@ const QCImageGallery = ({ images = [], onRemove, readonly = false }) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // QCJobCard
 // ─────────────────────────────────────────────────────────────────────────────
-const QCJobCard = ({ job, sessionData, onOpenSession, onCloseSession, onOpenQCModal }) => {
+const QCJobCard = ({ job, onOpenQCModal }) => {
   const delivDate = job.estimated_delivery_date ? dayjs(job.estimated_delivery_date) : null;
   const isOverdue = delivDate && delivDate.isBefore(dayjs());
-  const isLive    = sessionData?.has_open_session;
   const hasPhotos = (job.qc_images || []).length > 0;
   const hasDesign = !!(job.design_file || job.cart_items?.some((i) => i.design_file));
 
   return (
     <div style={{
       background: "#fff", borderRadius: 14,
-      border: `1px solid ${isLive ? "#86efac" : "#e5e7eb"}`,
-      boxShadow: isLive
-        ? "0 0 0 2px #dcfce7, 0 4px 12px rgba(0,0,0,0.08)"
-        : "0 2px 8px rgba(0,0,0,0.06)",
+      border: "1px solid #e5e7eb",
+      boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
       overflow: "hidden", transition: "all 0.2s",
     }}>
       {/* Card header */}
       <div style={{
         padding: "10px 14px",
-        background: isLive
-          ? "linear-gradient(135deg, #14532d 0%, #16a34a 100%)"
-          : "linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%)",
+        background: "linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%)",
         display: "flex", justifyContent: "space-between", alignItems: "center",
       }}>
         <span style={{
           fontFamily: "monospace", fontWeight: 800, fontSize: 13,
-          color: isLive ? "#bbf7d0" : "#93c5fd",
+          color: "#93c5fd",
         }}>
           {job.job_no}
         </span>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {isLive && (
-            <span style={{
-              fontSize: 10, fontWeight: 700, color: "#bbf7d0",
-              background: "rgba(255,255,255,0.15)", padding: "1px 7px", borderRadius: 10,
-            }}>
-              ● LIVE
-            </span>
-          )}
-          <StatusBadge status={job.job_status} />
-        </div>
+        <StatusBadge status={job.job_status} />
       </div>
 
       <div style={{ padding: "12px 14px" }}>
         {/* Customer */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
           <div style={{
             width: 34, height: 34, borderRadius: "50%", background: "#eff6ff",
             display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
@@ -331,12 +226,9 @@ const QCJobCard = ({ job, sessionData, onOpenSession, onCloseSession, onOpenQCMo
             <div style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>
               {job.customer_name || "—"}
             </div>
-            <div style={{ fontSize: 11, color: "#6b7280", display: "flex", alignItems: "center", gap: 4 }}>
-              <PhoneOutlined style={{ fontSize: 10 }} />{job.customer_phone || "—"}
+            <div style={{ fontSize: 11, color: "#6b7280" }}>
+              📞 {job.customer_phone || "—"}
             </div>
-          </div>
-          <div style={{ marginLeft: "auto" }}>
-            <SessionStatusPill sessionData={sessionData} />
           </div>
         </div>
 
@@ -372,24 +264,6 @@ const QCJobCard = ({ job, sessionData, onOpenSession, onCloseSession, onOpenQCMo
           )}
         </div>
 
-        {/* Time logged */}
-        {sessionData && (sessionData.total_duration_seconds > 0 || sessionData.worked_days > 0) && (
-          <div style={{
-            display: "flex", justifyContent: "space-between",
-            background: "#f0f9ff", border: "1px solid #bae6fd",
-            borderRadius: 8, padding: "6px 10px", marginBottom: 10, fontSize: 11,
-          }}>
-            <span style={{ color: "#0369a1", fontWeight: 600 }}>
-              <ClockCircleOutlined style={{ marginRight: 4 }} />
-              {fmtSecs(sessionData.total_duration_seconds)} logged
-            </span>
-            <span>
-              {sessionData.worked_days} day{sessionData.worked_days !== 1 ? "s" : ""} ·{" "}
-              {sessionData.closed_sessions} session{sessionData.closed_sessions !== 1 ? "s" : ""}
-            </span>
-          </div>
-        )}
-
         {/* Delivery date */}
         <div style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 11, color: isOverdue ? "#ef4444" : "#6b7280" }}>
@@ -414,21 +288,19 @@ const QCJobCard = ({ job, sessionData, onOpenSession, onCloseSession, onOpenQCMo
         )}
 
         {/* Actions */}
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Tooltip title="Upload QC Photos / Inspect / Pass / Fail">
-            <Button
-              icon={<CameraOutlined />}
-              size="small"
-              onClick={() => onOpenQCModal(job)}
-              style={{
-                flex: 1, height: 32, borderRadius: 8,
-                color: "#7c3aed", borderColor: "#c4b5fd", background: "#faf5ff",
-              }}
-            >
-              QC Inspection
-            </Button>
-          </Tooltip>
-        </div>
+        <Button
+          icon={<CameraOutlined />}
+          size="small"
+          block
+          onClick={() => onOpenQCModal(job)}
+          style={{
+            height: 34, borderRadius: 8,
+            color: "#7c3aed", borderColor: "#c4b5fd", background: "#faf5ff",
+            fontWeight: 600,
+          }}
+        >
+          QC Inspection
+        </Button>
       </div>
     </div>
   );
@@ -445,7 +317,6 @@ const QualityCheckDashboard = () => {
   // ── Data state
   const [jobs, setJobs]               = useState([]);
   const [loading, setLoading]         = useState(false);
-  const [sessionMap, setSessionMap]   = useState({});
   const [lastRefresh, setLastRefresh] = useState(dayjs());
 
   // ── QC modal state
@@ -458,16 +329,6 @@ const QualityCheckDashboard = () => {
   const [rejectReason, setRejectReason]       = useState("");
   const [showRejectInput, setShowRejectInput] = useState(false);
 
-  // ── Session notes modal state
-  const [notesModal, setNotesModal]       = useState(false);
-  const [pendingAction, setPendingAction] = useState(null);
-  const [actionNotes, setActionNotes]     = useState("");
-  const [actioning, setActioning]         = useState(false);
-
-  // ── Live timers
-  const [liveTimers, setLiveTimers] = useState({});
-  const timerRefs                   = useRef({});
-
   // ─── Load jobs ─────────────────────────────────────────────────────────────
   const loadJobs = useCallback(async () => {
     if (!userId) return;
@@ -475,140 +336,17 @@ const QualityCheckDashboard = () => {
     try {
       const res  = await fetch(`${BASE}/assigned-to/${userId}`, { headers: authHeader() });
       const data = await res.json();
-
       const rows = Array.isArray(data?.data) ? data.data : [];
-      const filtered = rows.filter((j) => j.job_status === "quality_check");
-      setJobs(filtered);
+      setJobs(rows.filter((j) => j.job_status === "quality_check"));
       setLastRefresh(dayjs());
-
-      const map = {};
-      await Promise.all(
-        rows.map(async (j) => {
-          try {
-            const sr = await fetch(`${BASE}/${j._id}/session/status?stage=quality_check`, {
-              headers: authHeader(),
-            });
-            const sd = await sr.json();
-            if (sd.success) map[j._id] = sd.data;
-          } catch { /* ignore per-job errors */ }
-        })
-      );
-      setSessionMap(map);
-
-      // Start live timers for any open sessions
-      for (const [jobId, sess] of Object.entries(map)) {
-        if (sess.has_open_session && sess.open_since && !timerRefs.current[jobId]) {
-          startLiveTimer(jobId, new Date(sess.open_since), sess.total_duration_seconds || 0);
-        }
-      }
     } catch (err) {
       message.error("Failed to load QC jobs: " + (err.message || "Network error"));
     } finally {
       setLoading(false);
     }
-  }, [userId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [userId]);
 
   useEffect(() => { loadJobs(); }, [loadJobs]);
-
-  // ─── Live timer helpers ────────────────────────────────────────────────────
-  const startLiveTimer = (jobId, sessionStartedAt, previousTotalSecs = 0) => {
-    if (timerRefs.current[jobId]) return;
-    setLiveTimers((prev) => ({ ...prev, [jobId]: { startedAt: sessionStartedAt, base: previousTotalSecs } }));
-    timerRefs.current[jobId] = setInterval(() => {
-      setLiveTimers((prev) => {
-        const entry = prev[jobId];
-        if (!entry) return prev;
-        const sessionSecs = Math.floor((Date.now() - new Date(entry.startedAt).getTime()) / 1000);
-        return { ...prev, [jobId]: { ...entry, currentSessionSecs: sessionSecs } };
-      });
-    }, 1000);
-  };
-
-  const stopLiveTimer = (jobId) => {
-    clearInterval(timerRefs.current[jobId]);
-    delete timerRefs.current[jobId];
-    setLiveTimers((prev) => { const next = { ...prev }; delete next[jobId]; return next; });
-  };
-
-  useEffect(() => () => { Object.values(timerRefs.current).forEach(clearInterval); }, []);
-
-  const getLiveDisplaySecs = (jobId) => {
-    const entry = liveTimers[jobId];
-    if (!entry) return sessionMap[jobId]?.total_duration_seconds || 0;
-    return (entry.base || 0) + (entry.currentSessionSecs || 0);
-  };
-
-  // ─── Session open / close ──────────────────────────────────────────────────
-  const handleOpenSession = (job) => {
-    setPendingAction({ job, action: "open" });
-    setActionNotes("");
-    setNotesModal(true);
-  };
-
-  const confirmOpenSession = async () => {
-    const { job } = pendingAction;
-    setActioning(true);
-    try {
-      const res = await fetch(`${BASE}/${job._id}/session/open`, {
-        method:  "POST",
-        headers: jsonHeader(),
-        body: JSON.stringify({
-          stage:       "quality_check",
-          stage_label: "Quality Check",
-          user:        { user_id: userId, name: userName, role: "quality team" },
-          notes:       actionNotes,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.message || "Failed to open session");
-      message.success(`Inspection started for ${job.job_no}`);
-      setNotesModal(false);
-      startLiveTimer(job._id, new Date(), sessionMap[job._id]?.total_duration_seconds || 0);
-      await loadJobs();
-    } catch (err) {
-      message.error(err.message);
-    } finally {
-      setActioning(false);
-    }
-  };
-
-  const handleCloseSession = (job, action) => {
-    setPendingAction({ job, action });
-    setActionNotes("");
-    setNotesModal(true);
-  };
-
-  const confirmCloseSession = async () => {
-    const { job, action } = pendingAction;
-    setActioning(true);
-    try {
-      const res = await fetch(`${BASE}/${job._id}/session/close`, {
-        method:  "POST",
-        headers: jsonHeader(),
-        body: JSON.stringify({ stage: "quality_check", action, notes: actionNotes }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.message || "Failed to close session");
-
-      const msgs = {
-        on_hold: `Paused! ${data.data?.stage_summary?.total_duration_display || ""} logged.`,
-        passed:  `Quality passed! Total: ${data.data?.stage_summary?.total_duration_display || ""} across ${data.data?.stage_summary?.worked_days || 0} days.`,
-      };
-      message.success(msgs[action] || data.message);
-      setNotesModal(false);
-      stopLiveTimer(job._id);
-      await loadJobs();
-    } catch (err) {
-      message.error(err.message);
-    } finally {
-      setActioning(false);
-    }
-  };
-
-  const handleConfirmAction = () => {
-    if (!pendingAction) return;
-    pendingAction.action === "open" ? confirmOpenSession() : confirmCloseSession();
-  };
 
   // ─── QC Modal helpers ──────────────────────────────────────────────────────
   const openQCModal = (job) => {
@@ -631,11 +369,6 @@ const QualityCheckDashboard = () => {
     setShowRejectInput(false);
   };
 
-  /**
-   * CapUploadHelper calls setImagePath with the full array.
-   * In multiple mode it sends [{ key, path }...], in single mode a plain string.
-   * We normalise to an array of plain URL strings.
-   */
   const handleNewImageAdded = (val) => {
     if (Array.isArray(val)) {
       setNewImageUrls(val.map((v) => (typeof v === "string" ? v : v.path)).filter(Boolean));
@@ -648,34 +381,25 @@ const QualityCheckDashboard = () => {
     setNewImageUrls((prev) => prev.filter((_, i) => i !== idx));
 
   // ─── Save QC data ──────────────────────────────────────────────────────────
-  /**
-   * Flow:
-   *  1. Save photos + notes via POST /qc/update (always)
-   *  2a. If "passed"  → POST /qc/pass  → PATCH /status { job_status: "delivery" }
-   *  2b. If "failed"  → POST /qc/fail
-   *  2c. Otherwise    → save only, no status change
-   */
   const saveQCData = async (passOrFail = null) => {
     if (!currentJob) return;
     setSaving(true);
     try {
-      // ── Step 1: Save photos + notes ──────────────────────────────────────
+      // Step 1: Save photos + notes
       const saveRes = await fetch(`${BASE}/${currentJob._id}/qc/update`, {
         method:  "POST",
         headers: jsonHeader(),
         body: JSON.stringify({
-          qc_notes:         qcNotes,
-          qc_images:        newImageUrls,
-          duration_seconds: getLiveDisplaySecs(currentJob._id),
-          duration_display: fmtSecs(getLiveDisplaySecs(currentJob._id)),
-          handled_by:       { user_id: userId, name: userName },
+          qc_notes:   qcNotes,
+          qc_images:  newImageUrls,
+          handled_by: { user_id: userId, name: userName },
         }),
       });
       const saveData = await saveRes.json();
       if (!saveRes.ok || !saveData.success)
         throw new Error(saveData.message || "Failed to save QC data");
 
-      // ── Step 2a: Approve & Pass ───────────────────────────────────────────
+      // Step 2a: Approve & Pass
       if (passOrFail === "passed") {
         const passRes = await fetch(`${BASE}/${currentJob._id}/qc/pass`, {
           method:  "POST",
@@ -689,7 +413,6 @@ const QualityCheckDashboard = () => {
         if (!passRes.ok || !passData.success)
           throw new Error(passData.message || "Failed to pass QC");
 
-        // Update job_status → "delivery"
         const statusRes = await fetch(`${BASE}/${currentJob._id}/status`, {
           method:  "PATCH",
           headers: jsonHeader(),
@@ -700,9 +423,8 @@ const QualityCheckDashboard = () => {
           throw new Error(statusData.message || "Failed to update job status to delivery");
 
         message.success("Quality passed! Job moved to Delivery.");
-        stopLiveTimer(currentJob._id);
 
-      // ── Step 2b: Reject / Fail ────────────────────────────────────────────
+      // Step 2b: Reject / Fail
       } else if (passOrFail === "failed") {
         const failRes = await fetch(`${BASE}/${currentJob._id}/qc/fail`, {
           method:  "POST",
@@ -718,9 +440,8 @@ const QualityCheckDashboard = () => {
           throw new Error(failData.message || "Failed to fail QC");
 
         message.success("QC failed — rejection recorded.");
-        stopLiveTimer(currentJob._id);
 
-      // ── Step 2c: Save only ────────────────────────────────────────────────
+      // Step 2c: Save only
       } else {
         message.success("QC data saved.");
       }
@@ -745,16 +466,13 @@ const QualityCheckDashboard = () => {
   };
 
   // ─── Derived values ────────────────────────────────────────────────────────
-  const currentSessionData = currentJob ? sessionMap[currentJob._id] : null;
-  const currentLiveSecs    = currentJob ? getLiveDisplaySecs(currentJob._id) : 0;
-
   const rawDesignRef =
     currentJob?.design_file ||
     currentJob?.cart_items?.find((i) => i.design_file)?.design_file ||
     null;
   const designRef = rawDesignRef ? resolveUrl(rawDesignRef) : null;
 
-  const liveCount = Object.values(sessionMap).filter((s) => s?.has_open_session).length;
+  const totalPhotos = jobs.reduce((acc, j) => acc + (j.qc_images?.length || 0), 0);
 
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
@@ -763,8 +481,6 @@ const QualityCheckDashboard = () => {
       background: "linear-gradient(160deg, #f0f4ff 0%, #f8fafc 60%, #faf5ff 100%)",
       minHeight: "100vh",
     }}>
-      <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }`}</style>
-
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div style={{
         background: "#fff", borderRadius: 14, border: "1px solid #e5e7eb",
@@ -802,10 +518,10 @@ const QualityCheckDashboard = () => {
         gap: 10, marginBottom: 16,
       }}>
         {[
-          { label: "Pending QC",       value: jobs.length,                                                    color: "#3b82f6", bg: "#eff6ff" },
-          { label: "Live Inspections", value: liveCount,                                                      color: "#16a34a", bg: "#f0fdf4" },
-          { label: "On Hold",          value: jobs.filter((j) => j.job_status === "on_hold").length,         color: "#f97316", bg: "#fff7ed" },
-          { label: "Photos Taken",     value: jobs.reduce((acc, j) => acc + (j.qc_images?.length || 0), 0), color: "#8b5cf6", bg: "#f5f3ff" },
+          { label: "Pending QC",   value: jobs.length,      color: "#3b82f6", bg: "#eff6ff" },
+          { label: "Photos Taken", value: totalPhotos,       color: "#8b5cf6", bg: "#f5f3ff" },
+          { label: "With Design",  value: jobs.filter((j) => j.design_file).length, color: "#0891b2", bg: "#ecfeff" },
+          { label: "Overdue",      value: jobs.filter((j) => j.estimated_delivery_date && dayjs(j.estimated_delivery_date).isBefore(dayjs())).length, color: "#ef4444", bg: "#fef2f2" },
         ].map(({ label, value, color, bg }) => (
           <div key={label} style={{
             background: bg, borderRadius: 10, padding: "10px 14px",
@@ -836,94 +552,19 @@ const QualityCheckDashboard = () => {
         ) : (
           <div style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+            gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
             gap: 14,
           }}>
-            {jobs.map((job) => {
-              const sessData    = sessionMap[job._id];
-              const displaySess = sessData
-                ? { ...sessData, total_duration_seconds: getLiveDisplaySecs(job._id) }
-                : null;
-              return (
-                <QCJobCard
-                  key={job._id}
-                  job={job}
-                  sessionData={displaySess}
-                  onOpenSession={handleOpenSession}
-                  onCloseSession={handleCloseSession}
-                  onOpenQCModal={openQCModal}
-                />
-              );
-            })}
+            {jobs.map((job) => (
+              <QCJobCard
+                key={job._id}
+                job={job}
+                onOpenQCModal={openQCModal}
+              />
+            ))}
           </div>
         )}
       </Spin>
-
-      {/* ── Session Notes Modal ────────────────────────────────────────────── */}
-      <Modal
-        open={notesModal}
-        onCancel={() => !actioning && setNotesModal(false)}
-        title={
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {pendingAction?.action === "open"    && <PlayCircleOutlined  style={{ color: "#1e40af" }} />}
-            {pendingAction?.action === "on_hold" && <PauseCircleOutlined style={{ color: "#f97316" }} />}
-            {pendingAction?.action === "passed"  && <CheckCircleOutlined style={{ color: "#16a34a" }} />}
-            <span>
-              {pendingAction?.action === "open"    && "Start Inspection"}
-              {pendingAction?.action === "on_hold" && "Pause Inspection"}
-              {pendingAction?.action === "passed"  && "Mark as Passed"}
-            </span>
-            {pendingAction?.job && <Tag color="blue">{pendingAction.job.job_no}</Tag>}
-          </div>
-        }
-        footer={[
-          <Button key="c" onClick={() => setNotesModal(false)}>Cancel</Button>,
-          <Button
-            key="ok"
-            type="primary"
-            loading={actioning}
-            onClick={handleConfirmAction}
-            style={{
-              background: pendingAction?.action === "passed" ? "#16a34a" : "#1e40af",
-              border: "none",
-            }}
-          >
-            Confirm
-          </Button>,
-        ]}
-      >
-        {pendingAction?.job && (
-          <div>
-            <div style={{ background: "#f8fafc", borderRadius: 8, padding: 10, marginBottom: 14 }}>
-              <div style={{ fontWeight: 700 }}>{pendingAction.job.customer_name}</div>
-              <div>Stage: <strong>Quality Check</strong></div>
-            </div>
-            {(pendingAction.action === "on_hold" || pendingAction.action === "passed") &&
-              currentSessionData && (
-                <div style={{
-                  background: "#f0f9ff", borderRadius: 8, padding: 10, marginBottom: 14,
-                }}>
-                  <div>
-                    <ClockCircleOutlined /> Time logged:{" "}
-                    <strong>{fmtSecs(getLiveDisplaySecs(pendingAction.job._id))}</strong>
-                  </div>
-                  <div>
-                    {currentSessionData.worked_days} day(s) · {currentSessionData.closed_sessions} session(s)
-                  </div>
-                </div>
-              )}
-            <label style={{ fontWeight: 600, display: "block", marginBottom: 4 }}>
-              Notes (optional)
-            </label>
-            <TextArea
-              rows={3}
-              value={actionNotes}
-              onChange={(e) => setActionNotes(e.target.value)}
-              placeholder="Any notes for this session…"
-            />
-          </div>
-        )}
-      </Modal>
 
       {/* ── QC Inspection Modal ────────────────────────────────────────────── */}
       <Modal
@@ -936,30 +577,39 @@ const QualityCheckDashboard = () => {
           </span>
         }
         footer={null}
-        width={700}
+        width={680}
         destroyOnClose
       >
         {currentJob && (
           <div>
+            {/* ── Customer info ─────────────────────────────────────────── */}
+            <div style={{
+              background: "#f8fafc", borderRadius: 8, padding: "10px 12px",
+              marginBottom: 14, border: "1px solid #e5e7eb",
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+              flexWrap: "wrap", gap: 8,
+            }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>
+                  {currentJob.customer_name}
+                </div>
+                <div style={{ fontSize: 12, color: "#6b7280" }}>
+                  📞 {currentJob.customer_phone}
+                </div>
+              </div>
+              <StatusBadge status={currentJob.job_status} />
+            </div>
+
             {/* ── Reference design ─────────────────────────────────────── */}
             {designRef && (
               <DesignFilePreview fileUrl={designRef} label="Reference Design" />
             )}
 
-            {/* ── Inspection history bar ────────────────────────────────── */}
-            {currentSessionData && (
-              <DailySummaryBar
-                dailySummary={currentSessionData.daily_summary || []}
-                totalSecs={currentLiveSecs}
-                workedDays={currentSessionData.worked_days || 0}
-              />
-            )}
-
             {/* ── Existing (server-saved) QC photos ────────────────────── */}
             {existingImages.length > 0 && (
-              <div style={{ marginBottom: 12 }}>
+              <div style={{ marginBottom: 14 }}>
                 <div style={{
-                  fontSize: 12, fontWeight: 700, marginBottom: 6,
+                  fontSize: 12, fontWeight: 700, marginBottom: 8,
                   color: "#374151", display: "flex", alignItems: "center", gap: 6,
                 }}>
                   <CheckCircleOutlined style={{ color: "#16a34a" }} />
@@ -969,7 +619,7 @@ const QualityCheckDashboard = () => {
               </div>
             )}
 
-            {/* ── Upload new QC photos via CapUploadHelper ──────────────── */}
+            {/* ── Upload new QC photos ──────────────────────────────────── */}
             <div style={{ marginBottom: 16 }}>
               <div style={{
                 fontSize: 12, fontWeight: 700, marginBottom: 8,
@@ -987,7 +637,6 @@ const QualityCheckDashboard = () => {
                 showCamera
               />
 
-              {/* Preview newly uploaded images */}
               {newImageUrls.length > 0 && (
                 <div style={{ marginTop: 12 }}>
                   <div style={{
@@ -1000,26 +649,12 @@ const QualityCheckDashboard = () => {
               )}
 
               <TextArea
-                rows={2}
+                rows={3}
                 placeholder="Inspection notes, observations…"
                 value={qcNotes}
                 onChange={(e) => setQcNotes(e.target.value)}
                 style={{ marginTop: 12 }}
               />
-            </div>
-
-            {/* ── Live timer ────────────────────────────────────────────── */}
-            <div style={{
-              background: "#f0f9ff", borderRadius: 8, padding: 10,
-              marginBottom: 16, fontSize: 13,
-            }}>
-              <ClockCircleOutlined style={{ marginRight: 6 }} />
-              Total QC time: <strong>{fmtSecs(currentLiveSecs)}</strong>
-              {currentSessionData?.worked_days > 0 && (
-                <span style={{ marginLeft: 8, fontSize: 11, color: "#6b7280" }}>
-                  across {currentSessionData.worked_days} day{currentSessionData.worked_days !== 1 ? "s" : ""}
-                </span>
-              )}
             </div>
 
             <Divider style={{ margin: "12px 0" }} />

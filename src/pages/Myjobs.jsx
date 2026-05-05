@@ -7,7 +7,6 @@ import {
   Select,
   Tag,
   Tooltip,
-  Spin,
   Divider,
 } from "antd";
 import {
@@ -78,40 +77,16 @@ const STATUS_CONFIG = {
   draft: { label: "Draft", color: "default", icon: <FileTextOutlined /> },
   sent: { label: "Sent", color: "blue", icon: <SendOutlined /> },
   viewed: { label: "Viewed", color: "cyan", icon: <EyeOutlined /> },
-  accepted: {
-    label: "Accepted",
-    color: "green",
-    icon: <CheckCircleOutlined />,
-  },
+  accepted: { label: "Accepted", color: "green", icon: <CheckCircleOutlined /> },
   design: { label: "Design", color: "blue", icon: <FileTextOutlined /> },
-  in_progress: {
-    label: "In Progress",
-    color: "gold",
-    icon: <PlayCircleOutlined />,
-  },
+  in_progress: { label: "In Progress", color: "gold", icon: <PlayCircleOutlined /> },
   on_hold: { label: "On Hold", color: "orange", icon: <PauseCircleOutlined /> },
   rejected: { label: "Rejected", color: "red", icon: <CloseCircleOutlined /> },
-  expired: {
-    label: "Expired",
-    color: "volcano",
-    icon: <ClockCircleOutlined />,
-  },
-  completed: {
-    label: "Completed",
-    color: "purple",
-    icon: <CheckCircleOutlined />,
-  },
+  expired: { label: "Expired", color: "volcano", icon: <ClockCircleOutlined /> },
+  completed: { label: "Completed", color: "purple", icon: <CheckCircleOutlined /> },
   converted: { label: "Converted", color: "geekblue", icon: <SwapOutlined /> },
-  quality_check: {
-    label: "Quality Check",
-    color: "magenta",
-    icon: <SafetyCertificateOutlined />,
-  },
-  production: {
-    label: "Production",
-    color: "lime",
-    icon: <PlayCircleOutlined />,
-  },
+  quality_check: { label: "Quality Check", color: "magenta", icon: <SafetyCertificateOutlined /> },
+  production: { label: "Production", color: "lime", icon: <PlayCircleOutlined /> },
 };
 
 const WORKFLOW_STAGES = [
@@ -126,15 +101,11 @@ const WORKFLOW_STAGES = [
   { value: "custom", label: "Custom" },
 ];
 
-// ─── Tiny shared components ───────────────────────────────────────────────────
+// ─── Shared tiny components ───────────────────────────────────────────────────
 const StatusTag = ({ status, style }) => {
   const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.draft;
   return (
-    <Tag
-      color={cfg.color}
-      icon={cfg.icon}
-      style={{ fontWeight: 500, ...style }}
-    >
+    <Tag color={cfg.color} icon={cfg.icon} style={{ fontWeight: 500, ...style }}>
       {cfg.label}
     </Tag>
   );
@@ -152,24 +123,9 @@ const StageTag = ({ stage }) => {
 };
 
 const SectionDivider = ({ icon, title }) => (
-  <div
-    style={{
-      display: "flex",
-      alignItems: "center",
-      gap: 6,
-      margin: "4px 0 10px",
-    }}
-  >
+  <div style={{ display: "flex", alignItems: "center", gap: 6, margin: "4px 0 10px" }}>
     <span style={{ color: "#2563eb", fontSize: 13 }}>{icon}</span>
-    <span
-      style={{
-        fontSize: 10,
-        fontWeight: 700,
-        color: "#374151",
-        textTransform: "uppercase",
-        letterSpacing: "0.07em",
-      }}
-    >
+    <span style={{ fontSize: 10, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.07em" }}>
       {title}
     </span>
     <div style={{ flex: 1, height: 1, background: "#e5e7eb", marginLeft: 4 }} />
@@ -180,55 +136,23 @@ const SectionDivider = ({ icon, title }) => (
 const JobDetailView = ({ job, isMobile }) => {
   if (!job) return null;
   const addr = job.delivery_address || {};
-  const fullAddress = [
-    addr.street,
-    addr.city,
-    addr.state,
-    addr.pincode,
-    addr.country,
-  ]
+  const fullAddress = [addr.street, addr.city, addr.state, addr.pincode, addr.country]
     .filter(Boolean)
     .join(", ");
 
   const LV = ({ label, value, mono }) => (
     <div style={{ marginBottom: 8 }}>
-      <div
-        style={{
-          fontSize: 10,
-          fontWeight: 700,
-          color: "#9ca3af",
-          textTransform: "uppercase",
-          letterSpacing: "0.05em",
-          marginBottom: 2,
-        }}
-      >
+      <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>
         {label}
       </div>
-      <div
-        style={{
-          fontSize: 13,
-          color: "#1a1a2e",
-          fontFamily: mono ? "monospace" : undefined,
-          fontWeight: mono ? 600 : 400,
-        }}
-      >
+      <div style={{ fontSize: 13, color: "#1a1a2e", fontFamily: mono ? "monospace" : undefined, fontWeight: mono ? 600 : 400 }}>
         {value ?? "—"}
       </div>
     </div>
   );
 
-  const grid2 = {
-    display: "grid",
-    gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3,1fr)",
-    gap: "4px 16px",
-    marginBottom: 12,
-  };
-  const grid4 = {
-    display: "grid",
-    gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4,1fr)",
-    gap: "4px 16px",
-    marginBottom: 12,
-  };
+  const grid2 = { display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3,1fr)", gap: "4px 16px", marginBottom: 12 };
+  const grid4 = { display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4,1fr)", gap: "4px 16px", marginBottom: 12 };
 
   return (
     <div>
@@ -239,13 +163,7 @@ const JobDetailView = ({ job, isMobile }) => {
         <LV label="Phone" value={job.customer_phone} />
         <LV
           label="Est. Delivery"
-          value={
-            job.estimated_delivery_date
-              ? dayjs(job.estimated_delivery_date).format(
-                  "DD MMM YYYY, hh:mm A",
-                )
-              : null
-          }
+          value={job.estimated_delivery_date ? dayjs(job.estimated_delivery_date).format("DD MMM YYYY, hh:mm A") : null}
         />
       </div>
 
@@ -253,113 +171,38 @@ const JobDetailView = ({ job, isMobile }) => {
       {fullAddress && (
         <>
           <SectionDivider icon={<EyeOutlined />} title="Delivery Address" />
-          <p
-            style={{
-              fontSize: 12,
-              color: "#374151",
-              marginBottom: 12,
-              wordBreak: "break-word",
-            }}
-          >
-            {fullAddress}
-          </p>
+          <p style={{ fontSize: 12, color: "#374151", marginBottom: 12, wordBreak: "break-word" }}>{fullAddress}</p>
         </>
       )}
 
       {/* Items */}
       <SectionDivider icon={<FileTextOutlined />} title="Items" />
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 8,
-          marginBottom: 12,
-        }}
-      >
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
         {(job.cart_items || []).map((it, i) => {
-          const isSqFt =
-            it.quantity_type === "sq.ft" || (it.sq_ft && it.sq_ft > 0);
+          const isSqFt = it.quantity_type === "sq.ft" || (it.sq_ft && it.sq_ft > 0);
           const lineTotal = isSqFt
             ? (it.quantity || 0) * (it.sq_ft || 0) * (it.price || 0)
             : (it.quantity || 0) * (it.price || 0);
           return (
-            <div
-              key={i}
-              style={{
-                background: "#f9fafb",
-                border: "1px solid #e5e7eb",
-                borderRadius: 8,
-                padding: "10px 12px",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  flexWrap: "wrap",
-                  gap: 4,
-                }}
-              >
+            <div key={i} style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 8, padding: "10px 12px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 4 }}>
                 <div>
-                  <span
-                    style={{
-                      fontWeight: 700,
-                      fontSize: 13,
-                      color: "#1a1a2e",
-                      marginRight: 8,
-                    }}
-                  >
-                    {it.product_name || "—"}
-                  </span>
-                  {it.variation && (
-                    <Tag style={{ fontSize: 10 }}>{it.variation}</Tag>
-                  )}
-                  {it.printing_type && (
-                    <Tag color="blue" style={{ fontSize: 10 }}>
-                      {it.printing_type}
-                    </Tag>
-                  )}
+                  <span style={{ fontWeight: 700, fontSize: 13, color: "#1a1a2e", marginRight: 8 }}>{it.product_name || "—"}</span>
+                  {it.variation && <Tag style={{ fontSize: 10 }}>{it.variation}</Tag>}
+                  {it.printing_type && <Tag color="blue" style={{ fontSize: 10 }}>{it.printing_type}</Tag>}
                 </div>
-                <span
-                  style={{ fontWeight: 700, color: "#065f46", fontSize: 13 }}
-                >
-                  ₹{lineTotal.toFixed(2)}
-                </span>
+                <span style={{ fontWeight: 700, color: "#065f46", fontSize: 13 }}>₹{lineTotal.toFixed(2)}</span>
               </div>
-              <div
-                style={{
-                  fontSize: 11,
-                  color: "#6b7280",
-                  marginTop: 4,
-                  display: "flex",
-                  gap: 12,
-                  flexWrap: "wrap",
-                }}
-              >
+              <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4, display: "flex", gap: 12, flexWrap: "wrap" }}>
                 {isSqFt && it.width && (
-                  <span>
-                    Size: {it.width} × {it.height} {it.size_unit} ({it.sq_ft}{" "}
-                    ft²)
-                  </span>
+                  <span>Size: {it.width} × {it.height} {it.size_unit} ({it.sq_ft} ft²)</span>
                 )}
                 <span>Qty: {it.quantity}</span>
-                <span>
-                  Price: ₹{it.price}/{isSqFt ? "sq.ft" : "unit"}
-                </span>
+                <span>Price: ₹{it.price}/{isSqFt ? "sq.ft" : "unit"}</span>
                 {it.notes && <span>Note: {it.notes}</span>}
               </div>
               {it.design_file && (
-                <a
-                  href={it.design_file}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{
-                    fontSize: 11,
-                    color: "#2563eb",
-                    marginTop: 4,
-                    display: "inline-block",
-                  }}
-                >
+                <a href={it.design_file} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#2563eb", marginTop: 4, display: "inline-block" }}>
                   View Design File ↗
                 </a>
               )}
@@ -368,73 +211,64 @@ const JobDetailView = ({ job, isMobile }) => {
         })}
       </div>
 
-      {/* Pricing summary */}
+      {/* Pricing */}
       <SectionDivider icon={<FileTextOutlined />} title="Pricing" />
-      <div
-        style={{
-          background: "linear-gradient(135deg,#eff6ff,#f8fafc)",
-          border: "1px solid #bfdbfe",
-          borderRadius: 10,
-          padding: isMobile ? "10px" : "12px 14px",
-          marginBottom: 12,
-        }}
-      >
+      <div style={{ background: "linear-gradient(135deg,#eff6ff,#f8fafc)", border: "1px solid #bfdbfe", borderRadius: 10, padding: isMobile ? "10px" : "12px 14px", marginBottom: 12 }}>
         {[
-          {
-            label: "Subtotal",
-            value: `₹${parseFloat(job.subtotal || 0).toFixed(2)}`,
-          },
+          { label: "Subtotal", value: `₹${parseFloat(job.subtotal || 0).toFixed(2)}` },
           ...(job.discount_amount > 0
-            ? [
-                {
-                  label: `Discount (${job.discount_percentage}%)`,
-                  value: `- ₹${parseFloat(job.discount_amount).toFixed(2)}`,
-                  green: true,
-                },
-              ]
+            ? [{ label: `Discount (${job.discount_percentage}%)`, value: `- ₹${parseFloat(job.discount_amount).toFixed(2)}`, green: true }]
             : []),
-          {
-            label: "GST",
-            value: `₹${parseFloat(job.tax_amount || 0).toFixed(2)}`,
-          },
-          {
-            label: "Delivery",
-            value: job.free_delivery
-              ? "Free 🎉"
-              : `₹${parseFloat(job.delivery_charges || 0).toFixed(2)}`,
-          },
+          { label: "GST", value: `₹${parseFloat(job.tax_amount || 0).toFixed(2)}` },
+          { label: "Delivery", value: job.free_delivery ? "Free 🎉" : `₹${parseFloat(job.delivery_charges || 0).toFixed(2)}` },
         ].map(({ label, value, green }) => (
-          <div
-            key={label}
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              fontSize: 12,
-              color: green ? "#059669" : "#4b5563",
-              marginBottom: 3,
-            }}
-          >
+          <div key={label} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: green ? "#059669" : "#4b5563", marginBottom: 3 }}>
             <span>{label}</span>
             <span style={{ fontWeight: 600 }}>{value}</span>
           </div>
         ))}
         <Divider style={{ margin: "8px 0" }} />
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            fontWeight: 800,
-            fontSize: 15,
-          }}
-        >
+        <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: 15 }}>
           <span style={{ color: "#1a1a2e" }}>Grand Total</span>
-          <span style={{ color: "#2563eb" }}>
-            ₹{parseFloat(job.total_amount || 0).toFixed(2)}
-          </span>
+          <span style={{ color: "#2563eb" }}>₹{parseFloat(job.total_amount || 0).toFixed(2)}</span>
         </div>
       </div>
 
-      {/* Meta */}
+      {/* Design file (if exists on job level) */}
+      {job.design_file && (
+        <>
+          <SectionDivider icon={<FileTextOutlined />} title="Design File" />
+          <div style={{ marginBottom: 12 }}>
+            <a href={job.design_file} target="_blank" rel="noreferrer">
+              <img
+                src={job.design_file}
+                alt="Design"
+                style={{ maxWidth: "100%", maxHeight: 200, borderRadius: 8, border: "1px solid #e5e7eb", objectFit: "contain" }}
+                onError={(e) => { e.target.style.display = "none"; }}
+              />
+            </a>
+          </div>
+        </>
+      )}
+
+      {/* Production image (if exists) */}
+      {job.productionimg && (
+        <>
+          <SectionDivider icon={<PlayCircleOutlined />} title="Production Image" />
+          <div style={{ marginBottom: 12 }}>
+            <a href={job.productionimg} target="_blank" rel="noreferrer">
+              <img
+                src={job.productionimg}
+                alt="Production"
+                style={{ maxWidth: "100%", maxHeight: 200, borderRadius: 8, border: "1px solid #e5e7eb", objectFit: "contain" }}
+                onError={(e) => { e.target.style.display = "none"; }}
+              />
+            </a>
+          </div>
+        </>
+      )}
+
+      {/* Job Meta */}
       <SectionDivider icon={<FileTextOutlined />} title="Job Info" />
       <div style={grid4}>
         <LV label="Job No" value={job.job_no} mono />
@@ -442,34 +276,24 @@ const JobDetailView = ({ job, isMobile }) => {
         <LV label="Created By" value={job.created_by} />
         <LV label="Approved By" value={job.approved_by} />
         <LV label="GST No" value={job.gst_no} />
-        <LV
-          label="Order Date"
-          value={
-            job.order_date ? dayjs(job.order_date).format("DD MMM YYYY") : null
-          }
-        />
+        <LV label="Payment Mode" value={job.payment_mode} />
+        <LV label="Payment Amount" value={job.payment_amount ? `₹${job.payment_amount}` : null} />
+        <LV label="Order Date" value={job.order_date ? dayjs(job.order_date).format("DD MMM YYYY") : null} />
         {job.current_stage?.stage && (
-          <LV
-            label="Stage"
-            value={<StageTag stage={job.current_stage.stage} />}
-          />
+          <LV label="Stage" value={<StageTag stage={job.current_stage.stage} />} />
         )}
         {job.current_stage?.assigned_to?.name && (
           <LV label="Assigned To" value={job.current_stage.assigned_to.name} />
         )}
+        <LV label="Design Status" value={job.design_status} />
+        <LV label="Design Uploaded By" value={job.design_uploaded_by} />
+        <LV label="Design Approved By" value={job.design_approved_at ? dayjs(job.design_approved_at).format("DD MMM YYYY, hh:mm A") : null} />
+        <LV label="Production Status" value={job.production_status} />
+        <LV label="QC Status" value={job.qc_status} />
       </div>
 
       {job.notes && (
-        <div
-          style={{
-            background: "#fefce8",
-            border: "1px solid #fef08a",
-            borderRadius: 8,
-            padding: "8px 12px",
-            fontSize: 12,
-            color: "#713f12",
-          }}
-        >
+        <div style={{ background: "#fefce8", border: "1px solid #fef08a", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#713f12" }}>
           <strong>Notes:</strong> {job.notes}
         </div>
       )}
@@ -477,58 +301,22 @@ const JobDetailView = ({ job, isMobile }) => {
   );
 };
 
-// ─── Assign Modal Body (shared) ───────────────────────────────────────────────
-const AssignModalBody = ({
-  job,
-  members,
-  membersLoading,
-  selected,
-  onSelect,
-  infoText,
-}) => {
+// ─── Assign Modal Body (shared for approve & QC) ──────────────────────────────
+const AssignModalBody = ({ job, members, membersLoading, selected, onSelect, infoText }) => {
   if (!job) return null;
   return (
     <div>
-      <div
-        style={{
-          background: "#f8fafc",
-          borderRadius: 8,
-          padding: "10px 12px",
-          marginBottom: 16,
-          border: "1px solid #e5e7eb",
-        }}
-      >
-        <div
-          style={{
-            fontFamily: "monospace",
-            fontWeight: 700,
-            color: "#2563eb",
-            fontSize: 14,
-          }}
-        >
-          {job.job_no}
-        </div>
-        <div style={{ fontSize: 13, color: "#374151", marginTop: 2 }}>
-          {job.customer_name || "—"}
-        </div>
-        <div style={{ fontSize: 11, color: "#6b7280" }}>
-          {job.customer_phone || ""}
-        </div>
+      <div style={{ background: "#f8fafc", borderRadius: 8, padding: "10px 12px", marginBottom: 16, border: "1px solid #e5e7eb" }}>
+        <div style={{ fontFamily: "monospace", fontWeight: 700, color: "#2563eb", fontSize: 14 }}>{job.job_no}</div>
+        <div style={{ fontSize: 13, color: "#374151", marginTop: 2 }}>{job.customer_name || "—"}</div>
+        <div style={{ fontSize: 11, color: "#6b7280" }}>{job.customer_phone || ""}</div>
         <div style={{ marginTop: 6, fontSize: 11 }}>
           Status: <StatusTag status={job.job_status} />
         </div>
       </div>
 
       <div style={{ marginBottom: 16 }}>
-        <label
-          style={{
-            display: "block",
-            fontWeight: 600,
-            marginBottom: 8,
-            fontSize: 13,
-            color: "#374151",
-          }}
-        >
+        <label style={{ display: "block", fontWeight: 600, marginBottom: 8, fontSize: 13, color: "#374151" }}>
           Assign To <span style={{ color: "#ef4444" }}>*</span>
         </label>
         <Select
@@ -546,42 +334,19 @@ const AssignModalBody = ({
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <UserOutlined style={{ color: "#6b7280", fontSize: 12 }} />
                 <span>{d.name || d.fullName || d.username || d._id}</span>
-                {d.role && (
-                  <span style={{ fontSize: 10, color: "#9ca3af" }}>
-                    ({d.role})
-                  </span>
-                )}
+                {d.role && <span style={{ fontSize: 10, color: "#9ca3af" }}>({d.role})</span>}
               </div>
             </Option>
           ))}
         </Select>
         {!membersLoading && members.length === 0 && (
-          <div
-            style={{
-              marginTop: 8,
-              fontSize: 12,
-              color: "#b45309",
-              background: "#fffbeb",
-              border: "1px solid #fde68a",
-              borderRadius: 6,
-              padding: "6px 10px",
-            }}
-          >
+          <div style={{ marginTop: 8, fontSize: 12, color: "#b45309", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 6, padding: "6px 10px" }}>
             ⚠️ No members found. Please add the required team members first.
           </div>
         )}
       </div>
 
-      <div
-        style={{
-          fontSize: 12,
-          color: "#6b7280",
-          background: "#fefce8",
-          padding: "8px 10px",
-          borderRadius: 6,
-          border: "1px solid #fef08a",
-        }}
-      >
+      <div style={{ fontSize: 12, color: "#6b7280", background: "#fefce8", padding: "8px 10px", borderRadius: 6, border: "1px solid #fef08a" }}>
         ℹ️ {infoText}
       </div>
     </div>
@@ -592,9 +357,9 @@ const AssignModalBody = ({
 // Main Component
 // ══════════════════════════════════════════════════════════════════════════════
 const MyJobs = () => {
-  const { isMobile, isTablet, isDesktop } = useBreakpoint();
+  const { isMobile, isDesktop } = useBreakpoint();
 
-  // Table
+  // Table state
   const [loading, setLoading] = useState(false);
   const [jobs, setJobs] = useState([]);
   const [search, setSearch] = useState("");
@@ -632,6 +397,15 @@ const MyJobs = () => {
 
   const userProfile = useMemo(() => getUserProfile(), []);
   const isSuperAdmin = userProfile?.role === "super admin";
+
+  // ── Fetch all admins from API ──────────────────────────────────────────────
+  const fetchAllAdmins = async () => {
+    const res = await fetch(`${API_BASE}/admin/get_admin`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    });
+    const data = await res.json();
+    return data.data || [];
+  };
 
   // ── Load jobs ──────────────────────────────────────────────────────────────
   const loadJobs = useCallback(
@@ -710,27 +484,20 @@ const MyJobs = () => {
     return filteredJobs.slice(s, s + pageSize);
   }, [filteredJobs, page, pageSize]);
 
-  // ── Fetch team by role ─────────────────────────────────────────────────────
-  const fetchByRole = async (role) => {
-    try {
-      const res = await fetch(`${API_BASE}/admin/get_admin`, {
-        headers: { Authorization: `Bearer ${getToken()}` },
-      });
-      const data = await res.json();
-      return (data.data || []).filter((u) => u.role === role);
-    } catch {
-      ERROR_NOTIFICATION({ message: "Could not load team members" });
-      return [];
-    }
-  };
-
   // ── Approve ────────────────────────────────────────────────────────────────
   const openApproveModal = async (job) => {
     setApprovingJob(job);
     setSelectedDesigner(null);
     setDesignersLoading(true);
-    setDesigners(await fetchByRole("designing team"));
-    setDesignersLoading(false);
+    try {
+      const all = await fetchAllAdmins();
+      setDesigners(all.filter((u) => u.role === "designing team"));
+    } catch {
+      ERROR_NOTIFICATION({ message: "Could not load designers list" });
+      setDesigners([]);
+    } finally {
+      setDesignersLoading(false);
+    }
   };
 
   const handleApprove = async () => {
@@ -740,17 +507,10 @@ const MyJobs = () => {
     }
     setApproving(true);
     try {
-      const name =
-        selectedDesigner.name ||
-        selectedDesigner.fullName ||
-        selectedDesigner.username ||
-        "Unknown";
+      const name = selectedDesigner.name || selectedDesigner.fullName || selectedDesigner.username || "Unknown";
       const res = await fetch(`${API_BASE}/jobs/${approvingJob._id}/approve`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${getToken()}`,
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
         body: JSON.stringify({
           job_status: "design",
           approved_by: userProfile?.name || null,
@@ -759,11 +519,8 @@ const MyJobs = () => {
         }),
       });
       const data = await res.json();
-      if (!res.ok || !data.success)
-        throw new Error(data.message || "Approval failed");
-      SUCCESS_NOTIFICATION({
-        message: `Job ${approvingJob.job_no} approved & assigned to ${name}`,
-      });
+      if (!res.ok || !data.success) throw new Error(data.message || "Approval failed");
+      SUCCESS_NOTIFICATION({ message: `Job ${approvingJob.job_no} approved & assigned to ${name}` });
       setApprovingJob(null);
       setSelectedDesigner(null);
       loadJobs(true);
@@ -784,9 +541,7 @@ const MyJobs = () => {
 
   const handleDelete = async () => {
     if (deleteNotes.trim().length < 50) {
-      setDeleteError(
-        "Please provide at least 50 characters explaining the reason.",
-      );
+      setDeleteError("Please provide at least 50 characters explaining the reason.");
       return;
     }
     setDeleteLoading(true);
@@ -794,18 +549,12 @@ const MyJobs = () => {
     try {
       const res = await fetch(`${API_BASE}/jobs/${deletingJob._id}`, {
         method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${getToken()}`,
-        },
-        body: JSON.stringify({ delete_notes: deleteNotes.trim(),adminId: userProfile?._id}),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ delete_notes: deleteNotes.trim(), adminId: userProfile?._id }),
       });
       const data = await res.json();
-      if (!res.ok || !data.success)
-        throw new Error(data.message || "Failed to delete job");
-      SUCCESS_NOTIFICATION({
-        message: `Job ${deletingJob.job_no} deleted successfully.`,
-      });
+      if (!res.ok || !data.success) throw new Error(data.message || "Failed to delete job");
+      SUCCESS_NOTIFICATION({ message: `Job ${deletingJob.job_no} deleted successfully.` });
       closeDeleteModal();
       loadJobs(true);
     } catch (err) {
@@ -815,25 +564,22 @@ const MyJobs = () => {
     }
   };
 
-  // ── Quality Check (fixed payload for assignJob controller) ─────────────────
+  // ── Quality Check ──────────────────────────────────────────────────────────
   const openQcModal = async (job) => {
     setQcJob(job);
     setSelectedQcMember(null);
     setQcMembersLoading(true);
-    let list = await fetchByRole("quality check");
-    if (!list.length) {
-      try {
-        const res = await fetch(`${API_BASE}/admin/get_admin`, {
-          headers: { Authorization: `Bearer ${getToken()}` },
-        });
-        const data = await res.json();
-        list = data.data || [];
-      } catch {
-        /* ignore */
-      }
+    try {
+      const all = await fetchAllAdmins();
+      // Filter by "quality check" role; fall back to full list if none found
+      const qcList = all.filter((u) => u.role === "quality check");
+      setQcMembers(qcList.length > 0 ? qcList : all);
+    } catch {
+      ERROR_NOTIFICATION({ message: "Could not load QC members" });
+      setQcMembers([]);
+    } finally {
+      setQcMembersLoading(false);
     }
-    setQcMembers(list);
-    setQcMembersLoading(false);
   };
 
   const handleAssignQc = async () => {
@@ -843,11 +589,7 @@ const MyJobs = () => {
     }
     setQcAssigning(true);
     try {
-      const assigneeName =
-        selectedQcMember.name ||
-        selectedQcMember.fullName ||
-        selectedQcMember.username ||
-        "Unknown";
+      const assigneeName = selectedQcMember.name || selectedQcMember.fullName || selectedQcMember.username || "Unknown";
       const assigneeRole = selectedQcMember.role || "";
       const assignedByName = userProfile?.name || "Unknown";
       const assignedById = userProfile?._id || null;
@@ -857,7 +599,6 @@ const MyJobs = () => {
         stage: "quality_check",
         stage_label: "quality_check",
         assigned_to: {
-          // ✅ correct
           user_id: selectedQcMember._id,
           name: assigneeName,
           role: assigneeRole,
@@ -872,18 +613,12 @@ const MyJobs = () => {
 
       const res = await fetch(`${API_BASE}/jobs/${qcJob._id}/assign`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${getToken()}`,
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
         body: JSON.stringify(payload),
       });
       const data = await res.json();
-      if (!res.ok || !data.success)
-        throw new Error(data.message || "QC assignment failed");
-      SUCCESS_NOTIFICATION({
-        message: `Quality check assigned to ${assigneeName}`,
-      });
+      if (!res.ok || !data.success) throw new Error(data.message || "QC assignment failed");
+      SUCCESS_NOTIFICATION({ message: `Quality check assigned to ${assigneeName}` });
       setQcJob(null);
       setSelectedQcMember(null);
       loadJobs(true);
@@ -895,45 +630,28 @@ const MyJobs = () => {
   };
 
   // ── Helpers ────────────────────────────────────────────────────────────────
-  const fmtCountdown = (s) =>
-    `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  const fmtCountdown = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   const p = isMobile ? 8 : 12;
   const g = isMobile ? 8 : 12;
   const slideUp = isMobile
-    ? {
-        top: "auto",
-        bottom: 0,
-        margin: 0,
-        maxWidth: "100vw",
-        padding: 0,
-        paddingBottom: "env(safe-area-inset-bottom)",
-      }
+    ? { top: "auto", bottom: 0, margin: 0, maxWidth: "100vw", padding: 0, paddingBottom: "env(safe-area-inset-bottom)" }
     : {};
-  const modalBody = {
-    maxHeight: isMobile ? "72dvh" : "80vh",
-    overflowY: "auto",
-    padding: isMobile ? 12 : 16,
-  };
+  const modalBody = { maxHeight: isMobile ? "72dvh" : "80vh", overflowY: "auto", padding: isMobile ? 12 : 16 };
 
-  // ─── Table columns with mobile stacking ─────────────────────────────────────
+  // ─── Table columns ─────────────────────────────────────────────────────────
   const columns = [
     {
       title: "#",
       width: 36,
       render: (_, __, i) => (
-        <span style={{ color: "#9ca3af", fontSize: 11 }}>
-          {(page - 1) * pageSize + i + 1}
-        </span>
+        <span style={{ color: "#9ca3af", fontSize: 11 }}>{(page - 1) * pageSize + i + 1}</span>
       ),
     },
     {
       title: "Job No",
       dataIndex: "job_no",
       render: (n) => (
-        <Tag
-          color="blue"
-          style={{ fontFamily: "monospace", fontWeight: 600, fontSize: 11 }}
-        >
+        <Tag color="blue" style={{ fontFamily: "monospace", fontWeight: 600, fontSize: 11 }}>
           {n || "—"}
         </Tag>
       ),
@@ -943,18 +661,9 @@ const MyJobs = () => {
       key: "customer",
       render: (_, r) => (
         <div>
-          <div style={{ fontWeight: 600, fontSize: 13, color: "#1a1a2e" }}>
-            {r.customer_name || "—"}
-          </div>
-          <div style={{ fontSize: 11, color: "#6b7280" }}>
-            {r.customer_phone || ""}
-          </div>
-          {isMobile && (
-            <StatusTag
-              status={r.job_status}
-              style={{ marginTop: 4, fontSize: 10 }}
-            />
-          )}
+          <div style={{ fontWeight: 600, fontSize: 13, color: "#1a1a2e" }}>{r.customer_name || "—"}</div>
+          <div style={{ fontSize: 11, color: "#6b7280" }}>{r.customer_phone || ""}</div>
+          {isMobile && <StatusTag status={r.job_status} style={{ marginTop: 4, fontSize: 10 }} />}
         </div>
       ),
     },
@@ -964,9 +673,7 @@ const MyJobs = () => {
             title: "Date",
             dataIndex: "order_date",
             render: (d) => (
-              <span
-                style={{ fontSize: 12, color: "#374151", whiteSpace: "nowrap" }}
-              >
+              <span style={{ fontSize: 12, color: "#374151", whiteSpace: "nowrap" }}>
                 {d ? dayjs(d).format("DD MMM YY") : "—"}
               </span>
             ),
@@ -977,18 +684,8 @@ const MyJobs = () => {
       title: "Total",
       dataIndex: "total_amount",
       render: (a) => (
-        <span
-          style={{
-            fontWeight: 700,
-            fontSize: 13,
-            color: "#1a1a2e",
-            whiteSpace: "nowrap",
-          }}
-        >
-          ₹
-          {parseFloat(a || 0).toLocaleString("en-IN", {
-            minimumFractionDigits: 2,
-          })}
+        <span style={{ fontWeight: 700, fontSize: 13, color: "#1a1a2e", whiteSpace: "nowrap" }}>
+          ₹{parseFloat(a || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
         </span>
       ),
     },
@@ -1012,10 +709,9 @@ const MyJobs = () => {
       : []),
     {
       title: "",
-      width: isMobile ? 100 : 200,
+      width: isMobile ? 110 : 220,
       render: (_, record) => {
-        const isDraft = record.job_status === "draft";
-        const isQC = record.job_status === "quality_check";
+        const isQC = record.job_status === "quality_check"&&record.current_stage?.stage !== "quality_check";
         return (
           <div
             style={{
@@ -1026,23 +722,32 @@ const MyJobs = () => {
               flexDirection: isMobile ? "column" : "row",
             }}
           >
-             {isQC ? (
+            {/* View */}
+            <Tooltip title="View Job Details">
+              <Button
+                icon={<EyeOutlined />}
+                size="small"
+                style={{ width: isMobile ? "100%" : "auto", borderColor: "#2563eb", color: "#2563eb" }}
+                onClick={() => setViewJob(record)}
+              >
+                {!isMobile && "View"}
+              </Button>
+            </Tooltip>
+
+            {/* Assign QC — only when status is quality_check */}
+            {isQC && (
               <Tooltip title="Assign Quality Check Person">
                 <Button
                   type="primary"
                   icon={<SafetyCertificateOutlined />}
                   size="small"
-                  style={{
-                    background: "#7c3aed",
-                    borderColor: "#7c3aed",
-                    width: isMobile ? "100%" : "auto",
-                  }}
+                  style={{ background: "#7c3aed", borderColor: "#7c3aed", width: isMobile ? "100%" : "auto" }}
                   onClick={() => openQcModal(record)}
                 >
                   {!isMobile && "Assign QC"}
                 </Button>
               </Tooltip>
-            ):<></>}
+            )}
 
             {/* Delete */}
             <Tooltip title="Delete Job">
@@ -1072,22 +777,9 @@ const MyJobs = () => {
       {/* Header */}
       <Card
         bodyStyle={{ padding: `${p}px ${p + 4}px` }}
-        style={{
-          borderRadius: 12,
-          border: "1px solid #e5e7eb",
-          marginBottom: g,
-          boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
-        }}
+        style={{ borderRadius: 12, border: "1px solid #e5e7eb", marginBottom: g, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}
       >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: 12,
-          }}
-        >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
           <div>
             <h2
               style={{
@@ -1109,18 +801,10 @@ const MyJobs = () => {
               )}
             </h2>
             <p style={{ margin: "4px 0 0", fontSize: 11, color: "#6b7280" }}>
-              <strong>{filteredJobs.length}</strong> jobs · Last refreshed{" "}
-              {lastRefreshed.format("HH:mm:ss")}
+              <strong>{filteredJobs.length}</strong> jobs · Last refreshed {lastRefreshed.format("HH:mm:ss")}
             </p>
           </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              flexWrap: "wrap",
-            }}
-          >
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <div
               style={{
                 display: "flex",
@@ -1143,24 +827,14 @@ const MyJobs = () => {
                   animation: "pulse 1.5s infinite",
                 }}
               />
-              <span
-                style={{
-                  fontSize: 11,
-                  color: "#15803d",
-                  fontWeight: 600,
-                  fontFamily: "monospace",
-                }}
-              >
+              <span style={{ fontSize: 11, color: "#15803d", fontWeight: 600, fontFamily: "monospace" }}>
                 {fmtCountdown(countdown)}
               </span>
             </div>
             <Tooltip title="Refresh now">
               <Button
                 icon={<ReloadOutlined spin={loading} />}
-                onClick={() => {
-                  loadJobs();
-                  startAutoRefresh();
-                }}
+                onClick={() => { loadJobs(); startAutoRefresh(); }}
                 style={{ borderRadius: 8 }}
               />
             </Tooltip>
@@ -1171,33 +845,14 @@ const MyJobs = () => {
       {/* Filters */}
       <Card
         bodyStyle={{ padding: `${p}px ${p + 4}px` }}
-        style={{
-          borderRadius: 12,
-          border: "1px solid #e5e7eb",
-          marginBottom: g,
-          boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
-        }}
+        style={{ borderRadius: 12, border: "1px solid #e5e7eb", marginBottom: g, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}
       >
-        <div
-          style={{
-            display: "flex",
-            flexDirection: isMobile ? "column" : "row",
-            gap: 8,
-          }}
-        >
+        <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 8 }}>
           <Input.Search
             placeholder="Search name, phone, job no…"
             allowClear
-            onSearch={(v) => {
-              setSearch(v);
-              setPage(1);
-            }}
-            onChange={(e) => {
-              if (!e.target.value) {
-                setSearch("");
-                setPage(1);
-              }
-            }}
+            onSearch={(v) => { setSearch(v); setPage(1); }}
+            onChange={(e) => { if (!e.target.value) { setSearch(""); setPage(1); } }}
             style={{ flex: 1 }}
             size="middle"
           />
@@ -1205,17 +860,12 @@ const MyJobs = () => {
             placeholder="Filter by Status"
             allowClear
             size="middle"
-            onChange={(v) => {
-              setStatusFilter(v || null);
-              setPage(1);
-            }}
+            onChange={(v) => { setStatusFilter(v || null); setPage(1); }}
             style={{ width: isMobile ? "100%" : 190 }}
           >
             {Object.entries(STATUS_CONFIG).map(([k, { label, color }]) => (
               <Option key={k} value={k}>
-                <Tag color={color} style={{ fontWeight: 500 }}>
-                  {label}
-                </Tag>
+                <Tag color={color} style={{ fontWeight: 500 }}>{label}</Tag>
               </Option>
             ))}
           </Select>
@@ -1225,18 +875,13 @@ const MyJobs = () => {
       {/* Table */}
       <Card
         bodyStyle={{ padding: "0 0 8px 0" }}
-        style={{
-          borderRadius: 12,
-          border: "1px solid #e5e7eb",
-          boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
-          overflow: "hidden",
-        }}
+        style={{ borderRadius: 12, border: "1px solid #e5e7eb", boxShadow: "0 1px 4px rgba(0,0,0,0.06)", overflow: "hidden" }}
       >
         <CustomTable
           dataSource={pagedJobs}
           loading={loading}
           columns={columns}
-          scroll={{ x: isMobile ? 360 : 860 }}
+          scroll={{ x: isMobile ? 360 : 900 }}
           rowKey={(r) => r._id || r.job_no}
           size="small"
           rowClassName={() => (isMobile ? "mobile-table-row" : "")}
@@ -1246,13 +891,8 @@ const MyJobs = () => {
             total: filteredJobs.length,
             showSizeChanger: !isMobile,
             pageSizeOptions: ["10", "25", "50"],
-            showTotal: isMobile
-              ? undefined
-              : (t, [s, e]) => `${s}-${e} of ${t}`,
-            onChange: (pg, ps) => {
-              setPage(pg);
-              setPageSize(ps);
-            },
+            showTotal: isMobile ? undefined : (t, [s, e]) => `${s}-${e} of ${t}`,
+            onChange: (pg, ps) => { setPage(pg); setPageSize(ps); },
             style: { padding: "8px 12px" },
             size: isMobile ? "small" : "default",
           }}
@@ -1269,25 +909,11 @@ const MyJobs = () => {
           </Button>,
         ]}
         title={
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              flexWrap: "wrap",
-            }}
-          >
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <EyeOutlined style={{ color: "#2563eb" }} />
             <span style={{ fontWeight: 700 }}>Job Details</span>
             {viewJob && (
-              <Tag
-                color="blue"
-                style={{
-                  fontFamily: "monospace",
-                  fontWeight: 600,
-                  fontSize: 11,
-                }}
-              >
+              <Tag color="blue" style={{ fontFamily: "monospace", fontWeight: 600, fontSize: 11 }}>
                 {viewJob.job_no}
               </Tag>
             )}
@@ -1296,22 +922,10 @@ const MyJobs = () => {
         width={isMobile ? "100vw" : "min(96vw, 860px)"}
         style={
           isMobile
-            ? {
-                top: 0,
-                margin: 0,
-                maxWidth: "100vw",
-                padding: 0,
-                paddingBottom: "env(safe-area-inset-bottom)",
-              }
+            ? { top: 0, margin: 0, maxWidth: "100vw", padding: 0, paddingBottom: "env(safe-area-inset-bottom)" }
             : {}
         }
-        styles={{
-          body: {
-            maxHeight: isMobile ? "90dvh" : "85vh",
-            overflowY: "auto",
-            padding: isMobile ? 12 : 20,
-          },
-        }}
+        styles={{ body: { maxHeight: isMobile ? "90dvh" : "85vh", overflowY: "auto", padding: isMobile ? 12 : 20 } }}
         destroyOnClose
       >
         <JobDetailView job={viewJob} isMobile={isMobile} />
@@ -1326,19 +940,11 @@ const MyJobs = () => {
         title={
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <DeleteOutlined style={{ color: "#dc2626" }} />
-            <span style={{ fontWeight: 700, color: "#dc2626" }}>
-              Delete Job
-            </span>
+            <span style={{ fontWeight: 700, color: "#dc2626" }}>Delete Job</span>
           </div>
         }
         footer={[
-          <Button
-            key="cancel"
-            onClick={closeDeleteModal}
-            disabled={deleteLoading}
-          >
-            Cancel
-          </Button>,
+          <Button key="cancel" onClick={closeDeleteModal} disabled={deleteLoading}>Cancel</Button>,
           <Button
             key="confirm"
             danger
@@ -1370,45 +976,23 @@ const MyJobs = () => {
                 marginBottom: 16,
               }}
             >
-              <ExclamationCircleOutlined
-                style={{
-                  color: "#dc2626",
-                  fontSize: 16,
-                  marginTop: 2,
-                  flexShrink: 0,
-                }}
-              />
+              <ExclamationCircleOutlined style={{ color: "#dc2626", fontSize: 16, marginTop: 2, flexShrink: 0 }} />
               <div>
-                <div
-                  style={{ fontWeight: 700, color: "#dc2626", fontSize: 13 }}
-                >
-                  This action cannot be undone.
-                </div>
+                <div style={{ fontWeight: 700, color: "#dc2626", fontSize: 13 }}>This action cannot be undone.</div>
                 <div style={{ fontSize: 12, color: "#7f1d1d", marginTop: 2 }}>
-                  Job <strong>{deletingJob.job_no}</strong> for{" "}
-                  <strong>{deletingJob.customer_name}</strong> will be
-                  permanently deleted.
+                  Job <strong>{deletingJob.job_no}</strong> for <strong>{deletingJob.customer_name}</strong> will be permanently deleted.
                 </div>
               </div>
             </div>
             <div>
-              <label
-                style={{
-                  display: "block",
-                  fontWeight: 600,
-                  fontSize: 13,
-                  marginBottom: 6,
-                  color: "#374151",
-                }}
-              >
+              <label style={{ display: "block", fontWeight: 600, fontSize: 13, marginBottom: 6, color: "#374151" }}>
                 Reason for Deletion <span style={{ color: "#ef4444" }}>*</span>
                 <span
                   style={{
                     marginLeft: 8,
                     fontSize: 11,
                     fontWeight: 400,
-                    color:
-                      deleteNotes.trim().length >= 50 ? "#16a34a" : "#9ca3af",
+                    color: deleteNotes.trim().length >= 50 ? "#16a34a" : "#9ca3af",
                   }}
                 >
                   ({deleteNotes.trim().length} / 50 min)
@@ -1418,32 +1002,20 @@ const MyJobs = () => {
                 rows={4}
                 placeholder="Explain why this job is being deleted — e.g. customer cancelled, duplicate entry, wrong details entered…"
                 value={deleteNotes}
-                onChange={(e) => {
-                  setDeleteNotes(e.target.value);
-                  if (deleteError) setDeleteError("");
-                }}
+                onChange={(e) => { setDeleteNotes(e.target.value); if (deleteError) setDeleteError(""); }}
                 maxLength={500}
                 showCount
                 style={{
                   borderRadius: 8,
-                  borderColor: deleteError
-                    ? "#f87171"
-                    : deleteNotes.trim().length >= 50
-                      ? "#86efac"
-                      : undefined,
+                  borderColor: deleteError ? "#f87171" : deleteNotes.trim().length >= 50 ? "#86efac" : undefined,
                 }}
               />
-              {deleteError && (
-                <div style={{ color: "#dc2626", fontSize: 12, marginTop: 6 }}>
-                  ⚠ {deleteError}
+              {deleteError && <div style={{ color: "#dc2626", fontSize: 12, marginTop: 6 }}>⚠ {deleteError}</div>}
+              {deleteNotes.trim().length > 0 && deleteNotes.trim().length < 50 && (
+                <div style={{ color: "#d97706", fontSize: 12, marginTop: 6 }}>
+                  {50 - deleteNotes.trim().length} more characters needed.
                 </div>
               )}
-              {deleteNotes.trim().length > 0 &&
-                deleteNotes.trim().length < 50 && (
-                  <div style={{ color: "#d97706", fontSize: 12, marginTop: 6 }}>
-                    {50 - deleteNotes.trim().length} more characters needed.
-                  </div>
-                )}
             </div>
           </div>
         )}
@@ -1452,34 +1024,20 @@ const MyJobs = () => {
       {/* ══ APPROVE MODAL ══ */}
       <Modal
         open={!!approvingJob}
-        onCancel={() => {
-          if (!approving) {
-            setApprovingJob(null);
-            setSelectedDesigner(null);
-            setDesigners([]);
-          }
-        }}
+        onCancel={() => { if (!approving) { setApprovingJob(null); setSelectedDesigner(null); setDesigners([]); } }}
         maskClosable={!approving}
         closable={!approving}
         title={
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <CheckCircleOutlined style={{ color: "#16a34a" }} />
-            <span style={{ fontWeight: 700 }}>
-              Approve & Assign to Designer
-            </span>
+            <span style={{ fontWeight: 700 }}>Approve & Assign to Designer</span>
           </div>
         }
         footer={[
           <Button
             key="cancel"
             disabled={approving}
-            onClick={() => {
-              if (!approving) {
-                setApprovingJob(null);
-                setSelectedDesigner(null);
-                setDesigners([]);
-              }
-            }}
+            onClick={() => { if (!approving) { setApprovingJob(null); setSelectedDesigner(null); setDesigners([]); } }}
           >
             Cancel
           </Button>,
@@ -1512,13 +1070,7 @@ const MyJobs = () => {
       {/* ══ QUALITY CHECK MODAL ══ */}
       <Modal
         open={!!qcJob}
-        onCancel={() => {
-          if (!qcAssigning) {
-            setQcJob(null);
-            setSelectedQcMember(null);
-            setQcMembers([]);
-          }
-        }}
+        onCancel={() => { if (!qcAssigning) { setQcJob(null); setSelectedQcMember(null); setQcMembers([]); } }}
         maskClosable={!qcAssigning}
         closable={!qcAssigning}
         title={
@@ -1531,13 +1083,7 @@ const MyJobs = () => {
           <Button
             key="cancel"
             disabled={qcAssigning}
-            onClick={() => {
-              if (!qcAssigning) {
-                setQcJob(null);
-                setSelectedQcMember(null);
-                setQcMembers([]);
-              }
-            }}
+            onClick={() => { if (!qcAssigning) { setQcJob(null); setSelectedQcMember(null); setQcMembers([]); } }}
           >
             Cancel
           </Button>,
@@ -1569,9 +1115,7 @@ const MyJobs = () => {
 
       <style>{`
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
-        .mobile-table-row td {
-          padding: 8px 6px !important;
-        }
+        .mobile-table-row td { padding: 8px 6px !important; }
       `}</style>
     </div>
   );

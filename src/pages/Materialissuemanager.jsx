@@ -396,7 +396,8 @@ const Modal = ({ open, title, onClose, children, size = "md" }) => {
 };
 
 // ─── Job Lookup ────────────────────────────────────────────────────────────────
-const JobLookup = ({ onJobSelected }) => {
+// issuedJobIds: Set of job _id strings that already have a material issued
+const JobLookup = ({ onJobSelected, issuedJobIds = new Set() }) => {
   const [loading, setLoading] = useState(false);
   const [jobs, setJobs] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -417,14 +418,30 @@ const JobLookup = ({ onJobSelected }) => {
 
   useEffect(() => { fetchProductionJobs(); }, []);
 
+  // Filter out jobs that already had material issued in this session or in
+  // existing issue records, then apply the text search filter.
   const filtered = useMemo(() => {
-    if (!filter.trim()) return jobs;
+    // First remove already-issued jobs
+    let list = jobs.filter(j => !issuedJobIds.has(j._id));
+    if (!filter.trim()) return list;
     const q = filter.toLowerCase();
-    return jobs.filter(j => j.job_no?.toLowerCase().includes(q) || j.customer_name?.toLowerCase().includes(q));
-  }, [jobs, filter]);
+    return list.filter(j =>
+      j.job_no?.toLowerCase().includes(q) ||
+      j.customer_name?.toLowerCase().includes(q)
+    );
+  }, [jobs, filter, issuedJobIds]);
 
   const selectJob = (job) => { setSelected(job); onJobSelected(job); };
   const clearJob = () => { setSelected(null); onJobSelected(null); };
+
+  // If the currently selected job becomes issued (i.e. appears in issuedJobIds),
+  // clear it automatically so the form resets.
+  useEffect(() => {
+    if (selected && issuedJobIds.has(selected._id)) {
+      setSelected(null);
+      onJobSelected(null);
+    }
+  }, [issuedJobIds, selected]);
 
   return (
     <div>
@@ -437,7 +454,7 @@ const JobLookup = ({ onJobSelected }) => {
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse" />
               <span className="text-xs font-bold text-violet-600 uppercase tracking-wide">
-                {loading ? "Loading…" : `${jobs.length} job${jobs.length !== 1 ? "s" : ""} in production`}
+                {loading ? "Loading…" : `${filtered.length} job${filtered.length !== 1 ? "s" : ""} available`}
               </span>
             </div>
             <Btn variant="ghost" size="xs" onClick={fetchProductionJobs} loading={loading}>↻ Refresh</Btn>
@@ -456,7 +473,7 @@ const JobLookup = ({ onJobSelected }) => {
               <span className="text-sm">Fetching production jobs…</span>
             </div>
           ) : filtered.length === 0 ? (
-            <EmptyState icon="🏭" title="No production jobs" subtitle="Jobs move here once accepted and in progress" />
+            <EmptyState icon="🏭" title="No available jobs" subtitle="All production jobs have been issued or none are in production" />
           ) : (
             <div className="border border-slate-200 rounded-xl overflow-hidden">
               {filtered.map((job, idx) => (
@@ -509,7 +526,7 @@ const JobLookup = ({ onJobSelected }) => {
 };
 
 // ─── Issue Panel ────────────────────────────────────────────────────────────
-const IssuePanel = ({ products, employees, onIssued }) => {
+const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
   const { user } = useSelector((state) => state.authSlice);
   const [loading, setLoading] = useState(false);
   const [calcLoading, setCalcLoading] = useState(false);
@@ -593,12 +610,58 @@ const IssuePanel = ({ products, employees, onIssued }) => {
         issued_by: { user_id: user?._id, name: user?.name || "Store Manager", role: user?.role || "store manager" },
         issue_notes: issueNotes,
       };
+
       const res = await api(`/jobs/${job._id}/material/issue`, { method: "POST", body: JSON.stringify(payload) });
       show(res.message || "Material issued successfully", "success");
-      const newIssue = { ...res.data, calculation: calc };
-      onIssued(newIssue, productId, parseFloat(issuedQty));
+
+      // ── Build a normalised issue object from the controller response ──────
+      // Controller returns: { issue_no, issue_id, job_no, material_name,
+      //                       issued_qty, suggested_qty, issued_to, calculation,
+      //                       stock_remaining }
+      // We enrich it with everything needed by IssuesPanel / ReturnPanel.
+      const newIssue = {
+        _id:             res.data.issue_id,          // ← use issue_id from controller
+        issue_no:        res.data.issue_no,
+        job_id:          job._id,                    // ← original job _id
+        job_no:          res.data.job_no,
+        cart_item_index: cartItemIdx,
+        material: {
+          product_id:   productId,
+          product_name: res.data.material_name || selectedProduct?.name,
+          unit:         "sqft",
+        },
+        issued_qty:    res.data.issued_qty,
+        suggested_qty: res.data.suggested_qty,
+        dimensions: {
+          width:  parseFloat(width),
+          height: parseFloat(height),
+          unit:   "ft",
+        },
+        issued_to: {
+          user_id: empId,
+          name:    selectedEmp?.name || "",
+          role:    selectedEmp?.role || "",
+        },
+        issued_by: {
+          user_id: user?._id,
+          name:    user?.name || "Store Manager",
+          role:    user?.role || "store manager",
+        },
+        calculation: res.data.calculation || calc,   // ← prefer server calc
+        issue_notes: issueNotes,
+        status: "issued",
+        issued_at: new Date().toISOString(),
+      };
+
+      // Pass job._id so root component can add it to issuedJobIds Set
+      onIssued(newIssue, productId, parseFloat(issuedQty), job._id);
+
       setTimeout(() => generateSlipPDF(newIssue, user), 400);
+
+      // Reset form
+      setJob(null);
       setProductId(""); setIssuedQty(""); setEmpId(""); setIssueNotes(""); setCalc(null);
+      setWidth(""); setHeight("");
     } catch (err) { show(err.message, "error"); }
     finally { setLoading(false); }
   };
@@ -607,10 +670,10 @@ const IssuePanel = ({ products, employees, onIssued }) => {
     <div className="space-y-4">
       <ToastContainer toasts={toasts} dismiss={dismiss} />
 
-      {/* Job Lookup */}
+      {/* Job Lookup – pass issuedJobIds so it hides already-issued jobs */}
       <Card className="p-5">
         <SectionHeader icon="🏭" title="Production Jobs" subtitle="All jobs currently in production" />
-        <JobLookup onJobSelected={handleJobSelected} />
+        <JobLookup onJobSelected={handleJobSelected} issuedJobIds={issuedJobIds} />
         {job && job.cart_items?.length > 1 && (
           <div className="mt-4">
             <Select label="Cart Item" value={String(cartItemIdx)} onChange={handleCartItemChange}
@@ -731,19 +794,30 @@ const ReturnPanel = ({ issues, employees, onReturned }) => {
   const openIssues = issues.filter(i => i.status === "issued");
   const selectedIssue = issues.find(i => i._id === selectedId);
 
+  // ── Wastage measured against recommended (suggested_qty / calculation.required_sqft)
   const derived = useMemo(() => {
     if (!selectedIssue || retQty === "" || isNaN(parseFloat(retQty))) return null;
-    const issued = selectedIssue.issued_qty || 0;
-    const jobSqft = selectedIssue.calculation?.job_sqft || 0;
-    const returned = Math.max(0, Math.min(issued, parseFloat(retQty)));
-    const used = issued - returned;
-    const wastage = Math.max(0, used - jobSqft);
-    const ratio = issued > 0 ? (wastage / issued) * 100 : 0;
+
+    const issued      = selectedIssue.issued_qty || 0;
+    // Prefer suggested_qty (top-level field saved by controller), fall back to
+    // calculation.required_sqft stored inside the issue document.
+    const recommended = selectedIssue.suggested_qty
+      || selectedIssue.calculation?.required_sqft
+      || issued; // last resort: treat issued as baseline so ratio = 0
+
+    const returned   = Math.max(0, Math.min(issued, parseFloat(retQty)));
+    const used       = issued - returned;
+    // Wastage = how much was used BEYOND the system recommendation
+    const wastage    = Math.max(0, used - recommended);
+    // Ratio relative to recommendation so managers see % over-recommendation
+    const ratio      = recommended > 0 ? (wastage / recommended) * 100 : 0;
+
     return {
-      used: parseFloat(used.toFixed(4)),
-      wastage: parseFloat(wastage.toFixed(4)),
-      ratio: parseFloat(ratio.toFixed(2)),
-      perf: ratio <= 10 ? "good" : ratio <= 20 ? "acceptable" : "high_wastage"
+      used:       parseFloat(used.toFixed(4)),
+      recommended: parseFloat(recommended.toFixed(4)),
+      wastage:    parseFloat(wastage.toFixed(4)),
+      ratio:      parseFloat(ratio.toFixed(2)),
+      perf:       ratio <= 10 ? "good" : ratio <= 20 ? "acceptable" : "high_wastage",
     };
   }, [selectedIssue, retQty]);
 
@@ -759,8 +833,14 @@ const ReturnPanel = ({ issues, employees, onReturned }) => {
     const retBy = employees.find(e => e._id === retById);
     try {
       const payload = {
-        returned_qty: qty, wastage_reason: reason, wastage_reason_notes: notes,
-        returned_by: { user_id: retById || user?._id, name: retBy?.name || user?.name || "Employee", role: retBy?.role || "printing team" },
+        returned_qty:        qty,
+        wastage_reason:      reason,
+        wastage_reason_notes: notes,
+        returned_by: {
+          user_id: retById || user?._id,
+          name:    retBy?.name || user?.name || "Employee",
+          role:    retBy?.role || "printing team",
+        },
       };
       const res = await api(`/material/${selectedId}/return`, { method: "POST", body: JSON.stringify(payload) });
       show(res.message || "Return recorded", "success");
@@ -787,7 +867,12 @@ const ReturnPanel = ({ issues, employees, onReturned }) => {
 
         {selectedIssue && (
           <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {[["Job", selectedIssue.job_no], ["Product", selectedIssue.material?.product_name], ["Issued", `${selectedIssue.issued_qty} sqft`], ["Employee", selectedIssue.issued_to?.name]].map(([k, v]) => (
+            {[
+              ["Job",       selectedIssue.job_no],
+              ["Product",   selectedIssue.material?.product_name],
+              ["Issued",    `${selectedIssue.issued_qty} sqft`],
+              ["Suggested", `${selectedIssue.suggested_qty || selectedIssue.calculation?.required_sqft || "—"} sqft`],
+            ].map(([k, v]) => (
               <div key={k} className="bg-slate-50 rounded-xl p-2.5">
                 <p className="text-[10px] text-slate-400 mb-0.5 uppercase tracking-wide">{k}</p>
                 <p className="text-xs font-semibold text-slate-700 truncate">{v}</p>
@@ -804,15 +889,26 @@ const ReturnPanel = ({ issues, employees, onReturned }) => {
             <div className="space-y-4">
               <div>
                 <NumberInput label="Returned Qty *" value={retQty} onChange={setRetQty} min={0} step={0.1} suffix="sqft" />
-                <p className="text-xs text-slate-400 mt-1.5">Issued: {selectedIssue.issued_qty} sqft · Enter 0 if nothing returned</p>
+                <p className="text-xs text-slate-400 mt-1.5">
+                  Issued: {selectedIssue.issued_qty} sqft
+                  &nbsp;·&nbsp;
+                  Recommended: {selectedIssue.suggested_qty || selectedIssue.calculation?.required_sqft || "—"} sqft
+                  &nbsp;·&nbsp;
+                  Enter 0 if nothing returned
+                </p>
               </div>
 
               {derived && (
                 <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
                   <p className="text-xs font-bold text-amber-600 mb-3 uppercase tracking-wide">Wastage Preview</p>
                   <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-xs mb-3">
-                    {[["Actual Used", `${derived.used} sqft`], ["Wastage", `${derived.wastage} sqft`], ["Wastage Ratio", `${derived.ratio}%`]].map(([k, v]) => (
-                      <><span className="text-slate-500">{k}</span><span className="font-bold text-slate-700">{v}</span></>
+                    {[
+                      ["Actual Used",       `${derived.used} sqft`],
+                      ["Recommended",       `${derived.recommended} sqft`],
+                      ["Excess Wastage",    `${derived.wastage} sqft`],
+                      ["Over-Rec %",        `${derived.ratio}%`],
+                    ].map(([k, v]) => (
+                      <><span key={k + "k"} className="text-slate-500">{k}</span><span key={k + "v"} className="font-bold text-slate-700">{v}</span></>
                     ))}
                   </div>
                   <div className="flex items-center justify-between">
@@ -824,7 +920,8 @@ const ReturnPanel = ({ issues, employees, onReturned }) => {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Select label="Wastage Reason" value={reason} onChange={setReason} options={WASTAGE_REASONS} />
-                <Select label="Returned By" value={retById} onChange={setRetById} placeholder="Employee (opt.)" options={employees.map(e => ({ value: e._id, label: e.name }))} />
+                <Select label="Returned By" value={retById} onChange={setRetById} placeholder="Employee (opt.)"
+                  options={employees.map(e => ({ value: e._id, label: e.name }))} />
               </div>
               <Input label="Notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Additional notes…" />
             </div>
@@ -854,7 +951,11 @@ const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
     else if (statusFilter) list = list.filter(i => i.status === statusFilter);
     if (search.trim()) {
       const q = search.toLowerCase();
-      list = list.filter(i => i.issue_no?.toLowerCase().includes(q) || i.job_no?.toLowerCase().includes(q) || i.issued_to?.name?.toLowerCase().includes(q));
+      list = list.filter(i =>
+        i.issue_no?.toLowerCase().includes(q) ||
+        i.job_no?.toLowerCase().includes(q) ||
+        i.issued_to?.name?.toLowerCase().includes(q)
+      );
     }
     return list;
   }, [issues, statusFilter, search]);
@@ -874,8 +975,7 @@ const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-2">
         <Input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
-          placeholder="Search by issue no, job, employee…"
-          className="flex-1" />
+          placeholder="Search by issue no, job, employee…" className="flex-1" />
         <div className="flex gap-2">
           <div className="flex-1 sm:w-36">
             <Select value={statusFilter} onChange={v => { setStatusFilter(v); setPage(1); }}
@@ -898,7 +998,6 @@ const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           {paginated.map(issue => (
             <Card key={issue._id} hoverable className="p-4" onClick={() => onViewIssue(issue, "view")}>
-              {/* Header */}
               <div className="flex items-start justify-between mb-3">
                 <div>
                   <div className="flex items-center gap-2">
@@ -912,7 +1011,6 @@ const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
                 <StatusBadge status={issue.status} />
               </div>
 
-              {/* Employee + Material */}
               <div className="flex items-center gap-3 mb-3">
                 <Avatar name={issue.issued_to?.name || "?"} />
                 <div className="flex-1 min-w-0">
@@ -925,7 +1023,6 @@ const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
                 </div>
               </div>
 
-              {/* Wastage */}
               {issue.return ? (
                 <WastageBar pct={issue.return.wastage_ratio_pct || 0} />
               ) : (
@@ -935,7 +1032,6 @@ const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
                 </div>
               )}
 
-              {/* Actions */}
               <div className="flex gap-2 mt-3 pt-3 border-t border-slate-50">
                 <Btn size="xs" variant="ghost" onClick={e => { e.stopPropagation(); onViewIssue(issue, "view"); }}>
                   View Details
@@ -1093,7 +1189,8 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
     try {
       const payload = {
         manager_by: { user_id: user?._id || "unknown", name: user?.name || "Store Manager" },
-        manager_notes: manNotes, override_rating: override || null
+        manager_notes: manNotes,
+        override_rating: override || null,
       };
       const method = issue.return?.manager_reviewed ? "PUT" : "POST";
       const res = await api(`/material/${issue._id}/review`, { method, body: JSON.stringify(payload) });
@@ -1116,10 +1213,11 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Issue Summary</p>
           <div className="space-y-1">
             {[
-              ["Employee", issue.issued_to?.name],
-              ["Material", issue.material?.product_name],
-              ["Issued Qty", `${issue.issued_qty} sqft`],
-              ["Dimensions", `${issue.dimensions?.width}ft × ${issue.dimensions?.height}ft`],
+              ["Employee",    issue.issued_to?.name],
+              ["Material",    issue.material?.product_name],
+              ["Issued Qty",  `${issue.issued_qty} sqft`],
+              ["Recommended", `${issue.suggested_qty || issue.calculation?.required_sqft || "—"} sqft`],
+              ["Dimensions",  `${issue.dimensions?.width}ft × ${issue.dimensions?.height}ft`],
             ].map(([k, v]) => (
               <div key={k} className="flex justify-between items-center py-2 border-b border-slate-50">
                 <span className="text-xs text-slate-400">{k}</span>
@@ -1143,11 +1241,11 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
             <Divider label="Return Details" />
             <div className="space-y-1">
               {[
-                ["Returned", `${r.returned_qty} sqft`],
-                ["Used", `${r.actual_used_qty} sqft`],
-                ["Wastage", `${r.actual_wastage_qty} sqft`],
-                ["Ratio", `${r.wastage_ratio_pct}%`],
-                ["Reason", WASTAGE_REASONS.find(x => x.value === r.wastage_reason)?.label || r.wastage_reason],
+                ["Returned",   `${r.returned_qty} sqft`],
+                ["Used",       `${r.actual_used_qty} sqft`],
+                ["Wastage",    `${r.actual_wastage_qty} sqft`],
+                ["Ratio",      `${r.wastage_ratio_pct}%`],
+                ["Reason",     WASTAGE_REASONS.find(x => x.value === r.wastage_reason)?.label || r.wastage_reason],
               ].map(([k, v]) => (
                 <div key={k} className="flex justify-between py-2 border-b border-slate-50">
                   <span className="text-xs text-slate-400">{k}</span>
@@ -1175,7 +1273,11 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
             <div className="space-y-3">
               <Select label="Override Rating" value={override} onChange={setOverride}
                 placeholder="Keep auto-rating"
-                options={[{ value: "good", label: "Good" }, { value: "acceptable", label: "Acceptable" }, { value: "high_wastage", label: "High Wastage" }]} />
+                options={[
+                  { value: "good", label: "Good" },
+                  { value: "acceptable", label: "Acceptable" },
+                  { value: "high_wastage", label: "High Wastage" },
+                ]} />
               <div>
                 <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Manager Notes</label>
                 <textarea value={manNotes} onChange={e => setManNotes(e.target.value)} rows={3}
@@ -1206,68 +1308,96 @@ export default function MaterialIssueManager() {
   const [modalMode, setModalMode] = useState("view");
   const { toasts, show, dismiss } = useToast();
 
+  // ── Track job IDs that already have an issue (to hide from job lookup) ──────
+  // Initialised lazily once issues are fetched; updated instantly on new issue.
+  const [issuedJobIds, setIssuedJobIds] = useState(new Set());
+
   const fetchProducts = useCallback(async () => {
     try { const res = await api("/product/get_product"); setProducts(res.data || []); } catch { }
   }, []);
 
   const fetchEmployees = useCallback(async () => {
-    try { 
-      const res = await api("/admin/get_admin"); 
+    try {
+      const res = await api("/admin/get_admin");
       const pro_team = res.data?.filter(e => e.role === "production team") || [];
-      setEmployees(pro_team || []); 
+      setEmployees(pro_team);
     } catch { }
   }, []);
 
   const fetchIssues = useCallback(async () => {
     setIssLoading(true);
-    try { const res = await api("/material?limit=100"); setIssues(res.data?.issues || []); }
-    catch (e) { show(e.message, "error"); }
+    try {
+      const res = await api("/material?limit=100");
+      const list = res.data?.issues || [];
+      setIssues(list);
+      // Rebuild the issued-jobs Set from persisted records so it survives page refresh
+      setIssuedJobIds(new Set(list.map(i => i.job_id).filter(Boolean)));
+    } catch (e) { show(e.message, "error"); }
     finally { setIssLoading(false); }
   }, []);
 
   useEffect(() => { fetchProducts(); fetchEmployees(); fetchIssues(); }, []);
 
-  const handleIssued = async (newIssue, productId, qty) => {
+  // onIssued now receives jobId as the 4th argument
+  const handleIssued = async (newIssue, productId, qty, jobId) => {
+    // 1. Add to issues list
     setIssues(prev => [newIssue, ...prev]);
-    setProducts(prev => prev.map(p => p._id === productId ? { ...p, stock_count: Math.max(0, (p.stock_count || 0) - qty) } : p));
+
+    // 2. Decrement local stock
+    setProducts(prev =>
+      prev.map(p => p._id === productId ? { ...p, stock_count: Math.max(0, (p.stock_count || 0) - qty) } : p)
+    );
+
+    // 3. Immediately hide this job from the Issue tab lookup
+    setIssuedJobIds(prev => new Set([...prev, jobId]));
+
+    // 4. Switch to records tab
+    setTab("issues");
+
+    // 5. Update job status on server (best-effort)
     try {
-      await api(`/jobs/${newIssue.job_id}/status`, {
+      await api(`/jobs/${jobId}/status`, {
         method: "PATCH",
         body: JSON.stringify({ job_status: "production" }),
       });
     } catch (err) {
       show(`Material issued, but failed to update job status: ${err.message}`, "warning");
     }
-    setTab("issues");
   };
 
   const handleReturned = (issueId, data) => {
-    setIssues(prev => prev.map(i => i._id === issueId ? { ...i, status: data.status || "returned", return: data } : i));
+    setIssues(prev =>
+      prev.map(i => i._id === issueId ? { ...i, status: data.status || "returned", return: data } : i)
+    );
   };
 
   const handleReviewSaved = (issueId, data) => {
-    setIssues(prev => prev.map(i =>
-      i._id === issueId && i.return
-        ? { ...i, return: { ...i.return, manager_reviewed: true, manager_notes: data.manager_notes, performance_rating: data.override_rating || i.return.performance_rating } }
-        : i
-    ));
+    setIssues(prev =>
+      prev.map(i =>
+        i._id === issueId && i.return
+          ? { ...i, return: { ...i.return, manager_reviewed: true, manager_notes: data.manager_notes, performance_rating: data.override_rating || i.return.performance_rating } }
+          : i
+      )
+    );
   };
 
   const stats = useMemo(() => ({
-    pending: issues.filter(i => i.status === "issued").length,
-    flagged: issues.filter(i => i.return?.is_flagged && !i.return?.manager_reviewed).length,
+    pending:     issues.filter(i => i.status === "issued").length,
+    flagged:     issues.filter(i => i.return?.is_flagged && !i.return?.manager_reviewed).length,
     totalIssued: parseFloat(issues.reduce((s, i) => s + (i.issued_qty || 0), 0).toFixed(1)),
     avgWaste: (() => {
       const returned = issues.filter(i => i.return);
-      return returned.length ? parseFloat((returned.reduce((s, i) => s + (i.return.wastage_ratio_pct || 0), 0) / returned.length).toFixed(1)) : 0;
+      return returned.length
+        ? parseFloat((returned.reduce((s, i) => s + (i.return.wastage_ratio_pct || 0), 0) / returned.length).toFixed(1))
+        : 0;
     })(),
   }), [issues]);
 
   const TABS = [
-    { key: "issue", label: "Issue", icon: "📋" },
-    { key: "issues", label: "Records", icon: "📦", badge: issues.length },
-    { key: "returns", label: "Returns", icon: "↩", badge: stats.pending, badgeColor: stats.pending > 0 ? "bg-amber-500" : "" },
-    { key: "report", label: "Report", icon: "📊" },
+    { key: "issue",   label: "Issue",   icon: "📋" },
+    { key: "issues",  label: "Records", icon: "📦", badge: issues.length },
+    { key: "returns", label: "Returns", icon: "↩",  badge: stats.pending, badgeColor: stats.pending > 0 ? "bg-amber-500" : "" },
+    { key: "report",  label: "Report",  icon: "📊" },
   ];
 
   return (
@@ -1275,7 +1405,7 @@ export default function MaterialIssueManager() {
       <style>{`
         @keyframes slide-up {
           from { opacity: 0; transform: translateY(12px); }
-          to { opacity: 1; transform: translateY(0); }
+          to   { opacity: 1; transform: translateY(0); }
         }
         .animate-slide-up { animation: slide-up 0.25s ease-out; }
       `}</style>
@@ -1286,7 +1416,6 @@ export default function MaterialIssueManager() {
         {/* ── Header ─────────────────────────────────────────── */}
         <header className="bg-white border-b border-slate-100 sticky top-0 z-30 shadow-sm">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            {/* Top bar */}
             <div className="flex items-center justify-between py-4">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-slate-900 flex items-center justify-center flex-shrink-0">
@@ -1318,14 +1447,16 @@ export default function MaterialIssueManager() {
             {/* Stats strip */}
             <div className="grid grid-cols-4 gap-2 pb-3">
               {[
-                { label: "Issued", value: stats.totalIssued, suffix: "sqft", color: "text-sky-600" },
-                { label: "Pending", value: stats.pending, suffix: "", color: stats.pending > 0 ? "text-amber-600" : "text-slate-700" },
+                { label: "Issued",    value: stats.totalIssued, suffix: "sqft", color: "text-sky-600" },
+                { label: "Pending",   value: stats.pending,     suffix: "",     color: stats.pending > 0 ? "text-amber-600" : "text-slate-700" },
                 { label: "Avg Waste", value: `${stats.avgWaste}%`, suffix: "", color: stats.avgWaste > 20 ? "text-rose-600" : "text-slate-700" },
-                { label: "Review", value: stats.flagged, suffix: "", color: stats.flagged > 0 ? "text-rose-600" : "text-slate-700" },
+                { label: "Review",    value: stats.flagged,     suffix: "",     color: stats.flagged > 0 ? "text-rose-600" : "text-slate-700" },
               ].map(s => (
                 <div key={s.label} className="bg-slate-50 rounded-xl px-3 py-2 text-center border border-slate-100">
                   <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">{s.label}</p>
-                  <p className={`text-sm font-black ${s.color}`}>{s.value}<span className="text-[10px] font-normal text-slate-400 ml-0.5">{s.suffix}</span></p>
+                  <p className={`text-sm font-black ${s.color}`}>
+                    {s.value}<span className="text-[10px] font-normal text-slate-400 ml-0.5">{s.suffix}</span>
+                  </p>
                 </div>
               ))}
             </div>
@@ -1354,10 +1485,10 @@ export default function MaterialIssueManager() {
 
         {/* ── Main Content ──────────────────────────────────── */}
         <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-4 pb-24 sm:pb-6">
-          {tab === "issue" && <IssuePanel products={products} employees={employees} onIssued={handleIssued} />}
-          {tab === "issues" && <IssuesPanel issues={issues} onViewIssue={(i, m) => { setModalIssue(i); setModalMode(m); }} onRefresh={fetchIssues} loading={issLoading} />}
+          {tab === "issue"   && <IssuePanel products={products} employees={employees} onIssued={handleIssued} issuedJobIds={issuedJobIds} />}
+          {tab === "issues"  && <IssuesPanel issues={issues} onViewIssue={(i, m) => { setModalIssue(i); setModalMode(m); }} onRefresh={fetchIssues} loading={issLoading} />}
           {tab === "returns" && <ReturnPanel issues={issues} employees={employees} onReturned={handleReturned} />}
-          {tab === "report" && <ReportPanel />}
+          {tab === "report"  && <ReportPanel />}
         </main>
 
         {/* ── Mobile Bottom Nav ─────────────────────────────── */}

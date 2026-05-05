@@ -12,6 +12,7 @@ import DeliveryPanel from "../pages/DeliveryPanel";
 import MyJobs from "../pages/Myjobs";
 import QualityCheckDashboard from "../pages/QualityCheckDashboard";
 import ErectionPanel from "../pages/Erectionpanel";
+import AddProduct from "../pages/AddProduct";
 
 // Wrapper component for permission-protected routes
 const ProtectedRoute = ({ children, pageName }) => (
@@ -109,8 +110,14 @@ export const router = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
-
-      // Catch-all: redirect unknown paths to dashboard
+      {
+        path: "add-product",
+        element: (
+          <ProtectedRoute pageName="add-product">
+            <AddProduct />
+          </ProtectedRoute>
+        ),
+      },
       {
         path: "*",
         element: <Navigate to="/dashboard" replace />,

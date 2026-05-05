@@ -31,7 +31,7 @@ const useToast = () => {
   }, []);
   const dismiss = useCallback(
     (id) => setToasts((p) => p.filter((t) => t.id !== id)),
-    []
+    [],
   );
   return { toasts, show, dismiss };
 };
@@ -40,10 +40,10 @@ const ToastContainer = ({ toasts, dismiss }) => (
   <div className="fixed bottom-20 left-4 right-4 z-[100] flex flex-col gap-2 sm:bottom-6 sm:left-auto sm:right-6 sm:w-80">
     {toasts.map((t) => {
       const cfg = {
-        info:    { bar: "bg-sky-400",     icon: "ℹ" },
+        info: { bar: "bg-sky-400", icon: "ℹ" },
         success: { bar: "bg-emerald-400", icon: "✓" },
-        error:   { bar: "bg-rose-400",    icon: "✕" },
-        warning: { bar: "bg-amber-400",   icon: "⚠" },
+        error: { bar: "bg-rose-400", icon: "✕" },
+        warning: { bar: "bg-amber-400", icon: "⚠" },
       }[t.type] || { bar: "bg-sky-400", icon: "ℹ" };
       return (
         <div
@@ -52,9 +52,18 @@ const ToastContainer = ({ toasts, dismiss }) => (
         >
           <div className={`w-1 flex-shrink-0 ${cfg.bar}`} />
           <div className="flex items-center gap-3 px-4 py-3 flex-1">
-            <span className={`text-sm font-bold ${cfg.bar.replace("bg-", "text-")}`}>{cfg.icon}</span>
+            <span
+              className={`text-sm font-bold ${cfg.bar.replace("bg-", "text-")}`}
+            >
+              {cfg.icon}
+            </span>
             <span className="text-sm flex-1 leading-snug">{t.message}</span>
-            <button onClick={() => dismiss(t.id)} className="opacity-40 hover:opacity-100 text-lg leading-none">×</button>
+            <button
+              onClick={() => dismiss(t.id)}
+              className="opacity-40 hover:opacity-100 text-lg leading-none"
+            >
+              ×
+            </button>
           </div>
         </div>
       );
@@ -64,15 +73,35 @@ const ToastContainer = ({ toasts, dismiss }) => (
 
 // ─── Spinner ──────────────────────────────────────────────────────────────────
 const Spinner = ({ size = 16 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" className="animate-spin flex-shrink-0">
-    <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="2.5" strokeDasharray="30 62" />
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    className="animate-spin flex-shrink-0"
+  >
+    <circle
+      cx="12"
+      cy="12"
+      r="10"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeDasharray="30 62"
+    />
   </svg>
 );
 
 // ─── Button ───────────────────────────────────────────────────────────────────
 const Btn = ({
-  children, onClick, disabled, loading,
-  variant = "primary", size = "md", className = "", type = "button", fullWidth,
+  children,
+  onClick,
+  disabled,
+  loading,
+  variant = "primary",
+  size = "md",
+  className = "",
+  type = "button",
+  fullWidth,
 }) => {
   const base = `inline-flex items-center justify-center gap-2 font-bold rounded-xl transition-all duration-150 active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed select-none ${fullWidth ? "w-full" : ""}`;
   const sizes = {
@@ -83,11 +112,13 @@ const Btn = ({
   };
   const variants = {
     primary: "bg-slate-900 text-white hover:bg-slate-700 shadow-sm",
-    success: "bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm shadow-emerald-200",
-    ghost:   "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50",
-    danger:  "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100",
-    purple:  "bg-violet-600 text-white hover:bg-violet-700 shadow-sm shadow-violet-200",
-    drive:   "bg-[#1a73e8] text-white hover:bg-[#1557b0] shadow-sm",
+    success:
+      "bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm shadow-emerald-200",
+    ghost: "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50",
+    danger: "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100",
+    purple:
+      "bg-violet-600 text-white hover:bg-violet-700 shadow-sm shadow-violet-200",
+    drive: "bg-[#1a73e8] text-white hover:bg-[#1557b0] shadow-sm",
   };
   return (
     <button
@@ -107,7 +138,9 @@ const Card = ({ children, className = "", onClick, hoverable }) => (
   <div
     onClick={onClick}
     className={`bg-white rounded-2xl border border-slate-100 shadow-sm ${
-      hoverable ? "cursor-pointer hover:border-violet-200 hover:shadow-md transition-all duration-150" : ""
+      hoverable
+        ? "cursor-pointer hover:border-violet-200 hover:shadow-md transition-all duration-150"
+        : ""
     } ${className}`}
   >
     {children}
@@ -142,14 +175,14 @@ const EmptyState = ({ icon, title, subtitle }) => (
 // ─── StatusDot ────────────────────────────────────────────────────────────────
 const StatusDot = ({ status }) => {
   const map = {
-    draft:       ["bg-slate-300",  "Draft"],
-    accepted:    ["bg-sky-400",    "Accepted"],
-    in_progress: ["bg-amber-400",  "In Progress"],
-    production:  ["bg-violet-500", "Production"],
-    on_hold:     ["bg-orange-400", "On Hold"],
-    completed:   ["bg-emerald-400","Completed"],
-    delivery:    ["bg-blue-400",   "Delivery"],
-    rejected:    ["bg-rose-400",   "Rejected"],
+    draft: ["bg-slate-300", "Draft"],
+    accepted: ["bg-sky-400", "Accepted"],
+    in_progress: ["bg-amber-400", "In Progress"],
+    production: ["bg-violet-500", "Production"],
+    on_hold: ["bg-orange-400", "On Hold"],
+    completed: ["bg-emerald-400", "Completed"],
+    delivery: ["bg-blue-400", "Delivery"],
+    rejected: ["bg-rose-400", "Rejected"],
   };
   const [color, label] = map[status] || ["bg-slate-300", status || "—"];
   return (
@@ -162,8 +195,16 @@ const StatusDot = ({ status }) => {
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 const CameraIcon = ({ size = 26 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-    stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.6"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
     <circle cx="12" cy="13" r="4" />
   </svg>
@@ -171,13 +212,27 @@ const CameraIcon = ({ size = 26 }) => (
 
 // Inline Google Drive logo — no external dependency
 const DriveIcon = ({ size = 14 }) => (
-  <svg width={size} height={size} viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg">
-    <path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3L28.35 52H0c0 1.55.4 3.1 1.2 4.5z"  fill="#0066da"/>
-    <path d="M43.65 25L29.05 0c-1.35.8-2.5 1.9-3.3 3.3L1.2 47.5A9.06 9.06 0 0 0 0 52h28.35z"  fill="#00ac47"/>
-    <path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75L85.1 56.5c.8-1.4 1.2-2.95 1.2-4.5H57.95l6.2 11.55z" fill="#ea4335"/>
-    <path d="M43.65 25L58.25 0H29.05z" fill="#00832d"/>
-    <path d="M57.95 52H87.3L73.55 27.3 58.95 2.6l-15.3 22.4z" fill="#2684fc"/>
-    <path d="M28.35 52l15.3-27H57.95L43.65 25z" fill="#ffba00"/>
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 87.3 78"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <path
+      d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3L28.35 52H0c0 1.55.4 3.1 1.2 4.5z"
+      fill="#0066da"
+    />
+    <path
+      d="M43.65 25L29.05 0c-1.35.8-2.5 1.9-3.3 3.3L1.2 47.5A9.06 9.06 0 0 0 0 52h28.35z"
+      fill="#00ac47"
+    />
+    <path
+      d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75L85.1 56.5c.8-1.4 1.2-2.95 1.2-4.5H57.95l6.2 11.55z"
+      fill="#ea4335"
+    />
+    <path d="M43.65 25L58.25 0H29.05z" fill="#00832d" />
+    <path d="M57.95 52H87.3L73.55 27.3 58.95 2.6l-15.3 22.4z" fill="#2684fc" />
+    <path d="M28.35 52l15.3-27H57.95L43.65 25z" fill="#ffba00" />
   </svg>
 );
 
@@ -281,7 +336,9 @@ const DriveFileBanner = ({ driveLink }) => {
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border-b border-amber-100">
         <DriveIcon size={13} />
-        <span className="text-xs font-bold text-amber-800 flex-1">Original File — Google Drive</span>
+        <span className="text-xs font-bold text-amber-800 flex-1">
+          Original File — Google Drive
+        </span>
         <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-rose-200 flex-shrink-0">
           ⏱ 48 hr cleanup
         </span>
@@ -328,25 +385,47 @@ const DriveFileBanner = ({ driveLink }) => {
 };
 
 // ─── DesignFileCard ───────────────────────────────────────────────────────────
-const DesignFileCard = ({ designFile, designDriveLink, designStatus, jobNo }) => {
+const DesignFileCard = ({
+  designFile,
+  designDriveLink,
+  designStatus,
+  jobNo,
+}) => {
   const [lightbox, setLightbox] = useState(false);
-  const fileName = designFile?.split("/").pop()?.split("?")[0] || `design_${jobNo}`;
-  const isImage  = /\.(jpg|jpeg|png|webp|gif)$/i.test(fileName);
-  const isPdf    = /\.pdf$/i.test(fileName);
+  const fileName =
+    designFile?.split("/").pop()?.split("?")[0] || `design_${jobNo}`;
+  const isImage = /\.(jpg|jpeg|png|webp|gif)$/i.test(fileName);
+  const isPdf = /\.pdf$/i.test(fileName);
 
   const statusMap = {
-    approved: { ring: "border-emerald-200 bg-emerald-50", text: "text-emerald-700", badge: "✓ Approved" },
-    uploaded: { ring: "border-sky-200 bg-sky-50",         text: "text-sky-700",     badge: "● Uploaded" },
-    pending:  { ring: "border-amber-200 bg-amber-50",     text: "text-amber-700",   badge: "◆ Pending"  },
-    rejected: { ring: "border-rose-200 bg-rose-50",       text: "text-rose-700",    badge: "✕ Rejected" },
+    approved: {
+      ring: "border-emerald-200 bg-emerald-50",
+      text: "text-emerald-700",
+      badge: "✓ Approved",
+    },
+    uploaded: {
+      ring: "border-sky-200 bg-sky-50",
+      text: "text-sky-700",
+      badge: "● Uploaded",
+    },
+    pending: {
+      ring: "border-amber-200 bg-amber-50",
+      text: "text-amber-700",
+      badge: "◆ Pending",
+    },
+    rejected: {
+      ring: "border-rose-200 bg-rose-50",
+      text: "text-rose-700",
+      badge: "✕ Rejected",
+    },
   };
   const s = statusMap[designStatus] || statusMap.pending;
 
   const download = () => {
     const a = document.createElement("a");
-    a.href     = designFile;
+    a.href = designFile;
     a.download = fileName;
-    a.target   = "_blank";
+    a.target = "_blank";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -356,8 +435,12 @@ const DesignFileCard = ({ designFile, designDriveLink, designStatus, jobNo }) =>
     <>
       <div className={`border rounded-xl overflow-hidden ${s.ring}`}>
         {/* Status bar */}
-        <div className={`flex items-center justify-between gap-2 px-3 py-2 border-b ${s.ring}`}>
-          <span className={`text-xs font-bold flex-shrink-0 ${s.text}`}>{s.badge}</span>
+        <div
+          className={`flex items-center justify-between gap-2 px-3 py-2 border-b ${s.ring}`}
+        >
+          <span className={`text-xs font-bold flex-shrink-0 ${s.text}`}>
+            {s.badge}
+          </span>
           <div className="flex items-center gap-2 min-w-0">
             {/* Drive pill — visible at a glance */}
             {designDriveLink && (
@@ -366,7 +449,9 @@ const DesignFileCard = ({ designFile, designDriveLink, designStatus, jobNo }) =>
                 Original on Drive
               </span>
             )}
-            <span className="text-[10px] text-slate-400 font-mono truncate">{fileName}</span>
+            <span className="text-[10px] text-slate-400 font-mono truncate">
+              {fileName}
+            </span>
           </div>
         </div>
 
@@ -393,7 +478,9 @@ const DesignFileCard = ({ designFile, designDriveLink, designStatus, jobNo }) =>
               <span className="text-2xl">{isPdf ? "📄" : "🎨"}</span>
             </div>
             <div className="min-w-0">
-              <div className="text-sm font-semibold text-slate-800 truncate">{fileName}</div>
+              <div className="text-sm font-semibold text-slate-800 truncate">
+                {fileName}
+              </div>
               <div className="text-xs text-slate-400 mt-0.5">
                 {isPdf ? "PDF Document" : "Design File"} — tap Preview to open
               </div>
@@ -403,10 +490,20 @@ const DesignFileCard = ({ designFile, designDriveLink, designStatus, jobNo }) =>
 
         {/* Sample file actions */}
         <div className="flex gap-2 px-3 py-2.5 bg-white/80 border-t border-white/60">
-          <Btn variant="ghost" size="sm" onClick={() => window.open(designFile, "_blank")} className="flex-1">
+          <Btn
+            variant="ghost"
+            size="sm"
+            onClick={() => window.open(designFile, "_blank")}
+            className="flex-1"
+          >
             Preview Sample
           </Btn>
-          <Btn variant="primary" size="sm" onClick={download} className="flex-1">
+          <Btn
+            variant="primary"
+            size="sm"
+            onClick={download}
+            className="flex-1"
+          >
             Download Sample
           </Btn>
         </div>
@@ -450,21 +547,22 @@ const DesignFileCard = ({ designFile, designDriveLink, designStatus, jobNo }) =>
 
 // ─── JobSelector ─────────────────────────────────────────────────────────────
 const JobSelector = ({ onJobSelected }) => {
-  const [loading,  setLoading]  = useState(false);
-  const [jobs,     setJobs]     = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [jobs, setJobs] = useState([]);
   const [selected, setSelected] = useState(null);
-  const [filter,   setFilter]   = useState("");
+  const [filter, setFilter] = useState("");
   const { toasts, show, dismiss } = useToast();
 
   const fetchProductionJobs = useCallback(async () => {
     setLoading(true);
     try {
-      const res  = await api(`/jobs?job_status=production&limit=100`);
-      let   list = res.data?.jobs || res.data || [];
+      const res = await api(`/jobs?job_status=production&limit=100`);
+      let list = res.data?.jobs || res.data || [];
       if (!Array.isArray(list)) list = [];
       const prodJobs = list.filter((j) => j.job_status === "production");
       setJobs(prodJobs);
-      if (prodJobs.length === 0) show("No jobs currently in production", "warning");
+      if (prodJobs.length === 0)
+        show("No jobs currently in production", "warning");
     } catch (err) {
       show(err.message, "error");
     } finally {
@@ -472,13 +570,17 @@ const JobSelector = ({ onJobSelected }) => {
     }
   }, []);
 
-  useEffect(() => { fetchProductionJobs(); }, []);
+  useEffect(() => {
+    fetchProductionJobs();
+  }, []);
 
   const filtered = useMemo(() => {
     if (!filter.trim()) return jobs;
     const q = filter.toLowerCase();
     return jobs.filter(
-      (j) => j.job_no?.toLowerCase().includes(q) || j.customer_name?.toLowerCase().includes(q)
+      (j) =>
+        j.job_no?.toLowerCase().includes(q) ||
+        j.customer_name?.toLowerCase().includes(q),
     );
   }, [jobs, filter]);
 
@@ -486,7 +588,7 @@ const JobSelector = ({ onJobSelected }) => {
     setLoading(true);
     try {
       // Always fetch full job so design_drive_link is present
-      const full    = await api(`/jobs/${job._id}`);
+      const full = await api(`/jobs/${job._id}`);
       const fullJob = full.data || job;
       setSelected(fullJob);
       onJobSelected(fullJob);
@@ -515,10 +617,17 @@ const JobSelector = ({ onJobSelected }) => {
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-violet-500 animate-pulse flex-shrink-0" />
               <span className="text-xs font-bold text-violet-600 uppercase tracking-wide">
-                {loading ? "Loading…" : `${jobs.length} job${jobs.length !== 1 ? "s" : ""} in production`}
+                {loading
+                  ? "Loading…"
+                  : `${jobs.length} job${jobs.length !== 1 ? "s" : ""} in production`}
               </span>
             </div>
-            <Btn variant="ghost" size="xs" onClick={fetchProductionJobs} loading={loading}>
+            <Btn
+              variant="ghost"
+              size="xs"
+              onClick={fetchProductionJobs}
+              loading={loading}
+            >
               ↻ Refresh
             </Btn>
           </div>
@@ -554,23 +663,31 @@ const JobSelector = ({ onJobSelected }) => {
                   className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-violet-50 active:bg-violet-100 transition-colors"
                 >
                   <div className="w-10 h-10 rounded-xl bg-violet-600 flex items-center justify-center flex-shrink-0">
-                    <span className="text-[9px] font-black text-white tracking-wider">PROD</span>
+                    <span className="text-[9px] font-black text-white tracking-wider">
+                      PROD
+                    </span>
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
-                      <p className="text-sm font-bold text-slate-800">{job.job_no}</p>
+                      <p className="text-sm font-bold text-slate-800">
+                        {job.job_no}
+                      </p>
                       {job.design_drive_link && (
                         <span className="inline-flex items-center gap-0.5 bg-[#e8f0fe] text-[#1a73e8] text-[9px] font-bold px-1.5 py-0.5 rounded-full border border-[#c5d9f8] flex-shrink-0">
-                          <DriveIcon size={9} />Drive
+                          <DriveIcon size={9} />
+                          Drive
                         </span>
                       )}
                     </div>
                     <p className="text-xs text-slate-400 truncate">
-                      {job.customer_name} · {job.cart_items?.length || 0} item(s)
+                      {job.customer_name} · {job.cart_items?.length || 0}{" "}
+                      item(s)
                     </p>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <p className="text-[10px] text-slate-400 mb-0.5">{job.current_stage?.stage || "—"}</p>
+                    <p className="text-[10px] text-slate-400 mb-0.5">
+                      {job.current_stage?.stage || "—"}
+                    </p>
                     <StatusDot status={job.job_status} />
                   </div>
                 </div>
@@ -584,18 +701,23 @@ const JobSelector = ({ onJobSelected }) => {
           <div className="flex items-start justify-between mb-3">
             <div className="flex gap-3 items-center">
               <div className="w-10 h-10 rounded-xl bg-violet-500/30 flex items-center justify-center flex-shrink-0">
-                <span className="text-[9px] font-black text-violet-200 tracking-wider">PROD</span>
+                <span className="text-[9px] font-black text-violet-200 tracking-wider">
+                  PROD
+                </span>
               </div>
               <div>
                 <div className="flex items-center gap-2">
                   <p className="text-sm font-bold">{selected.job_no}</p>
                   {selected.design_drive_link && (
                     <span className="inline-flex items-center gap-1 bg-[#1a73e8]/20 border border-[#1a73e8]/40 text-[#93bbf8] text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0">
-                      <DriveIcon size={9} />Drive
+                      <DriveIcon size={9} />
+                      Drive
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-white/50">{selected.customer_name}</p>
+                <p className="text-xs text-white/50">
+                  {selected.customer_name}
+                </p>
               </div>
             </div>
             <button
@@ -608,8 +730,8 @@ const JobSelector = ({ onJobSelected }) => {
           <div className="grid grid-cols-3 gap-2">
             {[
               ["Status", "Production"],
-              ["Stage",  selected.current_stage?.stage || "—"],
-              ["Items",  selected.cart_items?.length ?? 0],
+              ["Stage", selected.current_stage?.stage || "—"],
+              ["Items", selected.cart_items?.length ?? 0],
             ].map(([k, v]) => (
               <div key={k} className="bg-white/10 rounded-lg p-2">
                 <p className="text-[10px] text-white/40 mb-0.5">{k}</p>
@@ -628,15 +750,17 @@ const ProductionUploadPanel = () => {
   const { user } = useSelector((state) => state.authSlice);
   const { toasts, show, dismiss } = useToast();
 
-  const [job,              setJob]              = useState(null);
+  const [job, setJob] = useState(null);
   const [productionImages, setProductionImages] = useState([]);
-  const [notes,            setNotes]            = useState("");
-  const [submitting,       setSubmitting]       = useState(false);
-  const [success,          setSuccess]          = useState(false);
+  const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [success, setSuccess] = useState(false);
 
   const handleImageUploaded = useCallback((url) => {
     if (url && typeof url === "string") {
-      setProductionImages((prev) => (prev.includes(url) ? prev : [...prev, url]));
+      setProductionImages((prev) =>
+        prev.includes(url) ? prev : [...prev, url],
+      );
     }
   }, []);
 
@@ -651,32 +775,39 @@ const ProductionUploadPanel = () => {
   };
 
   const handleSubmit = async () => {
-    if (!job)                          return show("Select a job first", "error");
-    if (productionImages.length === 0) return show("Capture at least one production photo", "error");
-    if (!notes.trim())                 return show("Add production notes before submitting", "error");
+    if (!job) return show("Select a job first", "error");
+    if (productionImages.length === 0)
+      return show("Capture at least one production photo", "error");
+    if (!notes.trim())
+      return show("Add production notes before submitting", "error");
 
     setSubmitting(true);
     try {
       const handledBy = {
-        user_id: user?._id  || "",
-        name:    user?.name || "Production Team",
-        role:    user?.role || "printing team",
+        user_id: user?._id || "",
+        name: user?.name || "Production Team",
+        role: user?.role || "printing team",
       };
 
       await api(`/jobs/${job._id}/approve_production`, {
         method: "POST",
-        body: JSON.stringify({ handled_by: handledBy, productionimg: productionImages[0] }),
+        body: JSON.stringify({
+          handled_by: handledBy,
+          productionimg: productionImages[0],
+        }),
       });
 
+      console.log("Updating status...");
       await api(`/jobs/${job._id}/status`, {
         method: "PATCH",
         body: JSON.stringify({ job_status: "quality_check" }),
       });
+      console.log("Status updated!");
 
       await api(`/jobs/${job._id}/complete-stage`, {
         method: "POST",
         body: JSON.stringify({
-          stage:      job.current_stage?.stage || "production",
+          stage: job.current_stage?.stage || "production",
           handled_by: handledBy,
           notes,
           next_stage: "quality_check",
@@ -694,12 +825,13 @@ const ProductionUploadPanel = () => {
   };
 
   // All three steps must be done
-  const canSubmit = !!job && productionImages.length > 0 && notes.trim().length > 0;
+  const canSubmit =
+    !!job && productionImages.length > 0 && notes.trim().length > 0;
 
   const steps = [
-    { n: 1, label: "Select Job",     done: !!job },
+    { n: 1, label: "Select Job", done: !!job },
     { n: 2, label: "Capture Photos", done: productionImages.length > 0 },
-    { n: 3, label: "Add Notes",      done: notes.trim().length > 0 },
+    { n: 3, label: "Add Notes", done: notes.trim().length > 0 },
   ];
 
   return (
@@ -724,8 +856,12 @@ const ProductionUploadPanel = () => {
                   <span className="text-xl">🖨️</span>
                 </div>
                 <div>
-                  <h1 className="text-base font-black text-slate-900 tracking-tight">Production Upload</h1>
-                  <p className="text-xs text-slate-400 hidden sm:block">Capture and submit completed print output</p>
+                  <h1 className="text-base font-black text-slate-900 tracking-tight">
+                    Production Upload
+                  </h1>
+                  <p className="text-xs text-slate-400 hidden sm:block">
+                    Capture and submit completed print output
+                  </p>
                 </div>
               </div>
 
@@ -733,14 +869,22 @@ const ProductionUploadPanel = () => {
               <div className="hidden sm:flex items-center gap-1">
                 {steps.map((s, i) => (
                   <div key={s.n} className="flex items-center gap-1">
-                    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${s.done ? "bg-violet-100 text-violet-700" : "bg-slate-100 text-slate-400"}`}>
-                      <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black ${s.done ? "bg-violet-600 text-white" : "bg-slate-300 text-slate-500"}`}>
+                    <div
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${s.done ? "bg-violet-100 text-violet-700" : "bg-slate-100 text-slate-400"}`}
+                    >
+                      <span
+                        className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black ${s.done ? "bg-violet-600 text-white" : "bg-slate-300 text-slate-500"}`}
+                      >
                         {s.done ? "✓" : s.n}
                       </span>
                       {s.label}
                     </div>
                     {i < steps.length - 1 && (
-                      <span className={`text-xs ${steps[i + 1].done || s.done ? "text-violet-300" : "text-slate-200"}`}>›</span>
+                      <span
+                        className={`text-xs ${steps[i + 1].done || s.done ? "text-violet-300" : "text-slate-200"}`}
+                      >
+                        ›
+                      </span>
                     )}
                   </div>
                 ))}
@@ -751,14 +895,20 @@ const ProductionUploadPanel = () => {
             <div className="sm:hidden flex items-center gap-2 pb-3">
               {steps.map((s, i) => (
                 <div key={s.n} className="flex items-center gap-1.5 flex-1">
-                  <div className={`flex-1 h-1.5 rounded-full transition-all ${s.done ? "bg-violet-500" : "bg-slate-200"}`} />
+                  <div
+                    className={`flex-1 h-1.5 rounded-full transition-all ${s.done ? "bg-violet-500" : "bg-slate-200"}`}
+                  />
                   {i < steps.length - 1 && (
-                    <span className={`text-[10px] font-bold ${s.done ? "text-violet-400" : "text-slate-300"}`}>{s.n}</span>
+                    <span
+                      className={`text-[10px] font-bold ${s.done ? "text-violet-400" : "text-slate-300"}`}
+                    >
+                      {s.n}
+                    </span>
                   )}
                 </div>
               ))}
               <span className="text-xs text-slate-400 font-medium ml-1 flex-shrink-0">
-                {steps.filter(s => s.done).length}/{steps.length}
+                {steps.filter((s) => s.done).length}/{steps.length}
               </span>
             </div>
           </div>
@@ -766,21 +916,22 @@ const ProductionUploadPanel = () => {
 
         {/* ── Body ── */}
         <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-4 pb-24 sm:pb-8">
-
           {/* Success banner */}
           {success && (
             <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-8 text-center mb-4">
               <div className="text-5xl mb-3">✅</div>
-              <p className="text-base font-black text-emerald-700">Production submitted!</p>
-              <p className="text-sm text-emerald-600 mt-1">Job has been moved to delivery stage.</p>
+              <p className="text-base font-black text-emerald-700">
+                Production submitted!
+              </p>
+              <p className="text-sm text-emerald-600 mt-1">
+                Job has been moved to delivery stage.
+              </p>
             </div>
           )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-
             {/* ── Left column ── */}
             <div className="space-y-4">
-
               {/* Step 1 — Job selector */}
               <Card className="p-5">
                 <SectionHeader
@@ -824,9 +975,12 @@ const ProductionUploadPanel = () => {
                       <div className="flex items-center gap-3 bg-amber-50 border border-amber-100 rounded-xl p-4">
                         <span className="text-2xl flex-shrink-0">⚠️</span>
                         <div>
-                          <p className="text-sm font-bold text-amber-700">No design file attached</p>
+                          <p className="text-sm font-bold text-amber-700">
+                            No design file attached
+                          </p>
                           <p className="text-xs text-amber-600 mt-0.5">
-                            Ask admin to upload the approved design before printing.
+                            Ask admin to upload the approved design before
+                            printing.
                           </p>
                         </div>
                       </div>
@@ -842,9 +996,7 @@ const ProductionUploadPanel = () => {
 
             {/* ── Right column ── */}
             <div className="space-y-4">
-
-              {/* Step 2 — Production Photos */}
-              {job && (
+              {/* {job && (
                 <Card className="p-5">
                   <SectionHeader
                     icon="📸"
@@ -863,11 +1015,15 @@ const ProductionUploadPanel = () => {
                     }
                   />
 
-                  {/* Captured thumbnails */}
                   {productionImages.length > 0 && (
                     <div className="flex flex-wrap gap-2 mb-4">
                       {productionImages.map((url, idx) => (
-                        <ImageThumb key={`${url}-${idx}`} url={url} index={idx} onRemove={removeImage} />
+                        <ImageThumb
+                          key={`${url}-${idx}`}
+                          url={url}
+                          index={idx}
+                          onRemove={removeImage}
+                        />
                       ))}
                     </div>
                   )}
@@ -879,12 +1035,15 @@ const ProductionUploadPanel = () => {
                         <>
                           Tap to open camera
                           <br />
-                          <span className="text-slate-300">PNG · JPG · WebP supported</span>
+                          <span className="text-slate-300">
+                            PNG · JPG · WebP supported
+                          </span>
                         </>
                       ) : (
                         <>
                           <span className="font-bold text-violet-600">
-                            {productionImages.length} photo{productionImages.length > 1 ? "s" : ""} captured
+                            {productionImages.length} photo
+                            {productionImages.length > 1 ? "s" : ""} captured
                           </span>
                           <br />
                           Tap again to add more
@@ -893,12 +1052,12 @@ const ProductionUploadPanel = () => {
                     </div>
                   </div>
 
-                  {/* Tip */}
                   <p className="text-[11px] text-slate-300 mt-3 leading-relaxed">
-                    💡 Capture the finished output clearly — these photos are saved with the job record.
+                    💡 Capture the finished output clearly — these photos are
+                    saved with the job record.
                   </p>
                 </Card>
-              )}
+              )} */}
 
               {/* Step 3 — Notes */}
               {job && (
@@ -928,26 +1087,51 @@ const ProductionUploadPanel = () => {
                   />
 
                   {/* Pre-submit checklist */}
-                  <div className={`rounded-xl p-4 mt-3 border ${canSubmit ? "bg-violet-50 border-violet-100" : "bg-slate-50 border-slate-100"}`}>
-                    <p className={`text-xs font-bold mb-2.5 uppercase tracking-wide ${canSubmit ? "text-violet-600" : "text-slate-400"}`}>
+                  <div
+                    className={`rounded-xl p-4 mt-3 border ${canSubmit ? "bg-violet-50 border-violet-100" : "bg-slate-50 border-slate-100"}`}
+                  >
+                    <p
+                      className={`text-xs font-bold mb-2.5 uppercase tracking-wide ${canSubmit ? "text-violet-600" : "text-slate-400"}`}
+                    >
                       {canSubmit ? "✓ Ready to Submit" : "Checklist"}
                     </p>
                     <div className="space-y-1.5">
                       {[
-                        { label: "Job selected",       done: !!job },
-                        { label: "Photo(s) captured",  done: productionImages.length > 0 },
-                        { label: "Notes added",        done: notes.trim().length > 0 },
+                        { label: "Job selected", done: !!job },
+                        {
+                          label: "Photo(s) captured",
+                          done: productionImages.length > 0,
+                        },
+                        { label: "Notes added", done: notes.trim().length > 0 },
                       ].map(({ label, done }) => (
-                        <div key={label} className="flex items-center gap-2 text-xs">
-                          <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black flex-shrink-0 ${done ? "bg-emerald-500 text-white" : "bg-slate-200 text-slate-400"}`}>
+                        <div
+                          key={label}
+                          className="flex items-center gap-2 text-xs"
+                        >
+                          <span
+                            className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black flex-shrink-0 ${done ? "bg-emerald-500 text-white" : "bg-slate-200 text-slate-400"}`}
+                          >
                             {done ? "✓" : "○"}
                           </span>
-                          <span className={done ? "text-slate-700 font-semibold" : "text-slate-400"}>{label}</span>
+                          <span
+                            className={
+                              done
+                                ? "text-slate-700 font-semibold"
+                                : "text-slate-400"
+                            }
+                          >
+                            {label}
+                          </span>
                           {done && label === "Job selected" && (
-                            <span className="text-slate-400 font-mono text-[10px] ml-auto">{job.job_no}</span>
+                            <span className="text-slate-400 font-mono text-[10px] ml-auto">
+                              {job.job_no}
+                            </span>
                           )}
                           {done && label === "Photo(s) captured" && (
-                            <span className="text-slate-400 text-[10px] ml-auto">{productionImages.length} photo{productionImages.length > 1 ? "s" : ""}</span>
+                            <span className="text-slate-400 text-[10px] ml-auto">
+                              {productionImages.length} photo
+                              {productionImages.length > 1 ? "s" : ""}
+                            </span>
                           )}
                         </div>
                       ))}
@@ -956,12 +1140,19 @@ const ProductionUploadPanel = () => {
                     {canSubmit && (
                       <div className="mt-3 pt-3 border-t border-violet-100 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                         {[
-                          ["Customer",   job.customer_name],
+                          ["Customer", job.customer_name],
                           ["Next Stage", "→ Delivery"],
                         ].map(([k, v]) => (
                           <>
-                            <span key={`k-${k}`} className="text-slate-400">{k}</span>
-                            <span key={`v-${k}`} className={`font-bold ${k === "Next Stage" ? "text-emerald-600" : "text-slate-700"}`}>{v}</span>
+                            <span key={`k-${k}`} className="text-slate-400">
+                              {k}
+                            </span>
+                            <span
+                              key={`v-${k}`}
+                              className={`font-bold ${k === "Next Stage" ? "text-emerald-600" : "text-slate-700"}`}
+                            >
+                              {v}
+                            </span>
                           </>
                         ))}
                       </div>
@@ -981,9 +1172,11 @@ const ProductionUploadPanel = () => {
                     </Btn>
                     {!canSubmit && (
                       <p className="text-xs text-center text-slate-400 mt-2">
-                        {!job                        ? "Select a job to continue"
-                          : productionImages.length === 0 ? "Capture at least one photo to continue"
-                          : "Add production notes to continue"}
+                        {!job
+                          ? "Select a job to continue"
+                          : productionImages.length === 0
+                            ? "Capture at least one photo to continue"
+                            : "Add production notes to continue"}
                       </p>
                     )}
                   </div>
