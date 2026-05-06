@@ -711,7 +711,7 @@ const MyJobs = () => {
       title: "",
       width: isMobile ? 110 : 220,
       render: (_, record) => {
-        const isQC = record.job_status === "quality_check"&&record.current_stage?.stage !== "quality_check";
+        const isQC = record.job_status === "quality_check";
         return (
           <div
             style={{
