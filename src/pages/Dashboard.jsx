@@ -189,9 +189,10 @@ const ViewModal = ({ job, onClose }) => {
       }}
     >
       <div
+      className="text-black bg-white"
         onClick={e => e.stopPropagation()}
         style={{
-          background: "var(--color-background-primary)",
+          
           borderRadius: 18, width: "100%", maxWidth: 680,
           maxHeight: "90vh", overflowY: "auto",
           boxShadow: "0 24px 64px rgba(0,0,0,0.2)",
