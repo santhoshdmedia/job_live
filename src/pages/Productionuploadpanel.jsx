@@ -996,7 +996,7 @@ const ProductionUploadPanel = () => {
 
             {/* ── Right column ── */}
             <div className="space-y-4">
-              {/* {job && (
+              {job && (
                 <Card className="p-5">
                   <SectionHeader
                     icon="📸"
@@ -1057,7 +1057,7 @@ const ProductionUploadPanel = () => {
                     saved with the job record.
                   </p>
                 </Card>
-              )} */}
+              )} 
 
               {/* Step 3 — Notes */}
               {job && (
