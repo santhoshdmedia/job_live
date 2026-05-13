@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Layout, Menu, Drawer, Button } from "antd";
+import { Layout, Menu, Drawer, Button, Spin } from "antd";
 import { Outlet, useHref, useNavigate } from "react-router-dom";
 import { MENU_DATA } from "../helper/data";
 import _ from "lodash";
@@ -29,6 +29,7 @@ const useIsMobile = () => {
 const App = () => {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false); // ← NEW
   const navigate = useNavigate();
   const path = useHref();
   const dispatch = useDispatch();
@@ -37,24 +38,26 @@ const App = () => {
   const isMobile = useIsMobile();
 
   const isHideLayout = HIDDEN_LAYOUT_ROUTES.some((route) =>
-    path.includes(route),
+    path.includes(route)
   );
 
+  // Build menu based on role/permissions whenever user changes
   useEffect(() => {
     if (!user) return;
+
     if (isSuperAdmin(user.role)) {
       setNew_menu_data(MENU_DATA);
-    } else if (user.pagePermissions && user.pagePermissions.length > 0) {
+    } else if (user.pagePermissions?.length > 0) {
       const accessiblePages = getAccessiblePages(user.pagePermissions);
       const filteredMenuData = MENU_DATA.reduce((acc, menu) => {
         const hasParentAccess = menu.special?.some((s) =>
-          accessiblePages.includes(s),
+          accessiblePages.includes(s)
         );
         if (!hasParentAccess) return acc;
         const menuCopy = { ...menu };
         if (menuCopy.children?.length) {
           menuCopy.children = menuCopy.children.filter((child) =>
-            child.special?.some((s) => accessiblePages.includes(s)),
+            child.special?.some((s) => accessiblePages.includes(s))
           );
         }
         acc.push(menuCopy);
@@ -63,26 +66,32 @@ const App = () => {
       setNew_menu_data(filteredMenuData);
     } else {
       setNew_menu_data(
-        MENU_DATA.filter((menu) => menu.for?.includes(user.role)),
+        MENU_DATA.filter((menu) => menu.for?.includes(user.role))
       );
     }
   }, [user]);
 
-  const fetchdata = async () => {
-    try {
-      const result = await checkloginstatus();
-      const data = _.get(result, "data.data", "");
-      dispatch(isLoginSuccess(data));
-      if (_.isEmpty(data)) {
-        localStorage.removeItem(admintoken);
-        navigate("/");
-      }
-    } catch (err) {
-      console.error("Login check failed:", err);
-    }
-  };
-
+  // Check login status on mount — redirect to "/" if not authenticated
   useEffect(() => {
+    const fetchdata = async () => {
+      try {
+        const result = await checkloginstatus();
+        const data = _.get(result, "data.data", "");
+        if (_.isEmpty(data)) {
+          localStorage.removeItem(admintoken);
+          navigate("/", { replace: true }); // ← redirect to login
+        } else {
+          dispatch(isLoginSuccess(data));
+        }
+      } catch (err) {
+        console.error("Login check failed:", err);
+        localStorage.removeItem(admintoken);
+        navigate("/", { replace: true }); // ← also redirect on error
+      } finally {
+        setAuthChecked(true); // ← always unblock render
+      }
+    };
+
     fetchdata();
   }, []);
 
@@ -93,11 +102,20 @@ const App = () => {
 
   const selectedKey = (() => {
     const allItems = MENU_DATA.flatMap((menu) =>
-      menu.children?.length ? menu.children : [menu],
+      menu.children?.length ? menu.children : [menu]
     );
     const match = allItems.find((item) => path.includes(item.to));
     return match ? [String(match.id)] : [];
   })();
+
+  // Block render until auth check completes — prevents wildcard redirect race
+  if (!authChecked) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <Spin size="large" />
+      </div>
+    );
+  }
 
   const MenuContent = () => (
     <>
@@ -132,7 +150,7 @@ const App = () => {
             >
               {res.name}
             </Menu.Item>
-          ),
+          )
         )}
       </Menu>
     </>
@@ -142,7 +160,7 @@ const App = () => {
 
   return (
     <Layout style={{ height: "100vh" }}>
-      {/* ── Desktop: Ant Sider ── */}
+      {/* Desktop: Ant Sider */}
       {!isMobile && (
         <Sider
           collapsible
@@ -154,7 +172,7 @@ const App = () => {
         </Sider>
       )}
 
-      {/* ── Mobile: Drawer ── */}
+      {/* Mobile: Drawer */}
       {isMobile && (
         <Drawer
           placement="left"
@@ -171,10 +189,10 @@ const App = () => {
       )}
 
       <Layout className="!h-screen overflow-hidden">
-        {/* ── Mobile hamburger bar — sits ABOVE TopNavbar ── */}
+        {/* Mobile hamburger bar */}
         {isMobile && (
           <div
-            className="flex items-center px-3 h-[48px]   fixed top-3"
+            className="flex items-center px-3 h-[48px] fixed top-3"
             style={{ zIndex: 10 }}
           >
             <Button

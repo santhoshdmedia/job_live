@@ -3,7 +3,7 @@ import { useSelector } from "react-redux";
 import { uploadImage } from "../api/index";
 
 // ─── API ──────────────────────────────────────────────────────────────────────
-const API_BASE = "https://job-server-cocj.onrender.com/api";
+const API_BASE = "https://api.dmedia.in/api";
 
 const api = async (url, opts = {}) => {
   const token =

@@ -1,4 +1,4 @@
-import LOGINIMAGE from "../assets/loginimage.png";
+import LOGINIMAGE from "../assets/desktop.png";
 import logo from "../assets/images/logos/without_bg.png";
 import fav from "../assets/images/logos/fav.png";
 import Dlogo from "../assets/images/logos/dlogo.jpg";
@@ -15,5 +15,6 @@ export const IMAGE_HELPER = {
   // FULLLOGO: FULLLOGO,
   fav: fav,
   Dlogo: Dlogo,
+  hero: LOGINIMAGE,
   Dfav: Dfav
 };

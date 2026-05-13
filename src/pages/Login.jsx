@@ -1,6 +1,6 @@
-import { Button, Checkbox, Form, Input, message } from "antd";
+import { Button, Checkbox, Form, Input } from "antd";
 import { LabelHelper } from "../components/LabelHelper";
-import { EmailValidation, formValidation, PasswordValidation } from "../helper/formvalidation";
+import { EmailValidation, PasswordValidation } from "../helper/formvalidation";
 import { useEffect, useState } from "react";
 import { login } from "../api";
 import _, { toLower } from "lodash";
@@ -9,28 +9,35 @@ import { useNavigate } from "react-router-dom";
 import { useDispatch } from "react-redux";
 import { isLoginSuccess } from "../redux/slices/authSlice";
 
+// ── import your PNGs ──────────────────────────────────────────────────────────
+// import heroImage from "../assets/hero-3d.png";   // the 3-D clipboard + laptop image
+// import logoImage from "../assets/dmedia-logo.png"; // D Media logo
+
+import { IMAGE_HELPER } from "../helper/imagehelper";
+
+
 const Login = () => {
   const [form] = Form.useForm();
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const [loading, setLoading] = useState(false);
-  const [showWelcome, setShowWelcome] = useState(true);
 
   const onFinish = async (values) => {
     try {
       setLoading(true);
-      const validValues=toLower(values.email)
-      
-      const result = await login({email:validValues, password: values.password});
+      const validValues = toLower(values.email);
+      const result = await login({ email: validValues, password: values.password });
+
       if (_.isEmpty(_.get(result, "data.data", []))) {
+        setLoading(false);
         return ERROR_NOTIFICATION("Invalid credentials");
       }
+
       dispatch(isLoginSuccess(_.get(result, "data.data", {})));
       localStorage.setItem(admintoken, _.get(result, "data.data.token", ""));
-      localStorage.setItem("userprofile",JSON.stringify(_.get(result,"data.data","")))
+      localStorage.setItem("userprofile", JSON.stringify(_.get(result, "data.data", "")));
       SUCCESS_NOTIFICATION(result);
-      
-      // Animation before navigation
+
       setTimeout(() => {
         navigate("/dashboard");
         form.resetFields();
@@ -43,127 +50,174 @@ const Login = () => {
   };
 
   useEffect(() => {
-    if (localStorage.getItem(admintoken)) {
-      navigate("/dashboard");
-    }
-    
-    // Welcome message animation timer
-    const timer = setTimeout(() => {
-      setShowWelcome(false);
-    }, 2500);
-    
-    return () => clearTimeout(timer);
+    if (localStorage.getItem(admintoken)) navigate("/dashboard");
   }, []);
 
   return (
-    <div className="bg-white min- overflow-hidden ">
-      <div className="flex flex-col lg:flex-row ">
-     
+    <div className="min-h-screen flex overflow-hidden bg-white font-sans">
 
-        {/* Right Section - Form */}
-        <div 
-          className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-white"
-        >
-          <div className="w-full max-w-md">
-            <div
-              className="mb-8 text-center"
-            >
-              <h1 className="text-3xl font-bold text-primary mb-2">Adventure Starts Here</h1>
-              <p className="text-gray-600">Make your app management easy and fun!</p>
-            </div>
+      {/* ── LEFT PANEL ─────────────────────────────────────────────────────── */}
+      <div className=""></div>
+      <div
+        className="hidden lg:flex lg:w-[46%] flex-col justify-between p-10 relative overflow-hidden"
+        style={{ background: "linear-gradient(145deg, #7c6ef7 0%, #9b8df9 50%, #b3a6fb 100%)" }}
+      >
+        {/* subtle noise / grain overlay */}
+        <div
+          className="absolute inset-0 opacity-10 pointer-events-none"
+          style={{
+            backgroundImage:
+              "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E\")",
+            backgroundSize: "200px 200px",
+          }}
+        />
 
-            <Form 
-              onFinish={onFinish} 
-              name="login" 
-              layout="vertical" 
-              className="w-full !lowercase"
-              form={form} 
-              requiredMark={false}
-
-            >
-              <div
-              >
-                <Form.Item 
-                  name="email" 
-                  label={<LabelHelper title={"Email"} />} 
-                  rules={[EmailValidation("Enter Email")]}
-                >
-                  <Input 
-                    placeholder="Enter Email" 
-                    className="h-12 rounded-lg !lowercase"
-                    disabled={loading}
-                  />
-                </Form.Item>
-              </div>
-
-              <div
-              >
-                <Form.Item 
-                  name="password" 
-                  label={<LabelHelper title={"Password"} />} 
-                  rules={[PasswordValidation("Enter Password")]}
-                >
-                  <Input.Password 
-                    placeholder="Enter Password" 
-                    className="h-12 rounded-lg"
-                    disabled={loading}
-                  />
-                </Form.Item>
-              </div>
-
-              <div
-                className="mb-4"
-              >
-                <Form.Item name="remember" valuePropName="checked">
-                  <Checkbox disabled={loading}>Remember me</Checkbox>
-                </Form.Item>
-              </div>
-
-              <div
-              >
-                <Form.Item>
-                  <Button 
-                    htmlType="submit" 
-                    className="w-full h-12 rounded-lg bg-primary text-white font-semibold border-none"
-                    disabled={loading}
-                  >
-                    login
-                    {/* <AnimatePresence mode="wait">
-                      {loading ? (
-                        <span
-                          key="loading"
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          className="flex items-center justify-center"
-                        >
-                          <span
-                            animate={{ rotate: 360 }}
-                            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                            className="inline-block h-5 w-5 border-2 border-white border-t-transparent rounded-full mr-2"
-                          />
-                          Signing In...
-                        </span>
-                      ) : (
-                        <span
-                          key="login-text"
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                        >
-                          Sign In
-                        </span>
-                      )}
-                    </AnimatePresence> */}
-                  </Button>
-                </Form.Item>
-              </div>
-            </Form>
-
-            
-          </div>
+        {/* top content */}
+        <div className="relative z-10">
+          <p className="text-white/80 text-lg font-light tracking-wide">Simplify customer relationships with</p>
+          <h1 className="text-white text-5xl font-extrabold leading-tight mt-1 drop-shadow-sm">
+            Job Sheet.
+          </h1>
+          <p className="text-white/60 text-sm mt-3 tracking-widest uppercase">
+            Track · Assign · Deliver
+          </p>
         </div>
+
+        {/* 3-D hero illustration */}
+        <div className="relative z-10 flex items-end justify-center flex-1 mt-8">
+          <img
+            src={IMAGE_HELPER.LOGIN_IMAGE}
+            alt="Job Sheet 3D illustration"
+            className="w-full  object-contain drop-shadow-2xl
+                       animate-[float_4s_ease-in-out_infinite]"
+          />
+        </div>
+
+        {/* floating decorative blobs */}
+        <div className="absolute -top-16 -left-16 w-56 h-56 rounded-full bg-white/10 blur-3xl" />
+        <div className="absolute bottom-10 -right-10 w-40 h-40 rounded-full bg-white/10 blur-2xl" />
       </div>
+
+      {/* ── RIGHT PANEL ────────────────────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col items-center justify-center px-6 sm:px-12 py-10 bg-white">
+
+        {/* logo */}
+        <div className="mb-8 flex flex-col items-center gap-2">
+          <img src={IMAGE_HELPER.Dlogo} alt="D Media" className="h-14 object-contain" />
+        </div>
+
+        {/* heading */}
+        <div className="text-center mb-8">
+          <h2 className="text-3xl font-bold text-gray-900 tracking-tight">Sign in to Continue</h2>
+        </div>
+
+        {/* form card */}
+        <div className="w-full max-w-sm">
+          <Form
+            form={form}
+            name="login"
+            layout="vertical"
+            onFinish={onFinish}
+            requiredMark={false}
+            className="space-y-1"
+          >
+            {/* Email */}
+            <Form.Item
+              name="email"
+              label={
+                <span className="text-sm font-semibold text-gray-700">Email</span>
+              }
+              rules={[EmailValidation("Enter Email")]}
+            >
+              <Input
+                placeholder="Enter your Email here"
+                disabled={loading}
+                className="!h-12 !rounded-xl !bg-gray-100 !border-0 !text-gray-700 placeholder:text-gray-400 focus:!ring-2 focus:!ring-indigo-400"
+              />
+            </Form.Item>
+
+            {/* Password */}
+            <Form.Item
+              name="password"
+              label={
+                <span className="text-sm font-semibold text-gray-700">Password</span>
+              }
+              rules={[PasswordValidation("Enter Password")]}
+            >
+              <Input.Password
+                placeholder="Enter your Password here"
+                disabled={loading}
+                className="!h-12 !rounded-xl !bg-gray-100 !border-0 !text-gray-700 placeholder:text-gray-400 focus:!ring-2 focus:!ring-indigo-400"
+              />
+            </Form.Item>
+
+            {/* Remember me */}
+            <Form.Item name="remember" valuePropName="checked" className="!mb-2">
+              <Checkbox disabled={loading} className="text-gray-500 text-sm">
+                Remember me
+              </Checkbox>
+            </Form.Item>
+
+            {/* Submit */}
+            <Form.Item className="!mt-4">
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full h-12 rounded-xl font-semibold text-white text-base
+                           transition-all duration-200 active:scale-95
+                           disabled:opacity-60 disabled:cursor-not-allowed"
+                style={{ background: "linear-gradient(135deg, #7c6ef7 0%, #9b8df9 100%)" }}
+              >
+                {loading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="inline-block h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Signing In…
+                  </span>
+                ) : (
+                  "Login"
+                )}
+              </button>
+            </Form.Item>
+          </Form>
+
+          {/* footer link */}
+          <p className="text-center text-sm text-gray-500 mt-2">
+            Already have an account?{" "}
+            <a
+              href="#"
+              className="font-medium"
+              style={{ color: "#7c6ef7" }}
+            >
+              Log in
+            </a>
+          </p>
+        </div>
+
+        {/* mobile hero (shown only on small screens) */}
+        {/* <div className="lg:hidden mt-10 w-full max-w-xs mx-auto">
+          <img
+            src={heroImage}
+            alt="Job Sheet 3D illustration"
+            className="w-full object-contain drop-shadow-xl"
+          />
+        </div> */}
+      </div>
+
+      {/* ── global float keyframe (Tailwind JIT arbitrary) ──────────────────
+          Add this to your global CSS if the tailwind arbitrary value below
+          doesn't fire in your config:
+
+          @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50%       { transform: translateY(-14px); }
+          }
+      ──────────────────────────────────────────────────────────────────── */}
+      <style>{`
+        @keyframes float {
+          0%, 100% { transform: translateY(0px); }
+          50%       { transform: translateY(-14px); }
+        }
+      `}</style>
     </div>
   );
 };

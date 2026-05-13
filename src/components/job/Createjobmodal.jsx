@@ -7,7 +7,7 @@ import {
 import {
   PlusOutlined, DeleteOutlined, UserOutlined, PhoneOutlined,
   EnvironmentOutlined, FileTextOutlined, ShoppingCartOutlined,
-  TagOutlined, SaveOutlined, WalletOutlined,
+  TagOutlined, SaveOutlined, WalletOutlined, PercentageOutlined,
 } from "@ant-design/icons";
 import UploadHelper from "../../helper/UploadHelper";
 import { SUCCESS_NOTIFICATION } from "../../helper/notification_helper";
@@ -58,17 +58,31 @@ const QTY_TYPE_OPTIONS = [
 ];
 
 const GST_OPTIONS = [0, 5, 12, 18, 28];
-
 const PAYMENT_MODES = ["Cash", "UPI", "Bank Transfer", "Cheque", "Card", "Credit"];
 
+// ─── sq.ft auto-calculator ────────────────────────────────────────────────────
+// Used ONLY in create mode — sq_ft is derived from width × height
 const toSqFt = (w, h, unit) => {
-  if (!w || !h) return 0;
-  if (unit === "ft") return w * h;
-  if (unit === "inch") return (w / 12) * (h / 12);
-  if (unit === "cm") return (w / 30.48) * (h / 30.48);
-  return w * h;
+  const wn = parseFloat(w) || 0;
+  const hn = parseFloat(h) || 0;
+  if (!wn || !hn) return 0;
+  if (unit === "ft") return wn * hn;
+  if (unit === "inch") return (wn / 12) * (hn / 12);
+  if (unit === "cm") return (wn / 30.48) * (hn / 30.48);
+  return wn * hn;
 };
 
+// ─── Line total with per-item GST ─────────────────────────────────────────────
+const computeLineTotal = (item) => {
+  const base =
+    item.quantity_type === "sq.ft"
+      ? (item.quantity || 0) * (item.sq_ft || 0) * (item.price || 0)
+      : (item.quantity || 0) * (item.price || 0);
+  const gstAmt = base * ((item.gst_percentage || 0) / 100);
+  return { base, gstAmt, total: base + gstAmt };
+};
+
+// NOTE: design_charges is intentionally ABSENT from EMPTY_ITEM in create mode
 const EMPTY_ITEM = {
   product_id: "",
   product_name: "",
@@ -76,8 +90,8 @@ const EMPTY_ITEM = {
   printing_type: "",
   width: "",
   height: "",
-  size_unit: "ft",
-  sq_ft: 0,
+  size_unit: "inch",
+  sq_ft: 0,         
   quantity_type: "sq.ft",
   quantity: 1,
   price: 0,
@@ -102,14 +116,16 @@ const DEFAULT_FORM = {
   discount_percentage: 0,
   payment_mode: "",
   payment_amount: "",
- 
 };
 
 // ─── Reusable UI ───────────────────────────────────────────────────────────────
 const SectionHeader = ({ icon, title }) => (
   <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
     <span style={{ color: "#2563eb", fontSize: 14 }}>{icon}</span>
-    <span style={{ fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+    <span style={{
+      fontSize: 11, fontWeight: 700, color: "#374151",
+      textTransform: "uppercase", letterSpacing: "0.06em",
+    }}>
       {title}
     </span>
     <div style={{ flex: 1, height: 1, background: "#e5e7eb", marginLeft: 6 }} />
@@ -128,32 +144,21 @@ const FormField = ({ label, required, children }) => (
   </div>
 );
 
-const InfoBadge = ({ label, value, mono, blue, green, red, sub }) => (
+const InfoBadge = ({ label, value, green, sub }) => (
   <div style={{ flex: 1, minWidth: 90 }}>
     <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>
       {label}
     </div>
-    <div style={{
-      fontSize: mono ? 15 : 13, fontWeight: 700,
-      color: blue ? "#1d4ed8" : green ? "#059669" : red ? "#dc2626" : "#374151",
-      fontFamily: mono ? "monospace" : "inherit",
-    }}>
+    <div style={{ fontSize: 13, fontWeight: 700, color: green ? "#059669" : "#374151" }}>
       {value}
     </div>
     {sub && <div style={{ fontSize: 10, color: "#9ca3af" }}>{sub}</div>}
   </div>
 );
 
-// ─── Compute line total with per-item GST ────────────────────────────────────
-const computeLineTotal = (item) => {
-  const base = item.quantity_type === "sq.ft"
-    ? item.quantity * (item.sq_ft || 0) * item.price
-    : item.quantity * item.price;
-  const gstAmt = base * ((item.gst_percentage || 0) / 100);
-  return { base, gstAmt, total: base + gstAmt };
-};
-
-// ─── Product Item Row ─────────────────────────────────────────────────────────
+// ─── Product Item Row (Create Mode) ──────────────────────────────────────────
+// sq_ft is AUTO-CALCULATED from width × height × unit — not manually editable
+// design_charges is NOT shown in create mode
 const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
   const { isMobile, isTablet } = useBreakpoint();
   const [showSuggest, setShowSuggest] = useState(false);
@@ -163,7 +168,7 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
     ? PRODUCTS.filter(p => p.product_name.toLowerCase().includes(item.product_name.toLowerCase()))
     : [];
   const selected = PRODUCTS.find(
-    p => p.product_name.toLowerCase() === item.product_name.toLowerCase()
+    p => p.product_name.toLowerCase() === (item.product_name || "").toLowerCase()
   );
 
   useEffect(() => {
@@ -174,10 +179,11 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
     return () => document.removeEventListener("mousedown", fn);
   }, []);
 
+  // When width, height, or unit changes → auto-recalculate sq_ft
   const sizeChange = (field, val) => {
-    const u = { ...item, [field]: val };
-    const sq = toSqFt(parseFloat(u.width) || 0, parseFloat(u.height) || 0, u.size_unit);
-    onChange(idx, { ...u, sq_ft: parseFloat(sq.toFixed(4)) });
+    const updated = { ...item, [field]: val };
+    const sq = toSqFt(updated.width, updated.height, updated.size_unit);
+    onChange(idx, { ...updated, sq_ft: parseFloat(sq.toFixed(4)) });
   };
 
   const set = (f, v) => onChange(idx, { ...item, [f]: v });
@@ -186,6 +192,7 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
     onChange(idx, {
       ...item,
       quantity_type: val,
+      // Clear size fields when switching away from sq.ft mode
       ...(val === "quantity" ? { width: "", height: "", sq_ft: 0 } : {}),
     });
   };
@@ -194,8 +201,8 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
   const { base, gstAmt, total: lineTotal } = computeLineTotal(item);
 
   const productCols = isMobile ? "1fr" : isTablet ? "1fr 1fr" : "1fr 1fr 1fr";
-  const sizeCols = isMobile ? "1fr 1fr" : "1fr 1fr 90px 1fr";
-  const priceCols = isMobile ? "1fr 1fr" : isSqFtMode ? "repeat(4,1fr)" : "1fr 1fr 1fr 1fr";
+  const sizeCols    = isMobile ? "1fr 1fr" : "1fr 1fr 90px 1fr";
+  const priceCols   = isMobile ? "1fr 1fr" : isSqFtMode ? "repeat(3,1fr)" : "1fr 1fr 1fr";
 
   return (
     <div style={{
@@ -290,7 +297,8 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
             )}
           </div>
         </FormField>
-        <FormField label="Variation">
+
+        <FormField label="Material">
           <Select
             placeholder={selected ? "Select variation" : "—"}
             value={item.variation || undefined}
@@ -302,6 +310,7 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
             {(selected?.variations || []).map(v => <Option key={v} value={v}>{v}</Option>)}
           </Select>
         </FormField>
+
         <FormField label="Printing Type">
           <Select
             placeholder={selected ? "Select type" : "—"}
@@ -316,27 +325,35 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
         </FormField>
       </div>
 
-      {/* Size Fields (sq.ft mode only) */}
+      {/* Size Fields — sq.ft mode only; sq_ft is read-only (auto-calculated) */}
       {isSqFtMode && (
         <div style={{ display: "grid", gridTemplateColumns: sizeCols, gap: 8, marginBottom: 10, alignItems: "end" }}>
           <FormField label="Width" required>
             <Input
-              size="small" placeholder="0" type="number" min={0}
+              size="small"
+              placeholder="0"
+              type="number"
+              min={0}
               value={item.width}
               prefix={<span style={{ fontSize: 10, color: "#6b7280", fontWeight: 700 }}>W</span>}
               style={{ borderRadius: 6 }}
               onChange={(e) => sizeChange("width", e.target.value)}
             />
           </FormField>
+
           <FormField label="Height" required>
             <Input
-              size="small" placeholder="0" type="number" min={0}
+              size="small"
+              placeholder="0"
+              type="number"
+              min={0}
               value={item.height}
               prefix={<span style={{ fontSize: 10, color: "#6b7280", fontWeight: 700 }}>H</span>}
               style={{ borderRadius: 6 }}
               onChange={(e) => sizeChange("height", e.target.value)}
             />
           </FormField>
+
           <FormField label="Unit">
             <Select
               value={item.size_unit}
@@ -347,6 +364,8 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
               {UNIT_OPTIONS.map(u => <Option key={u.value} value={u.value}>{u.label}</Option>)}
             </Select>
           </FormField>
+
+          {/* READ-ONLY: auto-calculated sq_ft */}
           <FormField label="Sq. Ft (auto)">
             <div style={{
               background: item.sq_ft > 0 ? "#ecfdf5" : "#f9fafb",
@@ -354,7 +373,10 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
               borderRadius: 6, padding: "4px 10px", height: 24,
               display: "flex", alignItems: "center", justifyContent: "center",
             }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: item.sq_ft > 0 ? "#065f46" : "#9ca3af" }}>
+              <span style={{
+                fontSize: 13, fontWeight: 700,
+                color: item.sq_ft > 0 ? "#065f46" : "#9ca3af",
+              }}>
                 {item.sq_ft > 0 ? `${item.sq_ft} ft²` : "—"}
               </span>
             </div>
@@ -375,7 +397,7 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
         </FormField>
       </div>
 
-      {/* Price / GST / Qty / Upload */}
+      {/* Price / GST / Quantity — NO design_charges in create mode */}
       <div style={{ display: "grid", gridTemplateColumns: priceCols, gap: 8, marginBottom: 10 }}>
         <FormField label="Quantity" required>
           <InputNumber
@@ -386,19 +408,7 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
             onChange={(v) => set("quantity", v || 1)}
           />
         </FormField>
-        {isSqFtMode && (
-          <FormField label="Sq.Ft / piece">
-            <div style={{
-              background: "#f0fdf4", border: "1px solid #bbf7d0",
-              borderRadius: 6, padding: "4px 10px", height: 24,
-              display: "flex", alignItems: "center",
-            }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: "#065f46" }}>
-                {item.sq_ft > 0 ? `${item.sq_ft} ft²` : "—"}
-              </span>
-            </div>
-          </FormField>
-        )}
+
         <FormField label={isSqFtMode ? "Price / sq.ft (₹)" : "Unit Price (₹)"} required>
           <InputNumber
             min={0}
@@ -410,7 +420,6 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
           />
         </FormField>
 
-        {/* ✅ Per-Item GST */}
         <FormField label="GST %">
           <Select
             value={item.gst_percentage}
@@ -423,8 +432,11 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
             ))}
           </Select>
         </FormField>
+      </div>
 
-        <FormField label="Design File" className="!mb-5">
+      {/* Design File */}
+      <div style={{ marginBottom: 10 }}>
+        <FormField label="Design File">
           <UploadHelper
             setImagePath={(path) => set("design_file", path)}
             image_path={item.design_file}
@@ -432,23 +444,24 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
         </FormField>
       </div>
 
-      {/* ✅ Design File Preview */}
+      {/* Design File Preview */}
       {item.design_file && (
-        <div style={{ marginBottom: 30 }}>
+        <div style={{ marginBottom: 10 }}>
           <div style={{
             fontSize: 10, fontWeight: 700, color: "#6b7280",
             marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em",
           }}>
             Design Preview
           </div>
-          <div className="flex justify-center items-center w-full" style={{
+          <div style={{
             border: "1px solid #e5e7eb", borderRadius: 8,
             background: "#f9fafb", padding: 4,
+            display: "flex", justifyContent: "center", alignItems: "center",
           }}>
             <img
               src={item.design_file}
               alt="Design Preview"
-              style={{ maxHeight: 100, maxWidth: "100%", objectFit: "contain", display: "flex", flexDirection: "column", alignItems: "center", borderRadius: 4 }}
+              style={{ maxHeight: 100, maxWidth: "100%", objectFit: "contain", borderRadius: 4 }}
               onError={(e) => { e.currentTarget.parentElement.style.display = "none"; }}
             />
           </div>
@@ -456,11 +469,10 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
       )}
 
       {/* Item Total */}
-      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 40 }}>
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
         <div style={{
           background: "#fff", border: "1px solid #d1fae5",
-          borderRadius: 8, padding: "8px 14px", textAlign: "right",
-          minWidth: "100%"
+          borderRadius: 8, padding: "8px 14px", textAlign: "right", minWidth: "100%",
         }}>
           <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 2 }}>
             Base: <span style={{ fontWeight: 600, color: "#374151" }}>₹{base.toFixed(2)}</span>
@@ -484,9 +496,9 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
   );
 };
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
 // CreateJobModal
-// ════════════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
 const CreateJobModal = ({ open, onClose, onCreated }) => {
   const { isMobile, isTablet } = useBreakpoint();
   const { user: adminUser } = useSelector((state) => state.authSlice);
@@ -496,7 +508,7 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
   const [formData, setFormData] = useState({ ...DEFAULT_FORM });
   const [cartItems, setCartItems] = useState([{ ...EMPTY_ITEM }]);
 
-  const orderDate = dayjs();
+  const orderDate  = dayjs();
   const validUntil = dayjs().add(30, "day");
 
   const resetForm = () => {
@@ -508,30 +520,26 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
   useEffect(() => { if (open) resetForm(); }, [open]);
 
   const handleInput = (k, v) => setFormData(p => ({ ...p, [k]: v }));
-  const handleItem = (i, u) => setCartItems(p => p.map((it, j) => j === i ? u : it));
-  const addItem = () => setCartItems(p => [...p, { ...EMPTY_ITEM }]);
-  const removeItem = (i) => setCartItems(p => p.filter((_, j) => j !== i));
+  const handleItem  = (i, u) => setCartItems(p => p.map((it, j) => j === i ? u : it));
+  const addItem     = () => setCartItems(p => [...p, { ...EMPTY_ITEM }]);
+  const removeItem  = (i) => setCartItems(p => p.filter((_, j) => j !== i));
 
-  // ✅ Totals: per-item GST summed, then delivery + discount on subtotal
+  // Totals: per-item GST summed; discount on subtotal
   const calcTotals = useCallback(() => {
     let subTotal = 0;
     let totalGst = 0;
-
     cartItems.forEach(it => {
       const { base, gstAmt } = computeLineTotal(it);
       subTotal += base;
       totalGst += gstAmt;
     });
-
-    const discPct = parseFloat(formData.discount_percentage) || 0;
-    const discAmt = subTotal * (discPct / 100);
+    const discPct   = parseFloat(formData.discount_percentage) || 0;
+    const discAmt   = subTotal * (discPct / 100);
     const afterDisc = subTotal - discAmt;
-    const del = formData.free_delivery ? 0 : parseFloat(formData.delivery_charges) || 0;
+    const del       = formData.free_delivery ? 0 : parseFloat(formData.delivery_charges) || 0;
     const grandTotal = afterDisc + totalGst + del;
-
-    const paid = parseFloat(formData.payment_amount) || 0;
-    const balance = grandTotal - paid;
-
+    const paid       = parseFloat(formData.payment_amount) || 0;
+    const balance    = grandTotal - paid;
     return { subTotal, totalGst, discAmt, afterDisc, del, grandTotal, paid, balance };
   }, [cartItems, formData]);
 
@@ -544,10 +552,9 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
       if (!formData.estimated_delivery_date) throw new Error("Estimated delivery date is required");
 
       const valid = cartItems.filter(it => {
-        if (!it.product_name) return false;
-        if (!it.quantity_type) return false;
-        if (it.quantity_type === "sq.ft" && it.sq_ft <= 0) return false;
-        return it.quantity > 0 && it.price > 0;
+        if (!it.product_name || !it.quantity_type) return false;
+        if (it.quantity_type === "sq.ft" && (it.sq_ft || 0) <= 0) return false;
+        return (it.quantity || 0) > 0 && (it.price || 0) > 0;
       });
 
       if (!valid.length) throw new Error("Add at least one valid product with size/qty and price");
@@ -555,61 +562,74 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
       const t = calcTotals();
 
       const payload = {
-        order_date: orderDate.toISOString(),
-        valid_until: validUntil.toISOString(),
+        order_date:              orderDate.toISOString(),
+        valid_until:             validUntil.toISOString(),
         estimated_delivery_date: dayjs(formData.estimated_delivery_date).toISOString(),
 
-        customer_name: formData.customer_name.trim(),
+        customer_name:  formData.customer_name.trim(),
         customer_phone: formData.customer_phone.trim(),
 
         delivery_address: {
-          street: [formData.address_line1, formData.address_line2].filter(Boolean).join(", "),
-          city: formData.city,
-          state: formData.state,
+          street:  [formData.address_line1, formData.address_line2].filter(Boolean).join(", "),
+          city:    formData.city,
+          state:   formData.state,
           pincode: formData.pincode,
           country: formData.country,
         },
 
+        // Each cart item stores full measurement data
         cart_items: valid.map(it => {
           const { base, gstAmt, total } = computeLineTotal(it);
           return {
-            product_id: it.product_id || "",
-            product_name: it.product_name,
-            variation: it.variation || "",
-            printing_type: it.printing_type || "",
-            quantity: it.quantity,
-            quantity_type: it.quantity_type || "sq.ft",
-            price: it.price,
+            product_id:     it.product_id || "",
+            product_name:   it.product_name,
+            variation:      it.variation || "",
+            printing_type:  it.printing_type || "",
+            quantity:       it.quantity,
+            quantity_type:  it.quantity_type,
+            price:          it.price,
             gst_percentage: it.gst_percentage || 0,
-            gst_amount: parseFloat(gstAmt.toFixed(2)),
-            line_base: parseFloat(base.toFixed(2)),
-            line_total: parseFloat(total.toFixed(2)),
-            design_file: it.design_file || "",
-            notes: it.notes || "",
-            size: it.quantity_type === "sq.ft" && it.width && it.height
+            gst_amount:     parseFloat(gstAmt.toFixed(2)),
+            line_base:      parseFloat(base.toFixed(2)),
+            line_total:     parseFloat(total.toFixed(2)),
+            design_file:    it.design_file || "",
+            notes:          it.notes || "",
+            // Measurement fields — always stored even if 0/empty
+            width:     it.quantity_type === "sq.ft" ? it.width : "",
+            height:    it.quantity_type === "sq.ft" ? it.height : "",
+            size_unit: it.quantity_type === "sq.ft" ? it.size_unit : "",
+            sq_ft:     it.quantity_type === "sq.ft" ? it.sq_ft : 0,
+            size:      it.quantity_type === "sq.ft" && it.width && it.height
               ? `${it.width}×${it.height} ${it.size_unit} (${it.sq_ft} sq.ft)`
               : "",
+              size_unit: it.quantity_type === "quantity" ? "pcs" : it.size_unit,
+              gst_percentage: it.gst_percentage || 0,
+            // design_charges is NOT sent on create — will be added in edit mode
           };
         }),
 
         gst_no: formData.gst_no.trim(),
 
-        subtotal: parseFloat(t.subTotal.toFixed(2)),
+        subtotal:       parseFloat(t.subTotal.toFixed(2)),
         discount_amount: parseFloat(t.discAmt.toFixed(2)),
         taxable_amount: parseFloat(t.afterDisc.toFixed(2)),
-        tax_amount: parseFloat(t.totalGst.toFixed(2)),
-        total_amount: parseFloat(t.grandTotal.toFixed(2)),
+        tax_amount:     parseFloat(t.totalGst.toFixed(2)),
+        delivery_charges: formData.free_delivery ? 0 : parseFloat(formData.delivery_charges) || 0,
+        free_delivery:  formData.free_delivery,
+        discount_percentage: parseFloat(formData.discount_percentage || 0),
+        total_amount:   parseFloat(t.grandTotal.toFixed(2)),
 
-        payment_mode: formData.payment_mode || "",
+        payment_mode:   formData.payment_mode || "",
         payment_amount: parseFloat(formData.payment_amount) || 0,
         balance_amount: parseFloat(t.balance.toFixed(2)),
-        created_by: adminUser?.name || "Admin",
+
+        created_by:          adminUser?.name || "Admin",
         created_by_admin_id: adminUser?._id ?? null,
 
         job_status: "draft",
       };
 
-      const res = await fetch("https://job-server-cocj.onrender.com/api/jobs", {
+      const res = await fetch("https://api.dmedia.in/api/jobs", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -637,12 +657,12 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
 
   const totals = calcTotals();
 
-  const g = isMobile ? 8 : 12;
+  const g  = isMobile ? 8 : 12;
   const c2 = isMobile ? "1fr" : "1fr 1fr";
   const c3 = isMobile ? "1fr" : isTablet ? "1fr 1fr" : "1fr 1fr 1fr";
   const c4 = isMobile ? "1fr 1fr" : "repeat(4,1fr)";
 
-  const modalWidth = isMobile ? "100vw" : isTablet ? "94vw" : "min(96vw,900px)";
+  const modalWidth      = isMobile ? "100vw" : isTablet ? "94vw" : "min(96vw,900px)";
   const mobileFullStyle = isMobile ? { top: 0, margin: 0, maxWidth: "100vw", padding: 0 } : {};
 
   return (
@@ -682,7 +702,7 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
           marginBottom: 14, display: "flex", flexWrap: "wrap", gap: isMobile ? 8 : 16,
           alignItems: "center",
         }}>
-          <InfoBadge label="Order Date" value={orderDate.format("DD MMM YYYY")} />
+          <InfoBadge label="Order Date"  value={orderDate.format("DD MMM YYYY")} />
           <InfoBadge label="Valid Until" value={validUntil.format("DD MMM YYYY")} green sub="30 days" />
           {adminUser?.name && <InfoBadge label="Created By" value={adminUser.name} />}
         </div>
@@ -753,8 +773,8 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
           </div>
           <div style={{ display: "grid", gridTemplateColumns: c4, gap: g }}>
             {[
-              ["city", "City", "City"],
-              ["state", "State", "State"],
+              ["city",    "City",    "City"],
+              ["state",   "State",   "State"],
               ["pincode", "Pincode", "6-digit"],
               ["country", "Country", "Country"],
             ].map(([k, label, ph]) => (
@@ -792,7 +812,7 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
           </Button>
         </div>
 
-        {/* ── Pricing & Tax ── */}
+        {/* ── Pricing & Delivery ── */}
         <SectionHeader icon={<TagOutlined />} title="Pricing & Delivery" />
         <div style={{ display: "grid", gridTemplateColumns: c4, gap: g, marginBottom: 14 }}>
           <FormField label="GST Number">
@@ -804,6 +824,7 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
               style={{ borderRadius: 8 }}
             />
           </FormField>
+       
         </div>
 
         {/* ── Payment ── */}
@@ -817,9 +838,7 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
               allowClear
               onChange={(v) => handleInput("payment_mode", v ?? "")}
             >
-              {PAYMENT_MODES.map((m) => (
-                <Option key={m} value={m}>{m}</Option>
-              ))}
+              {PAYMENT_MODES.map(m => <Option key={m} value={m}>{m}</Option>)}
             </Select>
           </FormField>
           <FormField label="Amount Paid (₹)">
@@ -833,9 +852,6 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
             />
           </FormField>
         </div>
-
-        {/* ── Notes ── */}
-      
 
         {/* ── Order Summary ── */}
         <div style={{
@@ -893,9 +909,7 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
                 <span>Amount Paid {formData.payment_mode ? `(${formData.payment_mode})` : ""}</span>
                 <span style={{ fontWeight: 700 }}>− ₹{totals.paid.toFixed(2)}</span>
               </div>
-
               <Divider style={{ margin: "6px 0" }} />
-
               <div style={{
                 display: "flex", justifyContent: "space-between",
                 fontSize: isMobile ? 14 : 15, fontWeight: 800,
@@ -944,3 +958,6 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
 };
 
 export default CreateJobModal;
+
+
+

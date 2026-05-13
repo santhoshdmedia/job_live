@@ -2,16 +2,16 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useSelector } from "react-redux";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const API_BASE = "https://job-server-cocj.onrender.com/api";
+const API_BASE = "https://api.dmedia.in/api";
 
 const WASTAGE_REASONS = [
-  { value: "margin_trim", label: "Margin trim (top/bottom)" },
-  { value: "misprint", label: "Misprint" },
-  { value: "roll_end", label: "End of roll" },
+  { value: "margin_trim",       label: "Margin trim (top/bottom)" },
+  { value: "misprint",          label: "Misprint" },
+  { value: "roll_end",          label: "End of roll" },
   { value: "color_calibration", label: "Color calibration" },
-  { value: "customer_change", label: "Customer spec change" },
-  { value: "equipment_fault", label: "Equipment fault" },
-  { value: "other", label: "Other" },
+  { value: "customer_change",   label: "Customer spec change" },
+  { value: "equipment_fault",   label: "Equipment fault" },
+  { value: "other",             label: "Other" },
 ];
 
 // ─── API helper ───────────────────────────────────────────────────────────────
@@ -30,47 +30,41 @@ const api = async (url, opts = {}) => {
   return data;
 };
 
-// ─── PDF Slip Generator ────────────────────────────────────────────────────
+// ─── PDF Slip ─────────────────────────────────────────────────────────────────
 const generateSlipPDF = (issue, user) => {
   const now = new Date();
   const dateStr = now.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
   const timeStr = now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
-
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8"/>
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
 <title>Material Issue Slip - ${issue?.issue_no || "SLIP"}</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Courier New', monospace; background: #fff; color: #111; font-size: 12px; }
-  .slip { width: 80mm; margin: 0 auto; padding: 8mm; border: 1px dashed #999; }
-  .header { text-align: center; border-bottom: 2px solid #111; padding-bottom: 8px; margin-bottom: 10px; }
-  .brand { font-size: 18px; font-weight: 900; letter-spacing: 2px; }
-  .sub { font-size: 10px; color: #555; margin-top: 2px; }
-  .slip-no { font-size: 13px; font-weight: 700; margin-top: 6px; letter-spacing: 1px; }
-  .meta { font-size: 10px; color: #666; }
-  .section { margin: 10px 0; }
-  .section-title { font-size: 9px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #555; border-bottom: 1px solid #ddd; padding-bottom: 3px; margin-bottom: 6px; }
-  .row { display: flex; justify-content: space-between; margin: 4px 0; }
-  .label { color: #555; font-size: 11px; }
-  .value { font-weight: 700; font-size: 11px; text-align: right; max-width: 55%; word-break: break-word; }
-  .highlight { background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; padding: 8px; margin: 8px 0; text-align: center; }
-  .big { font-size: 22px; font-weight: 900; }
-  .unit { font-size: 11px; color: #555; }
-  .footer { text-align: center; border-top: 1px dashed #999; padding-top: 8px; margin-top: 10px; font-size: 9px; color: #888; }
-  .sig-box { border: 1px solid #ddd; height: 30px; margin-top: 8px; border-radius: 3px; }
-  .sig-label { font-size: 9px; color: #999; text-align: center; margin-top: 2px; }
-  @media print { body { -webkit-print-color-adjust: exact; } }
-</style>
-</head>
-<body>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Courier New',monospace;background:#fff;color:#111;font-size:12px}
+  .slip{width:80mm;margin:0 auto;padding:8mm;border:1px dashed #999}
+  .header{text-align:center;border-bottom:2px solid #111;padding-bottom:8px;margin-bottom:10px}
+  .brand{font-size:18px;font-weight:900;letter-spacing:2px}
+  .sub{font-size:10px;color:#555;margin-top:2px}
+  .slip-no{font-size:13px;font-weight:700;margin-top:6px;letter-spacing:1px}
+  .meta{font-size:10px;color:#666}
+  .section{margin:10px 0}
+  .section-title{font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#555;border-bottom:1px solid #ddd;padding-bottom:3px;margin-bottom:6px}
+  .row{display:flex;justify-content:space-between;margin:4px 0}
+  .label{color:#555;font-size:11px}
+  .value{font-weight:700;font-size:11px;text-align:right;max-width:55%;word-break:break-word}
+  .highlight{background:#f5f5f5;border:1px solid #ddd;border-radius:4px;padding:8px;margin:8px 0;text-align:center}
+  .big{font-size:22px;font-weight:900}
+  .unit{font-size:11px;color:#555}
+  .footer{text-align:center;border-top:1px dashed #999;padding-top:8px;margin-top:10px;font-size:9px;color:#888}
+  .sig-box{border:1px solid #ddd;height:30px;margin-top:8px;border-radius:3px}
+  .sig-label{font-size:9px;color:#999;text-align:center;margin-top:2px}
+  @media print{body{-webkit-print-color-adjust:exact}}
+</style></head><body>
 <div class="slip">
   <div class="header">
     <div class="brand">DMEDIA</div>
     <div class="sub">Material Issuance System</div>
     <div class="slip-no">${issue?.issue_no || "MIS-XXXXXX"}</div>
-    <div class="meta">${dateStr} &nbsp;|&nbsp; ${timeStr}</div>
+    <div class="meta">${dateStr} | ${timeStr}</div>
   </div>
   <div class="section">
     <div class="section-title">Job Details</div>
@@ -105,19 +99,14 @@ const generateSlipPDF = (issue, user) => {
   </div>
   <div class="footer">
     <div>This slip is system generated</div>
-    <div style="margin-top:2px;">Keep this slip until material return</div>
-    <div style="margin-top:4px;font-weight:700;">DMEDIA &copy; ${now.getFullYear()}</div>
+    <div style="margin-top:2px">Keep this slip until job completion</div>
+    <div style="margin-top:4px;font-weight:700">DMEDIA © ${now.getFullYear()}</div>
   </div>
-</div>
-</body>
-</html>`;
-
+</div></body></html>`;
   const blob = new Blob([html], { type: "text/html" });
   const url = URL.createObjectURL(blob);
   const win = window.open(url, "_blank");
-  if (win) {
-    win.onload = () => { setTimeout(() => { win.print(); URL.revokeObjectURL(url); }, 500); };
-  }
+  if (win) win.onload = () => { setTimeout(() => { win.print(); URL.revokeObjectURL(url); }, 500); };
 };
 
 // ─── Toast ────────────────────────────────────────────────────────────────────
@@ -128,7 +117,7 @@ const useToast = () => {
     setToasts(p => [...p, { id, message, type }]);
     setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 4500);
   }, []);
-  const dismiss = useCallback((id) => setToasts(p => p.filter(t => t.id !== id)), []);
+  const dismiss = useCallback(id => setToasts(p => p.filter(t => t.id !== id)), []);
   return { toasts, show, dismiss };
 };
 
@@ -136,13 +125,13 @@ const ToastContainer = ({ toasts, dismiss }) => (
   <div className="fixed bottom-20 left-4 right-4 z-[100] flex flex-col gap-2 md:left-auto md:right-6 md:w-80 md:bottom-6">
     {toasts.map(t => {
       const cfg = {
-        info: { bg: "bg-slate-800", bar: "bg-sky-400", icon: "ℹ" },
-        success: { bg: "bg-slate-800", bar: "bg-emerald-400", icon: "✓" },
-        error: { bg: "bg-slate-800", bar: "bg-rose-400", icon: "✕" },
-        warning: { bg: "bg-slate-800", bar: "bg-amber-400", icon: "⚠" },
-      }[t.type] || { bg: "bg-slate-800", bar: "bg-sky-400", icon: "ℹ" };
+        info:    { bar: "bg-sky-400",     icon: "ℹ" },
+        success: { bar: "bg-emerald-400", icon: "✓" },
+        error:   { bar: "bg-rose-400",    icon: "✕" },
+        warning: { bar: "bg-amber-400",   icon: "⚠" },
+      }[t.type] || { bar: "bg-sky-400", icon: "ℹ" };
       return (
-        <div key={t.id} className={`${cfg.bg} text-white rounded-xl overflow-hidden shadow-2xl flex items-stretch animate-slide-up`}>
+        <div key={t.id} className="bg-slate-800 text-white rounded-xl overflow-hidden shadow-2xl flex items-stretch animate-slide-up">
           <div className={`w-1 flex-shrink-0 ${cfg.bar}`} />
           <div className="flex items-center gap-3 px-4 py-3 flex-1">
             <span className={`text-sm font-bold ${cfg.bar.replace("bg-", "text-")}`}>{cfg.icon}</span>
@@ -155,25 +144,24 @@ const ToastContainer = ({ toasts, dismiss }) => (
   </div>
 );
 
-// ─── Design System Components ─────────────────────────────────────────────────
+// ─── Design Atoms ─────────────────────────────────────────────────────────────
 const Badge = ({ children, variant = "default" }) => {
   const v = {
     default: "bg-slate-100 text-slate-600",
-    blue: "bg-sky-100 text-sky-700",
-    green: "bg-emerald-100 text-emerald-700",
-    amber: "bg-amber-100 text-amber-700",
-    red: "bg-rose-100 text-rose-700",
-    purple: "bg-violet-100 text-violet-700",
+    blue:    "bg-sky-100 text-sky-700",
+    green:   "bg-emerald-100 text-emerald-700",
+    amber:   "bg-amber-100 text-amber-700",
+    red:     "bg-rose-100 text-rose-700",
   }[variant] || "bg-slate-100 text-slate-600";
   return <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${v}`}>{children}</span>;
 };
 
 const StatusBadge = ({ status }) => {
   const map = {
-    issued: ["blue", "● Issued"],
-    returned: ["green", "✓ Returned"],
+    issued:         ["blue",  "● Issued"],
+    returned:       ["green", "✓ Returned"],
     partial_return: ["amber", "◑ Partial"],
-    no_return: ["red", "✕ No Return"],
+    no_return:      ["red",   "✕ No Return"],
   };
   const [variant, label] = map[status] || ["default", status];
   return <Badge variant={variant}>{label}</Badge>;
@@ -181,9 +169,9 @@ const StatusBadge = ({ status }) => {
 
 const PerfBadge = ({ rating }) => {
   const map = {
-    good: ["green", "▲ Good"],
-    acceptable: ["amber", "◆ Acceptable"],
-    high_wastage: ["red", "▼ High Wastage"],
+    good:         ["green", "▲ Good"],
+    acceptable:   ["amber", "◆ Acceptable"],
+    high_wastage: ["red",   "▼ High Wastage"],
   };
   const [variant, label] = map[rating] || ["default", "—"];
   return <Badge variant={variant}>{label}</Badge>;
@@ -192,7 +180,7 @@ const PerfBadge = ({ rating }) => {
 const Avatar = ({ name = "?", size = "md" }) => {
   const initials = name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
   const sz = { sm: "w-7 h-7 text-[10px]", md: "w-9 h-9 text-xs", lg: "w-11 h-11 text-sm" }[size];
-  const colors = ["bg-sky-100 text-sky-700", "bg-violet-100 text-violet-700", "bg-emerald-100 text-emerald-700", "bg-rose-100 text-rose-700", "bg-amber-100 text-amber-700"];
+  const colors = ["bg-sky-100 text-sky-700","bg-violet-100 text-violet-700","bg-emerald-100 text-emerald-700","bg-rose-100 text-rose-700","bg-amber-100 text-amber-700"];
   const color = colors[name.charCodeAt(0) % colors.length];
   return <div className={`${sz} ${color} rounded-full flex items-center justify-center font-bold flex-shrink-0`}>{initials}</div>;
 };
@@ -221,10 +209,10 @@ const Btn = ({ children, onClick, disabled, loading, variant = "primary", size =
   const sizes = { xs: "px-2.5 py-1.5 text-xs", sm: "px-3.5 py-2 text-xs", md: "px-4 py-2.5 text-sm", lg: "px-5 py-3 text-sm" };
   const variants = {
     primary: "bg-slate-900 text-white hover:bg-slate-700 shadow-sm",
-    danger: "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100",
-    ghost: "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50",
+    danger:  "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100",
+    ghost:   "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50",
     success: "bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm shadow-emerald-200",
-    accent: "bg-sky-600 text-white hover:bg-sky-700 shadow-sm shadow-sky-200",
+    accent:  "bg-sky-600 text-white hover:bg-sky-700 shadow-sm shadow-sky-200",
   };
   return (
     <button type={type} onClick={!disabled && !loading ? onClick : undefined} disabled={disabled || loading}
@@ -246,12 +234,12 @@ const Input = ({ label, suffix, prefix, error, className = "", ...props }) => (
   </div>
 );
 
-const NumberInput = ({ value, onChange, suffix, min = 0, step = 0.1, label }) => (
+const NumberInput = ({ value, onChange, suffix, min = 0, step = 0.1, label, disabled }) => (
   <div>
     {label && <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">{label}</label>}
-    <div className="flex items-stretch bg-white border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-sky-500/20 focus-within:border-sky-400 transition-all">
-      <input type="number" value={value} min={min} step={step}
-        onChange={e => onChange(parseFloat(e.target.value) || 0)}
+    <div className={`flex items-stretch bg-white border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-sky-500/20 focus-within:border-sky-400 transition-all ${disabled ? "opacity-60" : ""}`}>
+      <input type="number" value={value} min={min} step={step} disabled={disabled}
+        onChange={e => onChange(e.target.value === "" ? "" : parseFloat(e.target.value) || 0)}
         className="flex-1 px-3 py-2.5 text-sm bg-transparent outline-none min-w-0" />
       {suffix && <span className="px-2.5 py-2.5 text-xs text-slate-400 border-l border-slate-200 bg-slate-50 flex items-center whitespace-nowrap">{suffix}</span>}
     </div>
@@ -285,9 +273,7 @@ const Card = ({ children, className = "", onClick, hoverable }) => (
 
 const SectionHeader = ({ icon, title, subtitle }) => (
   <div className="flex items-center gap-3 mb-4">
-    <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center text-base flex-shrink-0">
-      {icon}
-    </div>
+    <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center text-base flex-shrink-0">{icon}</div>
     <div>
       <h3 className="text-sm font-bold text-slate-800">{title}</h3>
       {subtitle && <p className="text-xs text-slate-400">{subtitle}</p>}
@@ -303,29 +289,15 @@ const Divider = ({ label }) => (
   </div>
 );
 
-const StatTile = ({ label, value, suffix, trend, color = "default" }) => {
-  const colors = {
-    default: "bg-slate-50 border-slate-100",
-    sky: "bg-sky-50 border-sky-100",
-    emerald: "bg-emerald-50 border-emerald-100",
-    rose: "bg-rose-50 border-rose-100",
-    amber: "bg-amber-50 border-amber-100",
-  };
-  const textColors = {
-    default: "text-slate-800",
-    sky: "text-sky-700",
-    emerald: "text-emerald-700",
-    rose: "text-rose-700",
-    amber: "text-amber-700",
-  };
+const StatTile = ({ label, value, suffix, color = "default" }) => {
+  const colors = { default: "bg-slate-50 border-slate-100", sky: "bg-sky-50 border-sky-100", emerald: "bg-emerald-50 border-emerald-100", rose: "bg-rose-50 border-rose-100", amber: "bg-amber-50 border-amber-100" };
+  const textColors = { default: "text-slate-800", sky: "text-sky-700", emerald: "text-emerald-700", rose: "text-rose-700", amber: "text-amber-700" };
   return (
     <div className={`rounded-2xl border p-4 ${colors[color]}`}>
       <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5">{label}</p>
       <p className={`text-2xl font-black ${textColors[color]}`}>
-        {value}
-        {suffix && <span className="text-sm font-medium text-slate-400 ml-1">{suffix}</span>}
+        {value}{suffix && <span className="text-sm font-medium text-slate-400 ml-1">{suffix}</span>}
       </p>
-      {trend && <p className="text-xs text-slate-400 mt-1">{trend}</p>}
     </div>
   );
 };
@@ -338,36 +310,6 @@ const EmptyState = ({ icon, title, subtitle }) => (
   </div>
 );
 
-// ─── CalcPreview ──────────────────────────────────────────────────────────────
-const CalcPreview = ({ calc, issuedQty }) => {
-  if (!calc) return null;
-  const diff = issuedQty ? issuedQty - calc.required_sqft : 0;
-  const overFlag = diff > 0.01;
-  const underFlag = diff < -0.01;
-  return (
-    <div className="bg-sky-50 border border-sky-100 rounded-xl p-4 mt-3">
-      <p className="text-xs font-bold text-sky-600 mb-3 uppercase tracking-wide">System Calculation</p>
-      <div className="grid grid-cols-3 gap-3 mb-3">
-        {[["Job Area", `${calc.job_sqft}`], ["Gross Area", `${calc.gross_sqft}`], ["Margin", `${calc.margin_sqft}`]].map(([k, v]) => (
-          <div key={k} className="bg-white rounded-lg p-2 text-center">
-            <p className="text-[10px] text-slate-400 mb-0.5">{k}</p>
-            <p className="text-sm font-bold text-slate-700">{v} <span className="text-[10px] font-normal text-slate-400">sqft</span></p>
-          </div>
-        ))}
-      </div>
-      <div className="flex items-center justify-between bg-white rounded-lg px-3 py-2">
-        <span className="text-xs font-semibold text-sky-600">Recommended</span>
-        <span className="text-base font-black text-slate-800">{calc.required_sqft} <span className="text-xs font-normal text-slate-400">sqft</span></span>
-      </div>
-      {(overFlag || underFlag) && (
-        <p className={`mt-2 text-xs font-semibold ${overFlag ? "text-amber-600" : "text-emerald-600"}`}>
-          {overFlag ? `⬆ +${diff.toFixed(2)} sqft above recommendation` : `⬇ ${Math.abs(diff).toFixed(2)} sqft below recommendation`}
-        </p>
-      )}
-    </div>
-  );
-};
-
 // ─── Modal ────────────────────────────────────────────────────────────────────
 const Modal = ({ open, title, onClose, children, size = "md" }) => {
   useEffect(() => {
@@ -375,7 +317,6 @@ const Modal = ({ open, title, onClose, children, size = "md" }) => {
     else document.body.style.overflow = "";
     return () => { document.body.style.overflow = ""; };
   }, [open]);
-
   if (!open) return null;
   const sizeClass = { md: "max-w-lg", lg: "max-w-2xl", xl: "max-w-4xl" }[size];
   return (
@@ -384,10 +325,7 @@ const Modal = ({ open, title, onClose, children, size = "md" }) => {
       <div className={`bg-white w-full ${sizeClass} rounded-t-3xl sm:rounded-2xl shadow-2xl max-h-[92vh] flex flex-col`}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0">
           <h2 className="font-bold text-sm text-slate-800">{title}</h2>
-          <button onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 text-lg leading-none transition-colors">
-            ×
-          </button>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 text-lg leading-none transition-colors">×</button>
         </div>
         <div className="overflow-y-auto flex-1 p-6">{children}</div>
       </div>
@@ -395,13 +333,91 @@ const Modal = ({ open, title, onClose, children, size = "md" }) => {
   );
 };
 
-// ─── Job Lookup ────────────────────────────────────────────────────────────────
-// issuedJobIds: Set of job _id strings that already have a material issued
+// ─── Calculation Preview ──────────────────────────────────────────────────────
+// Two display modes driven by `mode` prop:
+//   "sqft"   — cart item has sq_ft; client computed breakdown shown
+//   "server" — manual W×H; server-returned breakdown shown
+const CalcPreview = ({ mode, calc, issuedQty }) => {
+  if (!calc) return null;
+
+  const issued   = parseFloat(issuedQty) || 0;
+  const recommended = parseFloat(calc.required_sqft) || 0;
+  const diff     = issued - recommended;
+  const over     = diff >  0.01;
+  const under    = diff < -0.01;
+
+  // Build rows depending on mode
+  const rows =
+    mode === "sqft"
+      ? [
+          ["Cart sq.ft",   calc.job_sqft,      "From cart item"],
+          ["Wastage Buf",  calc.wastage_sqft,  `${calc.wastage_buffer_pct}% of cart area`],
+          ["Total",        calc.required_sqft, "Cart + Buffer"],
+        ]
+      : [
+          ["Job Area",     calc.job_sqft,      "Width × Height"],
+          ["Margin Area",  calc.margin_sqft,   "Top + Bottom margins"],
+          ["Gross Area",   calc.gross_sqft,    "Job + Margins"],
+          ["Recommended",  calc.required_sqft, `After ${calc.wastage_buffer_pct ?? "—"}% buffer`],
+        ];
+
+  const accentColor = mode === "sqft" ? "bg-violet-600" : "bg-sky-600";
+  const borderColor = mode === "sqft" ? "bg-violet-50 border-violet-100" : "bg-sky-50 border-sky-100";
+  const labelColor  = mode === "sqft" ? "text-violet-600" : "text-sky-600";
+
+  return (
+    <div className={`${borderColor} border rounded-xl p-4 mt-3`}>
+      <div className="flex items-center justify-between mb-3">
+        <p className={`text-xs font-bold ${labelColor} uppercase tracking-wide`}>
+          {mode === "sqft" ? "sq.ft Based Calculation" : "Server Calculation Breakdown"}
+        </p>
+        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${mode === "sqft" ? "bg-violet-100 text-violet-600" : "bg-sky-100 text-sky-600"}`}>
+          {mode === "sqft" ? "Auto from cart" : "Manual W×H"}
+        </span>
+      </div>
+
+      {/* Breakdown tiles */}
+      <div className={`grid gap-2 mb-3 ${rows.length === 3 ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-4"}`}>
+        {rows.map(([k, v, hint]) => (
+          <div key={k} className="bg-white rounded-lg p-2.5 text-center border border-white shadow-sm">
+            <p className="text-[10px] text-slate-400 mb-0.5 leading-tight">{k}</p>
+            <p className="text-sm font-black text-slate-800">
+              {v} <span className="text-[10px] font-normal text-slate-400">sqft</span>
+            </p>
+            <p className="text-[9px] text-slate-300 mt-0.5 leading-tight">{hint}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Recommended banner */}
+      <div className={`flex items-center justify-between ${accentColor} text-white rounded-lg px-4 py-2.5`}>
+        <span className="text-xs font-bold tracking-wide">Recommended Issue Qty</span>
+        <span className="text-lg font-black">
+          {calc.required_sqft} <span className="text-xs font-normal opacity-80">sqft</span>
+        </span>
+      </div>
+
+      {/* Deviation indicator */}
+      {issued > 0 && (over || under) && (
+        <p className={`mt-2 text-xs font-semibold ${over ? "text-amber-600" : "text-emerald-600"}`}>
+          {over
+            ? `⬆ Issuing ${diff.toFixed(2)} sqft above recommendation`
+            : `⬇ Issuing ${Math.abs(diff).toFixed(2)} sqft below recommendation`}
+        </p>
+      )}
+      {issued > 0 && !over && !under && (
+        <p className="mt-2 text-xs font-semibold text-emerald-600">✓ Matches recommendation exactly</p>
+      )}
+    </div>
+  );
+};
+
+// ─── Job Lookup ───────────────────────────────────────────────────────────────
 const JobLookup = ({ onJobSelected, issuedJobIds = new Set() }) => {
   const [loading, setLoading] = useState(false);
-  const [jobs, setJobs] = useState([]);
+  const [jobs, setJobs]       = useState([]);
   const [selected, setSelected] = useState(null);
-  const [filter, setFilter] = useState("");
+  const [filter, setFilter]   = useState("");
   const { toasts, show, dismiss } = useToast();
 
   const fetchProductionJobs = useCallback(async () => {
@@ -418,10 +434,7 @@ const JobLookup = ({ onJobSelected, issuedJobIds = new Set() }) => {
 
   useEffect(() => { fetchProductionJobs(); }, []);
 
-  // Filter out jobs that already had material issued in this session or in
-  // existing issue records, then apply the text search filter.
   const filtered = useMemo(() => {
-    // First remove already-issued jobs
     let list = jobs.filter(j => !issuedJobIds.has(j._id));
     if (!filter.trim()) return list;
     const q = filter.toLowerCase();
@@ -431,25 +444,18 @@ const JobLookup = ({ onJobSelected, issuedJobIds = new Set() }) => {
     );
   }, [jobs, filter, issuedJobIds]);
 
-  const selectJob = (job) => { setSelected(job); onJobSelected(job); };
-  const clearJob = () => { setSelected(null); onJobSelected(null); };
+  const selectJob  = job  => { setSelected(job); onJobSelected(job); };
+  const clearJob   = ()   => { setSelected(null); onJobSelected(null); };
 
-  // If the currently selected job becomes issued (i.e. appears in issuedJobIds),
-  // clear it automatically so the form resets.
   useEffect(() => {
-    if (selected && issuedJobIds.has(selected._id)) {
-      setSelected(null);
-      onJobSelected(null);
-    }
+    if (selected && issuedJobIds.has(selected._id)) { setSelected(null); onJobSelected(null); }
   }, [issuedJobIds, selected]);
 
   return (
     <div>
       <ToastContainer toasts={toasts} dismiss={dismiss} />
-
       {!selected ? (
         <div className="space-y-3">
-          {/* Header row */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse" />
@@ -460,17 +466,13 @@ const JobLookup = ({ onJobSelected, issuedJobIds = new Set() }) => {
             <Btn variant="ghost" size="xs" onClick={fetchProductionJobs} loading={loading}>↻ Refresh</Btn>
           </div>
 
-          {/* Filter */}
           {jobs.length > 3 && (
-            <Input value={filter} onChange={e => setFilter(e.target.value)}
-              placeholder="Filter by job no or customer…" />
+            <Input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Filter by job no or customer…" />
           )}
 
-          {/* Job list */}
           {loading ? (
             <div className="flex items-center justify-center py-8 gap-2 text-slate-400">
-              <Spinner size={16} />
-              <span className="text-sm">Fetching production jobs…</span>
+              <Spinner size={16} /><span className="text-sm">Fetching production jobs…</span>
             </div>
           ) : filtered.length === 0 ? (
             <EmptyState icon="🏭" title="No available jobs" subtitle="All production jobs have been issued or none are in production" />
@@ -507,12 +509,10 @@ const JobLookup = ({ onJobSelected, issuedJobIds = new Set() }) => {
                 <p className="text-xs text-white/50">{selected.customer_name}</p>
               </div>
             </div>
-            <button onClick={clearJob} className="text-xs text-violet-400 font-semibold hover:text-violet-300">
-              Change
-            </button>
+            <button onClick={clearJob} className="text-xs text-violet-400 font-semibold hover:text-violet-300">Change</button>
           </div>
           <div className="grid grid-cols-3 gap-2 mt-3">
-            {[["Status", "Production"], ["Stage", selected.current_stage?.stage || "—"], ["Items", selected.cart_items?.length || 0]].map(([k, v]) => (
+            {[["Status","Production"],["Stage",selected.current_stage?.stage || "—"],["Items",selected.cart_items?.length || 0]].map(([k,v]) => (
               <div key={k} className="bg-white/10 rounded-lg p-2">
                 <p className="text-[10px] text-white/40 mb-0.5">{k}</p>
                 <p className="text-xs font-bold truncate">{v}</p>
@@ -525,104 +525,214 @@ const JobLookup = ({ onJobSelected, issuedJobIds = new Set() }) => {
   );
 };
 
-// ─── Issue Panel ────────────────────────────────────────────────────────────
+// ─── Issue Panel ──────────────────────────────────────────────────────────────
+//
+// CALCULATION MODES
+// ─────────────────
+// Mode A — "sqft" (default when cart item has sq_ft > 0):
+//   • job_sqft      = cart_item.sq_ft  (stored in backend, already the real area)
+//   • wastage_sqft  = job_sqft × (buffer / 100)
+//   • required_sqft = job_sqft + wastage_sqft
+//   • Pure client-side — NO API call to /material/calculate
+//   • User can still manually change issuedQty
+//
+// Mode B — "manual" (user toggles, or sq_ft is missing/zero):
+//   • User enters width_ft × height_ft + optional top/bottom margins
+//   • Calls backend POST /material/calculate  → returns full breakdown
+//   • issued qty pre-filled from res.data.required_sqft
+//
 const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
-  const { user } = useSelector((state) => state.authSlice);
-  const [loading, setLoading] = useState(false);
-  const [calcLoading, setCalcLoading] = useState(false);
-  const [calc, setCalc] = useState(null);
-  const [job, setJob] = useState(null);
+  const { user } = useSelector(s => s.authSlice);
+
+  // ── form state ──────────────────────────────────────────────────────────────
+  const [job,         setJob]         = useState(null);
   const [cartItemIdx, setCartItemIdx] = useState(0);
-  const [productId, setProductId] = useState("");
-  const [width, setWidth] = useState("");
-  const [height, setHeight] = useState("");
-  const [marginTop, setMarginTop] = useState(4);
-  const [marginBot, setMarginBot] = useState(3);
-  const [buffer, setBuffer] = useState(20);
-  const [issuedQty, setIssuedQty] = useState("");
-  const [empId, setEmpId] = useState("");
-  const [issueNotes, setIssueNotes] = useState("");
+  const [productId,   setProductId]   = useState("");
+  const [empId,       setEmpId]       = useState("");
+  const [issueNotes,  setIssueNotes]  = useState("");
+  const [issuedQty,   setIssuedQty]   = useState("");
+  const [buffer,      setBuffer]      = useState(20);   // wastage % — used in both modes
+
+  // Mode B (manual W×H) fields
+  const [manualMode,  setManualMode]  = useState(false);
+  const [width,       setWidth]       = useState("");
+  const [height,      setHeight]      = useState("");
+  const [marginTop,   setMarginTop]   = useState(4);
+  const [marginBot,   setMarginBot]   = useState(3);
+
+  // ── calculation state ───────────────────────────────────────────────────────
+  // `calc` shape always has: { job_sqft, required_sqft, wastage_buffer_pct }
+  // Mode A adds:   { wastage_sqft }
+  // Mode B adds:   { margin_sqft, gross_sqft }
+  const [calc,        setCalc]        = useState(null);
+  const [calcLoading, setCalcLoading] = useState(false);
+  const [submitLoad,  setSubmitLoad]  = useState(false);
+
   const { toasts, show, dismiss } = useToast();
   const calcTimer = useRef(null);
 
-  const handleCartItemChange = (idxStr) => {
-    const idx = parseInt(idxStr, 10);
-    setCartItemIdx(idx);
-    const item = job?.cart_items?.[idx];
-    if (item?.size) {
-      const match = item.size.match(/^(\d+(?:\.\d+)?)\s*[xX×]\s*(\d+(?:\.\d+)?)/);
-      if (match) { setWidth(parseFloat(match[1])); setHeight(parseFloat(match[2])); }
-    }
+  // ── helpers ─────────────────────────────────────────────────────────────────
+  const cartItem = job?.cart_items?.[cartItemIdx];
+
+  // Cart sq_ft — numeric, 0 if missing/invalid
+  const cartSqFt = useMemo(() => {
+    const v = parseFloat(cartItem?.sq_ft);
+    return isNaN(v) ? 0 : v;
+  }, [cartItem]);
+
+  // Parse W×H from size string (fallback for manual mode pre-fill)
+  const parseDimensions = (sizeStr) => {
+    if (!sizeStr) return null;
+    const m = sizeStr.match(/^(\d+(?:\.\d+)?)\s*[xX×]\s*(\d+(?:\.\d+)?)/);
+    return m ? { w: parseFloat(m[1]), h: parseFloat(m[2]) } : null;
   };
 
-  const handleJobSelected = (selectedJob) => {
-    setJob(selectedJob); setCartItemIdx(0); setWidth(""); setHeight(""); setCalc(null); setIssuedQty("");
-    if (selectedJob?.cart_items?.[0]?.size) {
-      const match = selectedJob.cart_items[0].size.match(/^(\d+(?:\.\d+)?)\s*[xX×]\s*(\d+(?:\.\d+)?)/);
-      if (match) { setWidth(parseFloat(match[1])); setHeight(parseFloat(match[2])); }
-    }
-  };
+  // ── Mode A: client-side sq_ft calc ─────────────────────────────────────────
+  // Runs whenever sq_ft, buffer, or mode changes (and we are NOT in manual mode)
+  useEffect(() => {
+    if (manualMode) return;
+    if (!cartSqFt || cartSqFt <= 0) { setCalc(null); setIssuedQty(""); return; }
 
-  const triggerCalc = useCallback(() => {
+    const buf        = parseFloat(buffer) || 0;
+    const wastage    = parseFloat((cartSqFt * buf / 100).toFixed(4));
+    const required   = parseFloat((cartSqFt + wastage).toFixed(4));
+    const newCalc = {
+      job_sqft:          cartSqFt,
+      wastage_sqft:      wastage,
+      required_sqft:     required,
+      wastage_buffer_pct: buf,
+    };
+    setCalc(newCalc);
+    setIssuedQty(required);
+  }, [cartSqFt, buffer, manualMode]);
+
+  // ── Mode B: backend calc ────────────────────────────────────────────────────
+  // Debounced — fires when manual mode is active and dimensions are valid
+  useEffect(() => {
+    if (!manualMode) return;
     clearTimeout(calcTimer.current);
+    const w = parseFloat(width);
+    const h = parseFloat(height);
+    if (!w || !h || w <= 0 || h <= 0) { setCalc(null); return; }
+
     calcTimer.current = setTimeout(async () => {
-      const w = parseFloat(width), h = parseFloat(height);
-      if (!w || !h || w <= 0 || h <= 0) return;
       setCalcLoading(true);
       try {
         const res = await api("/material/calculate", {
           method: "POST",
-          body: JSON.stringify({ width_ft: w, height_ft: h, margin_top_in: marginTop, margin_bottom_in: marginBot, wastage_buffer_pct: buffer }),
+          body: JSON.stringify({
+            width_ft:           w,
+            height_ft:          h,
+            margin_top_in:      parseFloat(marginTop) || 0,
+            margin_bottom_in:   parseFloat(marginBot) || 0,
+            wastage_buffer_pct: parseFloat(buffer)    || 0,
+          }),
         });
         setCalc(res.data);
-        if (!issuedQty) setIssuedQty(res.data.required_sqft);
-      } catch { }
-      finally { setCalcLoading(false); }
+        setIssuedQty(res.data.required_sqft);
+      } catch (err) {
+        show(`Calculation failed: ${err.message}`, "error");
+      } finally {
+        setCalcLoading(false);
+      }
     }, 600);
-  }, [width, height, marginTop, marginBot, buffer, issuedQty]);
 
-  useEffect(() => { triggerCalc(); }, [width, height, marginTop, marginBot, buffer]);
+    return () => clearTimeout(calcTimer.current);
+  }, [manualMode, width, height, marginTop, marginBot, buffer]);
 
+  // ── Reset when cart item changes ────────────────────────────────────────────
+  const applyCartItem = useCallback((job, idx) => {
+    const item = job?.cart_items?.[idx];
+    setCalc(null);
+    setIssuedQty("");
+    setManualMode(false);  // always start in sqft mode
+    // Pre-fill W/H in case user switches to manual mode
+    if (item?.size) {
+      const dims = parseDimensions(item.size);
+      if (dims) { setWidth(dims.w); setHeight(dims.h); }
+      else       { setWidth(""); setHeight(""); }
+    } else { setWidth(""); setHeight(""); }
+  }, []);
+
+  const handleJobSelected = (selectedJob) => {
+    setJob(selectedJob);
+    setCartItemIdx(0);
+    setProductId(""); setEmpId(""); setIssueNotes("");
+    if (selectedJob) applyCartItem(selectedJob, 0);
+    else { setCalc(null); setIssuedQty(""); setManualMode(false); }
+  };
+
+  const handleCartItemChange = (idxStr) => {
+    const idx = parseInt(idxStr, 10);
+    setCartItemIdx(idx);
+    applyCartItem(job, idx);
+  };
+
+  // Switching modes: recalc resets
+  const toggleManualMode = (toManual) => {
+    setManualMode(toManual);
+    setCalc(null);
+    setIssuedQty("");
+    if (!toManual && cartSqFt > 0) {
+      // Will re-fire the Mode A effect automatically
+    }
+  };
+
+  // ── Derived ─────────────────────────────────────────────────────────────────
   const selectedProduct = products.find(p => p._id === productId);
-  const selectedEmp = employees.find(e => e._id === empId);
-  const cartItem = job?.cart_items?.[cartItemIdx];
+  const selectedEmp     = employees.find(e => e._id === empId);
+  const calcMode        = manualMode ? "server" : "sqft";
 
+  // ── Submit ──────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
-    if (!job) return show("Look up and select a job first", "error");
-    if (!productId) return show("Select a material product", "error");
-    if (!issuedQty || issuedQty <= 0) return show("Issued qty must be > 0", "error");
-    if (!empId) return show("Select an employee", "error");
-    if (!width || !height) return show("Dimensions are required", "error");
-    if (selectedProduct && selectedProduct.stock_count < parseFloat(issuedQty))
-      return show(`Insufficient stock. Available: ${selectedProduct.stock_count} sqft`, "error");
+    if (!job)        return show("Select a job first", "error");
+    if (!productId)  return show("Select a material product", "error");
+    if (!empId)      return show("Select an employee to issue to", "error");
+    const qty = parseFloat(issuedQty);
+    if (!qty || qty <= 0) return show("Issued quantity must be greater than 0", "error");
+    if (manualMode && (!parseFloat(width) || !parseFloat(height)))
+      return show("Width and Height are required in manual mode", "error");
+    if (selectedProduct && selectedProduct.stock_count < qty)
+      return show(`Insufficient stock — available: ${selectedProduct.stock_count} sqft`, "error");
 
-    setLoading(true);
+    setSubmitLoad(true);
     try {
       const payload = {
         cart_item_index: cartItemIdx,
-        material: { product_id: productId, product_name: selectedProduct?.name, unit: "sqft" },
-        issued_qty: parseFloat(issuedQty),
-        dimensions: { width: parseFloat(width), height: parseFloat(height), unit: "ft" },
-        margin_top_in: parseFloat(marginTop),
-        margin_bottom_in: parseFloat(marginBot),
-        wastage_buffer_pct: parseFloat(buffer),
+        material: {
+          product_id:   productId,
+          product_name: selectedProduct?.name,
+          unit:         "sqft",
+        },
+        issued_qty:        qty,
+        sq_ft:             cartSqFt || null,            // store original cart sq_ft
+        calc_mode:         calcMode,                    // "sqft" | "server"
+        wastage_buffer_pct: parseFloat(buffer) || 0,
+        // Only sent in manual mode
+        ...(manualMode ? {
+          dimensions: {
+            width:  parseFloat(width),
+            height: parseFloat(height),
+            unit:   "ft",
+          },
+          margin_top_in:    parseFloat(marginTop) || 0,
+          margin_bottom_in: parseFloat(marginBot) || 0,
+        } : {}),
         issued_to: { user_id: empId, name: selectedEmp?.name || "", role: selectedEmp?.role || "" },
         issued_by: { user_id: user?._id, name: user?.name || "Store Manager", role: user?.role || "store manager" },
         issue_notes: issueNotes,
       };
 
-      const res = await api(`/jobs/${job._id}/material/issue`, { method: "POST", body: JSON.stringify(payload) });
+      const res = await api(`/jobs/${job._id}/material/issue`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
       show(res.message || "Material issued successfully", "success");
 
-      // ── Build a normalised issue object from the controller response ──────
-      // Controller returns: { issue_no, issue_id, job_no, material_name,
-      //                       issued_qty, suggested_qty, issued_to, calculation,
-      //                       stock_remaining }
-      // We enrich it with everything needed by IssuesPanel / ReturnPanel.
       const newIssue = {
-        _id:             res.data.issue_id,          // ← use issue_id from controller
+        _id:             res.data.issue_id,
         issue_no:        res.data.issue_no,
-        job_id:          job._id,                    // ← original job _id
+        job_id:          job._id,
         job_no:          res.data.job_no,
         cart_item_index: cartItemIdx,
         material: {
@@ -631,49 +741,44 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
           unit:         "sqft",
         },
         issued_qty:    res.data.issued_qty,
-        suggested_qty: res.data.suggested_qty,
-        dimensions: {
-          width:  parseFloat(width),
-          height: parseFloat(height),
-          unit:   "ft",
-        },
-        issued_to: {
-          user_id: empId,
-          name:    selectedEmp?.name || "",
-          role:    selectedEmp?.role || "",
-        },
-        issued_by: {
-          user_id: user?._id,
-          name:    user?.name || "Store Manager",
-          role:    user?.role || "store manager",
-        },
-        calculation: res.data.calculation || calc,   // ← prefer server calc
+        suggested_qty: res.data.suggested_qty ?? calc?.required_sqft,
+        ...(manualMode ? {
+          dimensions: { width: parseFloat(width), height: parseFloat(height), unit: "ft" },
+        } : {}),
+        wastage_buffer_pct: parseFloat(buffer) || 0,
+        calc_mode:     calcMode,
+        sq_ft:         cartSqFt || null,
+        issued_to: { user_id: empId, name: selectedEmp?.name || "", role: selectedEmp?.role || "" },
+        issued_by:  { user_id: user?._id, name: user?.name || "Store Manager", role: user?.role || "store manager" },
+        calculation: calc,
         issue_notes: issueNotes,
-        status: "issued",
-        issued_at: new Date().toISOString(),
+        status:     "issued",
+        issued_at:  new Date().toISOString(),
       };
 
-      // Pass job._id so root component can add it to issuedJobIds Set
-      onIssued(newIssue, productId, parseFloat(issuedQty), job._id);
-
+      onIssued(newIssue, productId, qty, job._id);
       setTimeout(() => generateSlipPDF(newIssue, user), 400);
 
       // Reset form
-      setJob(null);
-      setProductId(""); setIssuedQty(""); setEmpId(""); setIssueNotes(""); setCalc(null);
+      setJob(null); setProductId(""); setIssuedQty(""); setEmpId("");
+      setIssueNotes(""); setCalc(null); setManualMode(false);
       setWidth(""); setHeight("");
-    } catch (err) { show(err.message, "error"); }
-    finally { setLoading(false); }
+    } catch (err) {
+      show(err.message, "error");
+    } finally {
+      setSubmitLoad(false);
+    }
   };
 
   return (
     <div className="space-y-4">
       <ToastContainer toasts={toasts} dismiss={dismiss} />
 
-      {/* Job Lookup – pass issuedJobIds so it hides already-issued jobs */}
+      {/* ── Job Selection ────────────────────────────────────────────────────── */}
       <Card className="p-5">
-        <SectionHeader icon="🏭" title="Production Jobs" subtitle="All jobs currently in production" />
+        <SectionHeader icon="🏭" title="Production Jobs" subtitle="Select a job currently in production" />
         <JobLookup onJobSelected={handleJobSelected} issuedJobIds={issuedJobIds} />
+
         {job && job.cart_items?.length > 1 && (
           <div className="mt-4">
             <Select label="Cart Item" value={String(cartItemIdx)} onChange={handleCartItemChange}
@@ -683,12 +788,18 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
               }))} />
           </div>
         )}
+
         {job && cartItem && (
           <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {[["Product", cartItem.product_name], ["Size", cartItem.size], ["Type", cartItem.printing_type], ["Qty", cartItem.quantity]].filter(([, v]) => v).map(([k, v]) => (
-              <div key={k} className="bg-slate-50 rounded-xl p-2.5">
-                <p className="text-[10px] text-slate-400 mb-0.5 uppercase tracking-wide">{k}</p>
-                <p className="text-xs font-semibold text-slate-700 truncate">{v}</p>
+            {[
+              ["Product",    cartItem.product_name],
+              ["Size",       cartItem.size],
+              ["sq.ft",      cartSqFt > 0 ? `${cartSqFt} sqft` : "—"],
+              ["Print Type", cartItem.printing_type],
+            ].filter(([, v]) => v && v !== "—" || v === "—").map(([k, v]) => (
+              <div key={k} className={`rounded-xl p-2.5 ${k === "sq.ft" && cartSqFt > 0 ? "bg-violet-50 border border-violet-100" : "bg-slate-50"}`}>
+                <p className={`text-[10px] mb-0.5 uppercase tracking-wide ${k === "sq.ft" && cartSqFt > 0 ? "text-violet-400" : "text-slate-400"}`}>{k}</p>
+                <p className={`text-xs font-semibold truncate ${k === "sq.ft" && cartSqFt > 0 ? "text-violet-700" : "text-slate-700"}`}>{v}</p>
               </div>
             ))}
           </div>
@@ -697,55 +808,144 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
 
       {job && (
         <>
-          {/* Material */}
+          {/* ── Material ──────────────────────────────────────────────────────── */}
           <Card className="p-5">
-            <SectionHeader icon="📦" title="Material Selection" subtitle="Choose product and quantity" />
+            <SectionHeader icon="📦" title="Material Selection" subtitle="Choose the product to issue" />
             <div className="space-y-4">
-              <Select label="Product" required value={productId} onChange={setProductId} placeholder="Select material…"
+              <Select label="Product" required value={productId} onChange={setProductId}
+                placeholder="Select material…"
                 options={products.map(p => ({ value: p._id, label: `${p.name} (${p.stock_count || 0} sqft)` }))} />
+
               {selectedProduct && (
-                <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold ${selectedProduct.stock_count > 50 ? "bg-emerald-50 text-emerald-700" : selectedProduct.stock_count > 10 ? "bg-amber-50 text-amber-700" : "bg-rose-50 text-rose-700"}`}>
+                <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold ${
+                  selectedProduct.stock_count > 50 ? "bg-emerald-50 text-emerald-700"
+                  : selectedProduct.stock_count > 10 ? "bg-amber-50 text-amber-700"
+                  : "bg-rose-50 text-rose-700"}`}>
                   <span>{selectedProduct.stock_count > 50 ? "●" : selectedProduct.stock_count > 10 ? "◆" : "▲"}</span>
                   {selectedProduct.stock_count} sqft in stock
                 </div>
               )}
-              <Input label="Issue Notes" value={issueNotes} onChange={e => setIssueNotes(e.target.value)} placeholder="e.g. Day 1 of 3-day job" />
+
+              <Input label="Issue Notes" value={issueNotes} onChange={e => setIssueNotes(e.target.value)}
+                placeholder="e.g. Day 1 of 3-day job, special instructions…" />
             </div>
           </Card>
 
-          {/* Dimensions */}
+          {/* ── Calculation ───────────────────────────────────────────────────── */}
           <Card className="p-5">
-            <SectionHeader icon="📐" title="Dimensions & Margins" subtitle="Set print area and wastage buffer" />
-            {cartItem?.size && (
-              <div className="mb-4 flex items-center gap-2 bg-emerald-50 text-emerald-700 rounded-xl px-3 py-2.5 text-xs font-semibold border border-emerald-100">
-                <span>✓</span> Dimensions auto-filled from "{cartItem.size}"
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center text-base flex-shrink-0">📐</div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800">Material Calculation</h3>
+                  <p className="text-xs text-slate-400">
+                    {!manualMode
+                      ? cartSqFt > 0
+                        ? `Using cart sq.ft (${cartSqFt} sqft) + wastage buffer`
+                        : "No sq.ft on cart item — switch to manual"
+                      : "Manual Width × Height → server calculates"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Mode toggle */}
+              <div className="flex rounded-xl overflow-hidden border border-slate-200 flex-shrink-0 text-xs font-semibold">
+                <button onClick={() => toggleManualMode(false)}
+                  className={`px-3 py-1.5 transition-colors ${!manualMode ? "bg-violet-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}>
+                  sq.ft
+                </button>
+                <button onClick={() => toggleManualMode(true)}
+                  className={`px-3 py-1.5 border-l border-slate-200 transition-colors ${manualMode ? "bg-sky-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}>
+                  W × H
+                </button>
+              </div>
+            </div>
+
+            {/* ── Mode A: sq.ft ─────────────────────────────────────────────── */}
+            {!manualMode && (
+              <div className="space-y-4">
+                {/* sq.ft source info */}
+                {cartSqFt > 0 ? (
+                  <div className="flex items-center gap-2 bg-violet-50 border border-violet-100 rounded-xl px-3 py-2.5 text-xs font-semibold text-violet-700">
+                    <span>▣</span>
+                    Cart sq.ft: <span className="font-black ml-1">{cartSqFt} sqft</span>
+                    <span className="ml-auto text-violet-400 font-normal">from "{cartItem?.size}"</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2.5 text-xs font-semibold text-amber-700">
+                    <span>⚠</span> Cart item has no sq.ft — switch to W × H mode or enter qty manually
+                  </div>
+                )}
+
+                {/* Wastage buffer (applies in both modes) */}
+                <div className="grid grid-cols-2 gap-3 items-end">
+                  <NumberInput label="Wastage Buffer %" value={buffer} onChange={setBuffer} min={0} max={100} step={1} suffix="%" />
+                  {cartSqFt > 0 && calc && (
+                    <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                      <p className="text-[10px] text-slate-400 mb-0.5">Wastage added</p>
+                      <p className="text-sm font-black text-amber-600">+{calc.wastage_sqft} <span className="text-xs font-normal text-slate-400">sqft</span></p>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
-            <div className="grid grid-cols-3 gap-3 mb-3">
-              <NumberInput label="Width" value={width} onChange={setWidth} min={0.1} step={0.1} suffix="ft" />
-              <NumberInput label="Height" value={height} onChange={setHeight} min={0.1} step={0.1} suffix="ft" />
-              <NumberInput label="Buffer" value={buffer} onChange={setBuffer} min={0} max={50} step={1} suffix="%" />
-            </div>
-            <div className="grid grid-cols-2 gap-3 mb-3">
-              <NumberInput label="Top Margin" value={marginTop} onChange={setMarginTop} min={0} step={0.5} suffix="in" />
-              <NumberInput label="Bottom Margin" value={marginBot} onChange={setMarginBot} min={0} step={0.5} suffix="in" />
-            </div>
-            {calcLoading && (
-              <div className="flex items-center gap-2 text-xs text-slate-400 py-1">
-                <Spinner size={12} /> Calculating…
+
+            {/* ── Mode B: Manual W×H ────────────────────────────────────────── */}
+            {manualMode && (
+              <div className="space-y-4">
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Print Dimensions (ft)</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumberInput label="Width" value={width} onChange={setWidth} min={0.1} step={0.1} suffix="ft" />
+                    <NumberInput label="Height" value={height} onChange={setHeight} min={0.1} step={0.1} suffix="ft" />
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Margins & Buffer</p>
+                  <div className="grid grid-cols-3 gap-3">
+                    <NumberInput label="Top Margin" value={marginTop} onChange={setMarginTop} min={0} step={0.5} suffix="in" />
+                    <NumberInput label="Bottom Margin" value={marginBot} onChange={setMarginBot} min={0} step={0.5} suffix="in" />
+                    <NumberInput label="Buffer %" value={buffer} onChange={setBuffer} min={0} max={100} step={1} suffix="%" />
+                  </div>
+                </div>
+                {calcLoading && (
+                  <div className="flex items-center gap-2 text-xs text-sky-500 font-semibold py-1">
+                    <Spinner size={12} /> Calculating via server…
+                  </div>
+                )}
               </div>
             )}
-            <CalcPreview calc={calc} issuedQty={parseFloat(issuedQty)} />
-            <div className="mt-4">
-              <NumberInput label="Actual Qty to Issue *" value={issuedQty} onChange={setIssuedQty} min={0.01} step={0.1} suffix="sqft" />
+
+            {/* ── Calculation breakdown (both modes) ────────────────────────── */}
+            <CalcPreview mode={calcMode} calc={calc} issuedQty={issuedQty} />
+
+            {/* ── Actual qty to issue ────────────────────────────────────────── */}
+            <div className="mt-4 pt-4 border-t border-slate-100">
+              <p className="text-xs text-slate-400 mb-2">
+                Recommended qty pre-filled. Override if issuing a different amount.
+              </p>
+              <NumberInput
+                label="Actual Qty to Issue *"
+                value={issuedQty}
+                onChange={setIssuedQty}
+                min={0.01}
+                step={0.1}
+                suffix="sqft"
+              />
+              {calc && issuedQty !== "" && parseFloat(issuedQty) !== calc.required_sqft && (
+                <p className="text-xs text-amber-500 font-medium mt-1.5">
+                  ⚠ Differs from recommended ({calc.required_sqft} sqft) — manual override
+                </p>
+              )}
             </div>
           </Card>
 
-          {/* Personnel */}
+          {/* ── Personnel ─────────────────────────────────────────────────────── */}
           <Card className="p-5">
-            <SectionHeader icon="👤" title="Personnel" subtitle="Who is this material being issued to" />
+            <SectionHeader icon="👤" title="Personnel" subtitle="Who is receiving this material" />
             <div className="grid grid-cols-2 gap-3 mb-4">
-              <Select label="Issue To" required value={empId} onChange={setEmpId} placeholder="Select employee…"
+              <Select label="Issue To" required value={empId} onChange={setEmpId}
+                placeholder="Select employee…"
                 options={employees.map(e => ({ value: e._id, label: e.name }))} />
               <div>
                 <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Issued By</label>
@@ -766,7 +966,7 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
           </Card>
 
           <div className="pb-4">
-            <Btn variant="primary" size="lg" onClick={handleSubmit} loading={loading} fullWidth>
+            <Btn variant="primary" size="lg" onClick={handleSubmit} loading={submitLoad} fullWidth>
               📋 Issue Material & Print Slip
             </Btn>
           </div>
@@ -774,212 +974,52 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
       )}
 
       {!job && (
-        <EmptyState icon="🔍" title="No job selected" subtitle="Search for a job above to continue" />
+        <EmptyState icon="🔍" title="No job selected" subtitle="Search and select a production job above to continue" />
       )}
     </div>
   );
 };
 
-// ─── Return Panel ─────────────────────────────────────────────────────────────
-const ReturnPanel = ({ issues, employees, onReturned }) => {
-  const { user } = useSelector((state) => state.authSlice);
-  const { toasts, show, dismiss } = useToast();
-  const [selectedId, setSelectedId] = useState("");
-  const [retQty, setRetQty] = useState("");
-  const [reason, setReason] = useState("margin_trim");
-  const [notes, setNotes] = useState("");
-  const [retById, setRetById] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const openIssues = issues.filter(i => i.status === "issued");
-  const selectedIssue = issues.find(i => i._id === selectedId);
-
-  // ── Wastage measured against recommended (suggested_qty / calculation.required_sqft)
-  const derived = useMemo(() => {
-    if (!selectedIssue || retQty === "" || isNaN(parseFloat(retQty))) return null;
-
-    const issued      = selectedIssue.issued_qty || 0;
-    // Prefer suggested_qty (top-level field saved by controller), fall back to
-    // calculation.required_sqft stored inside the issue document.
-    const recommended = selectedIssue.suggested_qty
-      || selectedIssue.calculation?.required_sqft
-      || issued; // last resort: treat issued as baseline so ratio = 0
-
-    const returned   = Math.max(0, Math.min(issued, parseFloat(retQty)));
-    const used       = issued - returned;
-    // Wastage = how much was used BEYOND the system recommendation
-    const wastage    = Math.max(0, used - recommended);
-    // Ratio relative to recommendation so managers see % over-recommendation
-    const ratio      = recommended > 0 ? (wastage / recommended) * 100 : 0;
-
-    return {
-      used:       parseFloat(used.toFixed(4)),
-      recommended: parseFloat(recommended.toFixed(4)),
-      wastage:    parseFloat(wastage.toFixed(4)),
-      ratio:      parseFloat(ratio.toFixed(2)),
-      perf:       ratio <= 10 ? "good" : ratio <= 20 ? "acceptable" : "high_wastage",
-    };
-  }, [selectedIssue, retQty]);
-
-  const handleSubmit = async () => {
-    if (!selectedId) return show("Select an issue", "error");
-    if (retQty === "") return show("Enter returned qty", "error");
-    const qty = parseFloat(retQty);
-    if (isNaN(qty) || qty < 0) return show("Returned qty must be ≥ 0", "error");
-    if (selectedIssue && qty > selectedIssue.issued_qty)
-      return show(`Cannot return more than issued (${selectedIssue.issued_qty} sqft)`, "error");
-
-    setLoading(true);
-    const retBy = employees.find(e => e._id === retById);
-    try {
-      const payload = {
-        returned_qty:        qty,
-        wastage_reason:      reason,
-        wastage_reason_notes: notes,
-        returned_by: {
-          user_id: retById || user?._id,
-          name:    retBy?.name || user?.name || "Employee",
-          role:    retBy?.role || "printing team",
-        },
-      };
-      const res = await api(`/material/${selectedId}/return`, { method: "POST", body: JSON.stringify(payload) });
-      show(res.message || "Return recorded", "success");
-      onReturned(selectedId, res.data);
-      setSelectedId(""); setRetQty(""); setNotes(""); setRetById("");
-    } catch (err) { show(err.message, "error"); }
-    finally { setLoading(false); }
-  };
-
-  return (
-    <div className="space-y-4">
-      <ToastContainer toasts={toasts} dismiss={dismiss} />
-
-      <Card className="p-5">
-        <SectionHeader icon="↩" title="Select Issue" subtitle="Choose an open issue to process return" />
-        <Select label="Open Issue" required value={selectedId}
-          onChange={v => { setSelectedId(v); setRetQty(""); }}
-          placeholder="Choose an open issue…"
-          options={openIssues.map(i => ({ value: i._id, label: `${i.issue_no} · ${i.job_no} · ${i.issued_qty} sqft` }))} />
-
-        {openIssues.length === 0 && (
-          <EmptyState icon="✓" title="No pending returns" subtitle="All issues have been returned" />
-        )}
-
-        {selectedIssue && (
-          <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {[
-              ["Job",       selectedIssue.job_no],
-              ["Product",   selectedIssue.material?.product_name],
-              ["Issued",    `${selectedIssue.issued_qty} sqft`],
-              ["Suggested", `${selectedIssue.suggested_qty || selectedIssue.calculation?.required_sqft || "—"} sqft`],
-            ].map(([k, v]) => (
-              <div key={k} className="bg-slate-50 rounded-xl p-2.5">
-                <p className="text-[10px] text-slate-400 mb-0.5 uppercase tracking-wide">{k}</p>
-                <p className="text-xs font-semibold text-slate-700 truncate">{v}</p>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
-
-      {selectedIssue && (
-        <>
-          <Card className="p-5">
-            <SectionHeader icon="📏" title="Return Details" subtitle="Enter returned quantity and wastage info" />
-            <div className="space-y-4">
-              <div>
-                <NumberInput label="Returned Qty *" value={retQty} onChange={setRetQty} min={0} step={0.1} suffix="sqft" />
-                <p className="text-xs text-slate-400 mt-1.5">
-                  Issued: {selectedIssue.issued_qty} sqft
-                  &nbsp;·&nbsp;
-                  Recommended: {selectedIssue.suggested_qty || selectedIssue.calculation?.required_sqft || "—"} sqft
-                  &nbsp;·&nbsp;
-                  Enter 0 if nothing returned
-                </p>
-              </div>
-
-              {derived && (
-                <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
-                  <p className="text-xs font-bold text-amber-600 mb-3 uppercase tracking-wide">Wastage Preview</p>
-                  <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-xs mb-3">
-                    {[
-                      ["Actual Used",       `${derived.used} sqft`],
-                      ["Recommended",       `${derived.recommended} sqft`],
-                      ["Excess Wastage",    `${derived.wastage} sqft`],
-                      ["Over-Rec %",        `${derived.ratio}%`],
-                    ].map(([k, v]) => (
-                      <><span key={k + "k"} className="text-slate-500">{k}</span><span key={k + "v"} className="font-bold text-slate-700">{v}</span></>
-                    ))}
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-500">Performance</span>
-                    <PerfBadge rating={derived.perf} />
-                  </div>
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Select label="Wastage Reason" value={reason} onChange={setReason} options={WASTAGE_REASONS} />
-                <Select label="Returned By" value={retById} onChange={setRetById} placeholder="Employee (opt.)"
-                  options={employees.map(e => ({ value: e._id, label: e.name }))} />
-              </div>
-              <Input label="Notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Additional notes…" />
-            </div>
-          </Card>
-
-          <div className="pb-4">
-            <Btn variant="success" size="lg" onClick={handleSubmit} loading={loading} fullWidth>
-              Record Return
-            </Btn>
-          </div>
-        </>
-      )}
-    </div>
-  );
-};
-
-// ─── Issues Panel (Records) ────────────────────────────────────────────────────
+// ─── Issues Panel (Records) ───────────────────────────────────────────────────
 const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
   const [statusFilter, setStatusFilter] = useState("");
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
+  const [search,       setSearch]       = useState("");
+  const [page,         setPage]         = useState(1);
   const PER_PAGE = 10;
 
   const filtered = useMemo(() => {
     let list = issues;
     if (statusFilter === "flagged") list = list.filter(i => i.return?.is_flagged && !i.return?.manager_reviewed);
-    else if (statusFilter) list = list.filter(i => i.status === statusFilter);
+    else if (statusFilter)          list = list.filter(i => i.status === statusFilter);
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(i =>
         i.issue_no?.toLowerCase().includes(q) ||
-        i.job_no?.toLowerCase().includes(q) ||
+        i.job_no?.toLowerCase().includes(q)   ||
         i.issued_to?.name?.toLowerCase().includes(q)
       );
     }
     return list;
   }, [issues, statusFilter, search]);
 
-  const paginated = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  const paginated  = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
   const totalPages = Math.ceil(filtered.length / PER_PAGE);
-
-  const filterOptions = [
-    { value: "issued", label: "Issued" },
-    { value: "returned", label: "Returned" },
-    { value: "no_return", label: "No Return" },
-    { value: "flagged", label: "🚩 Flagged" },
-  ];
 
   return (
     <div className="space-y-3">
-      {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-2">
         <Input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
           placeholder="Search by issue no, job, employee…" className="flex-1" />
         <div className="flex gap-2">
           <div className="flex-1 sm:w-36">
             <Select value={statusFilter} onChange={v => { setStatusFilter(v); setPage(1); }}
-              placeholder="All statuses" options={filterOptions} />
+              placeholder="All statuses"
+              options={[
+                { value: "issued",   label: "Issued" },
+                { value: "returned", label: "Returned" },
+                { value: "no_return",label: "No Return" },
+                { value: "flagged",  label: "🚩 Flagged" },
+              ]} />
           </div>
           <Btn variant="ghost" onClick={onRefresh} loading={loading} size="md" className="flex-shrink-0">↻</Btn>
         </div>
@@ -1002,9 +1042,7 @@ const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-black text-sky-600 font-mono tracking-wide">{issue.issue_no}</span>
-                    {issue.return?.is_flagged && !issue.return?.manager_reviewed && (
-                      <Badge variant="red">🚩 Review</Badge>
-                    )}
+                    {issue.return?.is_flagged && !issue.return?.manager_reviewed && <Badge variant="red">🚩 Review</Badge>}
                   </div>
                   <p className="text-sm font-bold text-slate-800 mt-0.5">{issue.job_no}</p>
                 </div>
@@ -1022,6 +1060,18 @@ const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
                   <p className="text-xs text-slate-400">{issue.issued_qty} sqft</p>
                 </div>
               </div>
+
+              {/* Calculation summary row */}
+              {issue.calculation && (
+                <div className="grid grid-cols-3 gap-1.5 mb-3">
+                  {[["Job Area", issue.calculation.job_sqft], ["Gross", issue.calculation.gross_sqft], ["Recommended", issue.calculation.required_sqft]].map(([k, v]) => (
+                    <div key={k} className="bg-slate-50 rounded-lg p-1.5 text-center">
+                      <p className="text-[9px] text-slate-400">{k}</p>
+                      <p className="text-xs font-bold text-slate-700">{v}<span className="text-[9px] font-normal text-slate-400 ml-0.5">sqft</span></p>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {issue.return ? (
                 <WastageBar pct={issue.return.wastage_ratio_pct || 0} />
@@ -1054,9 +1104,7 @@ const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
       {totalPages > 1 && (
         <div className="flex justify-center items-center gap-1.5 pt-2 pb-4">
           <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-            className="w-8 h-8 rounded-lg text-xs font-semibold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all">
-            ‹
-          </button>
+            className="w-8 h-8 rounded-lg text-xs font-semibold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all">‹</button>
           {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
             const p = Math.min(Math.max(page - 2 + i, 1), totalPages - Math.min(4, totalPages - 1) + i);
             return (
@@ -1067,9 +1115,7 @@ const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
             );
           })}
           <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-            className="w-8 h-8 rounded-lg text-xs font-semibold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all">
-            ›
-          </button>
+            className="w-8 h-8 rounded-lg text-xs font-semibold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all">›</button>
         </div>
       )}
     </div>
@@ -1078,10 +1124,10 @@ const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
 
 // ─── Report Panel ─────────────────────────────────────────────────────────────
 const ReportPanel = () => {
-  const [report, setReport] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [report,   setReport]   = useState(null);
+  const [loading,  setLoading]  = useState(false);
   const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [dateTo,   setDateTo]   = useState("");
   const { toasts, show, dismiss } = useToast();
 
   const fetchReport = useCallback(async () => {
@@ -1089,7 +1135,7 @@ const ReportPanel = () => {
     try {
       const params = new URLSearchParams();
       if (dateFrom) params.append("from", dateFrom);
-      if (dateTo) params.append("to", dateTo);
+      if (dateTo)   params.append("to",   dateTo);
       const res = await api(`/material/report/wastage${params.toString() ? "?" + params.toString() : ""}`);
       setReport(res.data);
     } catch (e) { show(e.message, "error"); }
@@ -1108,7 +1154,7 @@ const ReportPanel = () => {
         <SectionHeader icon="📊" title="Wastage Report" subtitle="Filter by date range" />
         <div className="grid grid-cols-2 gap-3 mb-4">
           <Input label="From" type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
-          <Input label="To" type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} />
+          <Input label="To"   type="date" value={dateTo}   onChange={e => setDateTo(e.target.value)}   />
         </div>
         <Btn variant="primary" onClick={fetchReport} loading={loading} fullWidth>Apply Filter</Btn>
       </Card>
@@ -1116,12 +1162,11 @@ const ReportPanel = () => {
       {o && (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <StatTile label="Total Issued" value={parseFloat((o.total_issued_qty || 0).toFixed(1))} suffix="sqft" color="sky" />
-            <StatTile label="Avg Wastage" value={(o.avg_wastage_ratio || 0).toFixed(1)} suffix="%" color="amber" />
+            <StatTile label="Total Issued"  value={parseFloat((o.total_issued_qty || 0).toFixed(1))} suffix="sqft" color="sky" />
+            <StatTile label="Avg Wastage"   value={(o.avg_wastage_ratio || 0).toFixed(1)} suffix="%" color="amber" />
             <StatTile label="Total Wastage" value={parseFloat((o.total_actual_wastage || 0).toFixed(1))} suffix="sqft" />
-            <StatTile label="Needs Review" value={o.flagged_count || 0} color={o.flagged_count > 0 ? "rose" : "emerald"} />
+            <StatTile label="Needs Review"  value={o.flagged_count || 0} color={o.flagged_count > 0 ? "rose" : "emerald"} />
           </div>
-
           <div className="grid grid-cols-3 gap-3">
             {[["✓ Good", o.good_count, "emerald"], ["◆ Acceptable", o.acceptable_count, "amber"], ["▼ High Wastage", o.high_wastage_count, "rose"]].map(([l, count, color]) => (
               <StatTile key={l} label={l} value={count || 0} color={color} />
@@ -1155,7 +1200,7 @@ const ReportPanel = () => {
           <div className="space-y-3">
             {report.by_wastage_reason.map(r => {
               const label = WASTAGE_REASONS.find(w => w.value === r._id)?.label || r._id || "Unknown";
-              const max = Math.max(...report.by_wastage_reason.map(x => x.count));
+              const max   = Math.max(...report.by_wastage_reason.map(x => x.count));
               return (
                 <div key={r._id}>
                   <div className="flex justify-between text-xs mb-1.5">
@@ -1171,25 +1216,29 @@ const ReportPanel = () => {
           </div>
         </Card>
       )}
+
+      {!o && !loading && (
+        <EmptyState icon="📊" title="No report data" subtitle="Issue some materials first to see wastage analytics" />
+      )}
     </div>
   );
 };
 
 // ─── Issue Detail Modal ───────────────────────────────────────────────────────
 const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
-  const { user } = useSelector((state) => state.authSlice);
+  const { user } = useSelector(s => s.authSlice);
   const { toasts, show, dismiss } = useToast();
   const [override, setOverride] = useState("");
   const [manNotes, setManNotes] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading,  setLoading]  = useState(false);
   if (!issue) return null;
 
   const handleReview = async () => {
     setLoading(true);
     try {
       const payload = {
-        manager_by: { user_id: user?._id || "unknown", name: user?.name || "Store Manager" },
-        manager_notes: manNotes,
+        manager_by:      { user_id: user?._id || "unknown", name: user?.name || "Store Manager" },
+        manager_notes:   manNotes,
         override_rating: override || null,
       };
       const method = issue.return?.manager_reviewed ? "PUT" : "POST";
@@ -1201,13 +1250,14 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
     finally { setLoading(false); }
   };
 
-  const r = issue.return;
+  const r    = issue.return;
+  const calc = issue.calculation;
 
   return (
     <Modal open title={`${issue.issue_no} · ${issue.job_no}`} onClose={onClose} size="md">
       <ToastContainer toasts={toasts} dismiss={dismiss} />
-
       <div className="space-y-5">
+
         {/* Issue Summary */}
         <div>
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Issue Summary</p>
@@ -1216,7 +1266,7 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
               ["Employee",    issue.issued_to?.name],
               ["Material",    issue.material?.product_name],
               ["Issued Qty",  `${issue.issued_qty} sqft`],
-              ["Recommended", `${issue.suggested_qty || issue.calculation?.required_sqft || "—"} sqft`],
+              ["Recommended", `${issue.suggested_qty || calc?.required_sqft || "—"} sqft`],
               ["Dimensions",  `${issue.dimensions?.width}ft × ${issue.dimensions?.height}ft`],
             ].map(([k, v]) => (
               <div key={k} className="flex justify-between items-center py-2 border-b border-slate-50">
@@ -1231,6 +1281,21 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
           </div>
         </div>
 
+        {/* Calculation Breakdown */}
+        {calc && (
+          <div>
+            <Divider label="Calculation Breakdown" />
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {[["Job Area", calc.job_sqft], ["Margin", calc.margin_sqft], ["Gross", calc.gross_sqft], ["Recommended", calc.required_sqft]].map(([k, v]) => (
+                <div key={k} className="bg-sky-50 border border-sky-100 rounded-xl p-2.5 text-center">
+                  <p className="text-[10px] text-slate-400 mb-0.5">{k}</p>
+                  <p className="text-sm font-black text-sky-700">{v}<span className="text-[9px] font-normal text-slate-400 ml-0.5">sqft</span></p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <Btn variant="ghost" size="sm" fullWidth onClick={() => generateSlipPDF(issue, user)}>
           📄 Download / Print Slip
         </Btn>
@@ -1241,11 +1306,11 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
             <Divider label="Return Details" />
             <div className="space-y-1">
               {[
-                ["Returned",   `${r.returned_qty} sqft`],
-                ["Used",       `${r.actual_used_qty} sqft`],
-                ["Wastage",    `${r.actual_wastage_qty} sqft`],
-                ["Ratio",      `${r.wastage_ratio_pct}%`],
-                ["Reason",     WASTAGE_REASONS.find(x => x.value === r.wastage_reason)?.label || r.wastage_reason],
+                ["Returned",  `${r.returned_qty} sqft`],
+                ["Used",      `${r.actual_used_qty} sqft`],
+                ["Wastage",   `${r.actual_wastage_qty} sqft`],
+                ["Ratio",     `${r.wastage_ratio_pct}%`],
+                ["Reason",    WASTAGE_REASONS.find(x => x.value === r.wastage_reason)?.label || r.wastage_reason],
               ].map(([k, v]) => (
                 <div key={k} className="flex justify-between py-2 border-b border-slate-50">
                   <span className="text-xs text-slate-400">{k}</span>
@@ -1257,7 +1322,6 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
                 <PerfBadge rating={r.performance_rating} />
               </div>
             </div>
-
             {r.is_flagged && (
               <div className={`mt-3 flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold ${r.manager_reviewed ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
                 {r.manager_reviewed ? "✓ Reviewed by manager" : "🚩 Flagged · pending review"}
@@ -1274,8 +1338,8 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
               <Select label="Override Rating" value={override} onChange={setOverride}
                 placeholder="Keep auto-rating"
                 options={[
-                  { value: "good", label: "Good" },
-                  { value: "acceptable", label: "Acceptable" },
+                  { value: "good",         label: "Good" },
+                  { value: "acceptable",   label: "Acceptable" },
                   { value: "high_wastage", label: "High Wastage" },
                 ]} />
               <div>
@@ -1284,9 +1348,7 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
                   className="w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-400 transition-all resize-none"
                   placeholder="Explain the override rationale…" />
               </div>
-              <Btn variant="primary" onClick={handleReview} loading={loading} fullWidth>
-                Save Review
-              </Btn>
+              <Btn variant="primary" onClick={handleReview} loading={loading} fullWidth>Save Review</Btn>
             </div>
           </div>
         )}
@@ -1295,22 +1357,19 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
   );
 };
 
-// ─── Root Component ────────────────────────────────────────────────────────────
+// ─── Root ─────────────────────────────────────────────────────────────────────
 export default function MaterialIssueManager() {
-  const { user } = useSelector((state) => state.authSlice);
+  const { user } = useSelector(s => s.authSlice);
 
-  const [tab, setTab] = useState("issue");
-  const [issues, setIssues] = useState([]);
-  const [products, setProducts] = useState([]);
-  const [employees, setEmployees] = useState([]);
+  const [tab,        setTab]        = useState("issue");
+  const [issues,     setIssues]     = useState([]);
+  const [products,   setProducts]   = useState([]);
+  const [employees,  setEmployees]  = useState([]);
   const [issLoading, setIssLoading] = useState(false);
   const [modalIssue, setModalIssue] = useState(null);
-  const [modalMode, setModalMode] = useState("view");
-  const { toasts, show, dismiss } = useToast();
-
-  // ── Track job IDs that already have an issue (to hide from job lookup) ──────
-  // Initialised lazily once issues are fetched; updated instantly on new issue.
+  const [modalMode,  setModalMode]  = useState("view");
   const [issuedJobIds, setIssuedJobIds] = useState(new Set());
+  const { toasts, show, dismiss } = useToast();
 
   const fetchProducts = useCallback(async () => {
     try { const res = await api("/product/get_product"); setProducts(res.data || []); } catch { }
@@ -1319,18 +1378,16 @@ export default function MaterialIssueManager() {
   const fetchEmployees = useCallback(async () => {
     try {
       const res = await api("/admin/get_admin");
-      const pro_team = res.data?.filter(e => e.role === "production team") || [];
-      setEmployees(pro_team);
+      setEmployees(res.data?.filter(e => e.role === "production team") || []);
     } catch { }
   }, []);
 
   const fetchIssues = useCallback(async () => {
     setIssLoading(true);
     try {
-      const res = await api("/material?limit=100");
+      const res  = await api("/material?limit=100");
       const list = res.data?.issues || [];
       setIssues(list);
-      // Rebuild the issued-jobs Set from persisted records so it survives page refresh
       setIssuedJobIds(new Set(list.map(i => i.job_id).filter(Boolean)));
     } catch (e) { show(e.message, "error"); }
     finally { setIssLoading(false); }
@@ -1338,47 +1395,28 @@ export default function MaterialIssueManager() {
 
   useEffect(() => { fetchProducts(); fetchEmployees(); fetchIssues(); }, []);
 
-  // onIssued now receives jobId as the 4th argument
   const handleIssued = async (newIssue, productId, qty, jobId) => {
-    // 1. Add to issues list
     setIssues(prev => [newIssue, ...prev]);
-
-    // 2. Decrement local stock
-    setProducts(prev =>
-      prev.map(p => p._id === productId ? { ...p, stock_count: Math.max(0, (p.stock_count || 0) - qty) } : p)
-    );
-
-    // 3. Immediately hide this job from the Issue tab lookup
+    setProducts(prev => prev.map(p => p._id === productId ? { ...p, stock_count: Math.max(0, (p.stock_count || 0) - qty) } : p));
     setIssuedJobIds(prev => new Set([...prev, jobId]));
-
-    // 4. Switch to records tab
     setTab("issues");
-
-    // 5. Update job status on server (best-effort)
     try {
-      await api(`/jobs/${jobId}/status`, {
-        method: "PATCH",
-        body: JSON.stringify({ job_status: "production" }),
-      });
+      await api(`/jobs/${jobId}/status`, { method: "PATCH", body: JSON.stringify({ job_status: "production" }) });
     } catch (err) {
-      show(`Material issued, but failed to update job status: ${err.message}`, "warning");
+      show(`Material issued but job status update failed: ${err.message}`, "warning");
     }
   };
 
   const handleReturned = (issueId, data) => {
-    setIssues(prev =>
-      prev.map(i => i._id === issueId ? { ...i, status: data.status || "returned", return: data } : i)
-    );
+    setIssues(prev => prev.map(i => i._id === issueId ? { ...i, status: data.status || "returned", return: data } : i));
   };
 
   const handleReviewSaved = (issueId, data) => {
-    setIssues(prev =>
-      prev.map(i =>
-        i._id === issueId && i.return
-          ? { ...i, return: { ...i.return, manager_reviewed: true, manager_notes: data.manager_notes, performance_rating: data.override_rating || i.return.performance_rating } }
-          : i
-      )
-    );
+    setIssues(prev => prev.map(i =>
+      i._id === issueId && i.return
+        ? { ...i, return: { ...i.return, manager_reviewed: true, manager_notes: data.manager_notes, performance_rating: data.override_rating || i.return.performance_rating } }
+        : i
+    ));
   };
 
   const stats = useMemo(() => ({
@@ -1386,34 +1424,29 @@ export default function MaterialIssueManager() {
     flagged:     issues.filter(i => i.return?.is_flagged && !i.return?.manager_reviewed).length,
     totalIssued: parseFloat(issues.reduce((s, i) => s + (i.issued_qty || 0), 0).toFixed(1)),
     avgWaste: (() => {
-      const returned = issues.filter(i => i.return);
-      return returned.length
-        ? parseFloat((returned.reduce((s, i) => s + (i.return.wastage_ratio_pct || 0), 0) / returned.length).toFixed(1))
-        : 0;
+      const ret = issues.filter(i => i.return);
+      return ret.length ? parseFloat((ret.reduce((s, i) => s + (i.return.wastage_ratio_pct || 0), 0) / ret.length).toFixed(1)) : 0;
     })(),
   }), [issues]);
 
+  // 3 tabs — Issue / Records / Report (no Returns tab)
   const TABS = [
-    { key: "issue",   label: "Issue",   icon: "📋" },
-    { key: "issues",  label: "Records", icon: "📦", badge: issues.length },
-    { key: "returns", label: "Returns", icon: "↩",  badge: stats.pending, badgeColor: stats.pending > 0 ? "bg-amber-500" : "" },
-    { key: "report",  label: "Report",  icon: "📊" },
+    { key: "issue",  label: "Issue",   icon: "📋" },
+    { key: "issues", label: "Records", icon: "📦", badge: issues.length },
+    { key: "report", label: "Report",  icon: "📊" },
   ];
 
   return (
     <>
       <style>{`
-        @keyframes slide-up {
-          from { opacity: 0; transform: translateY(12px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
+        @keyframes slide-up { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
         .animate-slide-up { animation: slide-up 0.25s ease-out; }
       `}</style>
 
       <div className="min-h-screen bg-slate-50 flex flex-col">
         <ToastContainer toasts={toasts} dismiss={dismiss} />
 
-        {/* ── Header ─────────────────────────────────────────── */}
+        {/* Header */}
         <header className="bg-white border-b border-slate-100 sticky top-0 z-30 shadow-sm">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between py-4">
@@ -1426,11 +1459,10 @@ export default function MaterialIssueManager() {
                   <p className="text-xs text-slate-400 hidden sm:block">Flex roll & print tracker</p>
                 </div>
               </div>
-
               <div className="flex items-center gap-3">
                 {stats.flagged > 0 && (
                   <button onClick={() => setTab("issues")}
-                    className="flex items-center gap-1.5 bg-rose-50 border border-rose-100 rounded-full px-3 py-1.5 transition-colors hover:bg-rose-100">
+                    className="flex items-center gap-1.5 bg-rose-50 border border-rose-100 rounded-full px-3 py-1.5 hover:bg-rose-100 transition-colors">
                     <div className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
                     <span className="text-xs font-bold text-rose-600">{stats.flagged} to review</span>
                   </button>
@@ -1448,9 +1480,9 @@ export default function MaterialIssueManager() {
             <div className="grid grid-cols-4 gap-2 pb-3">
               {[
                 { label: "Issued",    value: stats.totalIssued, suffix: "sqft", color: "text-sky-600" },
-                { label: "Pending",   value: stats.pending,     suffix: "",     color: stats.pending > 0 ? "text-amber-600" : "text-slate-700" },
-                { label: "Avg Waste", value: `${stats.avgWaste}%`, suffix: "", color: stats.avgWaste > 20 ? "text-rose-600" : "text-slate-700" },
-                { label: "Review",    value: stats.flagged,     suffix: "",     color: stats.flagged > 0 ? "text-rose-600" : "text-slate-700" },
+                { label: "Pending",   value: stats.pending,     suffix: "",     color: stats.pending > 0  ? "text-amber-600" : "text-slate-700" },
+                { label: "Avg Waste", value: `${stats.avgWaste}%`, suffix: "", color: stats.avgWaste > 20 ? "text-rose-600"  : "text-slate-700" },
+                { label: "Review",    value: stats.flagged,     suffix: "",     color: stats.flagged > 0  ? "text-rose-600"  : "text-slate-700" },
               ].map(s => (
                 <div key={s.label} className="bg-slate-50 rounded-xl px-3 py-2 text-center border border-slate-100">
                   <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">{s.label}</p>
@@ -1473,7 +1505,7 @@ export default function MaterialIssueManager() {
                   <span>{t.icon}</span>
                   <span>{t.label}</span>
                   {t.badge > 0 && (
-                    <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${t.badgeColor || "bg-slate-200 text-slate-600"} ${t.badgeColor ? "text-white" : ""}`}>
+                    <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-600">
                       {t.badge > 99 ? "99+" : t.badge}
                     </span>
                   )}
@@ -1483,27 +1515,24 @@ export default function MaterialIssueManager() {
           </div>
         </header>
 
-        {/* ── Main Content ──────────────────────────────────── */}
+        {/* Main */}
         <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-4 pb-24 sm:pb-6">
-          {tab === "issue"   && <IssuePanel products={products} employees={employees} onIssued={handleIssued} issuedJobIds={issuedJobIds} />}
-          {tab === "issues"  && <IssuesPanel issues={issues} onViewIssue={(i, m) => { setModalIssue(i); setModalMode(m); }} onRefresh={fetchIssues} loading={issLoading} />}
-          {tab === "returns" && <ReturnPanel issues={issues} employees={employees} onReturned={handleReturned} />}
-          {tab === "report"  && <ReportPanel />}
+          {tab === "issue"  && <IssuePanel products={products} employees={employees} onIssued={handleIssued} issuedJobIds={issuedJobIds} />}
+          {tab === "issues" && <IssuesPanel issues={issues} onViewIssue={(i, m) => { setModalIssue(i); setModalMode(m); }} onRefresh={fetchIssues} loading={issLoading} />}
+          {tab === "report" && <ReportPanel />}
         </main>
 
-        {/* ── Mobile Bottom Nav ─────────────────────────────── */}
+        {/* Mobile bottom nav */}
         <nav className="sm:hidden fixed bottom-0 inset-x-0 bg-white border-t border-slate-100 z-30 shadow-[0_-1px_20px_rgba(0,0,0,0.06)]">
-          <div className="grid grid-cols-4 max-w-md mx-auto">
+          <div className="grid grid-cols-3 max-w-md mx-auto">
             {TABS.map(t => (
               <button key={t.key} onClick={() => setTab(t.key)}
                 className={`flex flex-col items-center gap-1 py-3 px-2 relative transition-all ${tab === t.key ? "text-slate-900" : "text-slate-400"}`}>
-                {tab === t.key && (
-                  <div className="absolute top-0 left-1/4 right-1/4 h-0.5 bg-slate-900 rounded-full" />
-                )}
+                {tab === t.key && <div className="absolute top-0 left-1/4 right-1/4 h-0.5 bg-slate-900 rounded-full" />}
                 <span className="text-xl leading-none">{t.icon}</span>
                 <span className="text-[10px] font-bold">{t.label}</span>
                 {t.badge > 0 && (
-                  <span className={`absolute top-2 right-3 min-w-[16px] h-4 rounded-full text-[9px] font-black flex items-center justify-center px-1 ${t.badgeColor ? `${t.badgeColor} text-white` : "bg-slate-200 text-slate-600"}`}>
+                  <span className="absolute top-2 right-3 min-w-[16px] h-4 rounded-full text-[9px] font-black flex items-center justify-center px-1 bg-slate-200 text-slate-600">
                     {t.badge > 9 ? "9+" : t.badge}
                   </span>
                 )}

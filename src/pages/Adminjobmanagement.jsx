@@ -10,7 +10,7 @@ import {
   FileTextOutlined, TagOutlined, ShoppingCartOutlined,
   BranchesOutlined, PlayCircleOutlined, PauseCircleOutlined,
   PlusOutlined, DeleteOutlined, SaveOutlined, PhoneOutlined,
-  PercentageOutlined,
+  PercentageOutlined, WalletOutlined,
 } from "@ant-design/icons";
 import CustomTable from "../components/CustomTable";
 import UploadHelper from "../helper/UploadHelper";
@@ -45,28 +45,28 @@ const useBreakpoint = () => {
 
 // ─── Static Configs ───────────────────────────────────────────────────────────
 const STATUS_CONFIG = {
-  draft: { label: "Draft", color: "default", icon: <FileTextOutlined /> },
-  sent: { label: "Sent", color: "blue", icon: <SendOutlined /> },
-  viewed: { label: "Viewed", color: "cyan", icon: <EyeOutlined /> },
-  accepted: { label: "Accepted", color: "green", icon: <CheckCircleOutlined /> },
-  design: { label: "Design", color: "blue", icon: <FileTextOutlined /> },
-  in_progress: { label: "In Progress", color: "gold", icon: <PlayCircleOutlined /> },
-  on_hold: { label: "On Hold", color: "orange", icon: <PauseCircleOutlined /> },
-  rejected: { label: "Rejected", color: "red", icon: <CloseCircleOutlined /> },
-  expired: { label: "Expired", color: "volcano", icon: <ClockCircleOutlined /> },
-  completed: { label: "Completed", color: "purple", icon: <CheckCircleOutlined /> },
-  converted: { label: "Converted", color: "geekblue", icon: <SwapOutlined /> },
+  draft:       { label: "Draft",       color: "default",  icon: <FileTextOutlined /> },
+  sent:        { label: "Sent",        color: "blue",     icon: <SendOutlined /> },
+  viewed:      { label: "Viewed",      color: "cyan",     icon: <EyeOutlined /> },
+  accepted:    { label: "Accepted",    color: "green",    icon: <CheckCircleOutlined /> },
+  design:      { label: "Design",      color: "blue",     icon: <FileTextOutlined /> },
+  in_progress: { label: "In Progress", color: "gold",     icon: <PlayCircleOutlined /> },
+  on_hold:     { label: "On Hold",     color: "orange",   icon: <PauseCircleOutlined /> },
+  rejected:    { label: "Rejected",    color: "red",      icon: <CloseCircleOutlined /> },
+  expired:     { label: "Expired",     color: "volcano",  icon: <ClockCircleOutlined /> },
+  completed:   { label: "Completed",   color: "purple",   icon: <CheckCircleOutlined /> },
+  converted:   { label: "Converted",   color: "geekblue", icon: <SwapOutlined /> },
 };
 
 const WORKFLOW_STAGES = [
-  { value: "design", label: "Design" },
-  { value: "prepress", label: "Prepress" },
-  { value: "printing", label: "Printing" },
-  { value: "finishing", label: "Finishing" },
+  { value: "design",        label: "Design" },
+  { value: "prepress",      label: "Prepress" },
+  { value: "printing",      label: "Printing" },
+  { value: "finishing",     label: "Finishing" },
   { value: "quality_check", label: "Quality Check" },
-  { value: "dispatch", label: "Dispatch" },
-  { value: "delivered", label: "Delivered" },
-  { value: "custom", label: "Custom" },
+  { value: "dispatch",      label: "Dispatch" },
+  { value: "delivered",     label: "Delivered" },
+  { value: "custom",        label: "Custom" },
 ];
 
 const PRODUCTS = [
@@ -82,74 +82,132 @@ const PRODUCTS = [
 ];
 
 const UNIT_OPTIONS = [
-  { value: "ft", label: "ft" },
+  { value: "ft",   label: "ft" },
   { value: "inch", label: "inch" },
-  { value: "cm", label: "cm" },
+  { value: "cm",   label: "cm" },
 ];
 
 const QTY_TYPE_OPTIONS = [
-  { value: "sq.ft", label: "Sq. Ft" },
+  { value: "sq.ft",    label: "Sq. Ft" },
   { value: "quantity", label: "Quantity" },
 ];
 
-// ─── sq.ft calculator ────────────────────────────────────────────────────────
+const GST_OPTIONS = [0, 5, 12, 18, 28];
+
+// ─── sq.ft auto-calculator ────────────────────────────────────────────────────
 const toSqFt = (w, h, unit) => {
   const wn = parseFloat(w) || 0;
   const hn = parseFloat(h) || 0;
   if (!wn || !hn) return 0;
-  if (unit === "ft") return wn * hn;
+  if (unit === "ft")   return wn * hn;
   if (unit === "inch") return (wn / 12) * (hn / 12);
-  if (unit === "cm") return (wn / 30.48) * (hn / 30.48);
+  if (unit === "cm")   return (wn / 30.48) * (hn / 30.48);
   return wn * hn;
 };
 
+// ─── Per-item calculation helper ──────────────────────────────────────────────
+// sq.ft  mode: base = qty * sq_ft * price  (then + gst on base)
+// qty    mode: base = qty * price           (then + gst on base)
+const calcItemTotals = (it) => {
+  const qty    = parseFloat(it.quantity)  || 0;
+  const sqFt   = parseFloat(it.sq_ft)    || 0;
+  const price  = parseFloat(it.price)    || 0;
+  const gstPct = parseFloat(it.gst_percentage) || 0;
+  const isSqFt = it.quantity_type === "sq.ft";
+
+  const base      = isSqFt ? qty * sqFt * price : qty * price;
+  const gstAmt    = base * (gstPct / 100);
+  const lineTotal = base + gstAmt;
+
+  return { base, gstAmt, lineTotal, qty, sqFt, price, gstPct, isSqFt };
+};
+
+// ─── Job-level totals for VIEW modal ──────────────────────────────────────────
+// Grand total = taxableAmount + totalGST + designCharges + deliveryCharges
+// where taxableAmount = subtotal - discountAmt
+// subtotal = sum of all item bases (without GST)
+const calcJobTotals = (job) => {
+  const cartItems = job.cart_items || [];
+
+  let subtotal  = 0;
+  let taxAmount = 0;
+
+  cartItems.forEach((it) => {
+    const { base, gstAmt } = calcItemTotals(it);
+    subtotal  += base;
+    taxAmount += gstAmt;
+  });
+
+  const discountPct     = parseFloat(job.discount_percentage) || 0;
+  const discountAmt     = subtotal * (discountPct / 100);
+  const taxableAmount   = subtotal - discountAmt;
+  const designCharges   = parseFloat(job.design_charges)    || 0;
+  const deliveryCharges = job.free_delivery ? 0 : (parseFloat(job.delivery_charges) || 0);
+  const grandTotal      = taxableAmount + taxAmount + designCharges + deliveryCharges;
+
+  return {
+    subtotal,
+    discountPct,
+    discountAmt,
+    taxableAmount,
+    taxAmount,
+    designCharges,
+    deliveryCharges,
+    grandTotal,
+    freeDelivery: !!job.free_delivery,
+  };
+};
+
 const EMPTY_ITEM = {
-  product_id: "",
-  product_name: "",
-  variation: "",
-  printing_type: "",
-  width: "",
-  height: "",
-  size_unit: "ft",
-  sq_ft: 0,
-  quantity_type: "sq.ft",
-  quantity: 1,
-  price: 0,
-  design_file: "",
-  notes: "",
+  product_id:     "",
+  product_name:   "",
+  variation:      "",
+  printing_type:  "",
+  width:          "",
+  height:         "",
+  size_unit:      "ft",
+  sq_ft:          0,
+  quantity_type:  "sq.ft",  // always persisted
+  quantity:       1,
+  price:          0,
+  gst_percentage: 0,
+  design_file:    "",
+  notes:          "",
 };
 
 const DEFAULT_EDIT_FORM = {
-  customer_name: "",
-  customer_phone: "",
+  customer_name:           "",
+  customer_phone:          "",
   estimated_delivery_date: "",
-  address_line1: "",
-  address_line2: "",
-  city: "",
-  state: "",
-  pincode: "",
-  country: "India",
-  gst_no: "",
-  delivery_charges: 0,
-  free_delivery: false,
-  discount_percentage: 0,
-  notes: "",
+  address_line1:           "",
+  address_line2:           "",
+  city:                    "",
+  state:                   "",
+  pincode:                 "",
+  country:                 "India",
+  gst_no:                  "",
+  delivery_charges:        0,
+  free_delivery:           false,
+  design_charges:          0,
+  discount_percentage:     0,
+  notes:                   "",
   terms_and_conditions:
     "Payment due within 30 days.\nPrices subject to change without notice.\nDelivery: 7-10 business days after confirmation.",
 };
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
-const extractJobs = (d) => {
+const extractJobs  = (d) => {
   if (Array.isArray(d?.data?.jobs)) return d.data.jobs;
-  if (Array.isArray(d?.data)) return d.data;
-  if (Array.isArray(d?.jobs)) return d.jobs;
-  if (Array.isArray(d)) return d;
+  if (Array.isArray(d?.data))       return d.data;
+  if (Array.isArray(d?.jobs))       return d.jobs;
+  if (Array.isArray(d))             return d;
   return [];
 };
 const extractTotal = (d, fb) => {
+  if (typeof d?.data?.pagination?.total === "number") return d.data.pagination.total;
   if (typeof d?.data?.total === "number") return d.data.total;
   if (typeof d?.data?.count === "number") return d.data.count;
-  if (typeof d?.total === "number") return d.total;
+  if (typeof d?.total === "number")       return d.total;
   return fb;
 };
 
@@ -181,7 +239,33 @@ const FormField = ({ label, required, children }) => (
   </div>
 );
 
-// ─── ProductItemRow ───────────────────────────────────────────────────────────
+const InfoRow = ({ label, value, valueStyle }) => (
+  <div>
+    <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+      {label}
+    </div>
+    <div style={{ fontSize: 13, fontWeight: 600, color: "#1a1a2e", ...valueStyle }}>
+      {value || "—"}
+    </div>
+  </div>
+);
+
+const SummaryRow = ({ label, value, color, bold, borderTop }) => (
+  <div style={{
+    display: "flex", justifyContent: "space-between",
+    fontSize: bold ? 15 : 13,
+    fontWeight: bold ? 800 : 600,
+    color: color || "#4b5563",
+    marginBottom: bold ? 0 : 4,
+    paddingTop: borderTop ? 8 : 0,
+    borderTop: borderTop ? "1px solid #e5e7eb" : "none",
+  }}>
+    <span style={{ color: bold ? "#1a1a2e" : undefined }}>{label}</span>
+    <span style={{ color: color || (bold ? "#2563eb" : undefined) }}>{value}</span>
+  </div>
+);
+
+// ─── ProductItemRow (EDIT MODE) ───────────────────────────────────────────────
 const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTablet }) => {
   const [showSuggest, setShowSuggest] = useState(false);
   const ref = useRef(null);
@@ -189,7 +273,6 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
   const matched = PRODUCTS.filter(p =>
     p.product_name.toLowerCase().includes((item.product_name || "").toLowerCase())
   );
-
   const selected = PRODUCTS.find(
     p => p.product_name.toLowerCase() === (item.product_name || "").toLowerCase()
   );
@@ -210,28 +293,26 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
 
   const set = (f, v) => onChange(idx, { ...item, [f]: v });
 
+  // When switching quantity_type, reset irrelevant fields but ALWAYS store quantity_type
   const handleQtyTypeChange = (val) => {
     onChange(idx, {
       ...item,
-      quantity_type: val,
+      quantity_type: val,  // always stored
       ...(val === "quantity" ? { width: "", height: "", sq_ft: 0 } : {}),
     });
   };
 
-  const isSqFtMode = item.quantity_type === "sq.ft";
-  const lineTotal = isSqFtMode
-    ? (item.quantity || 0) * (item.sq_ft || 0) * (item.price || 0)
-    : (item.quantity || 0) * (item.price || 0);
-
+  const { base, gstAmt, lineTotal, isSqFt } = calcItemTotals(item);
   const productCols = isMobile ? "1fr" : isTablet ? "1fr 1fr" : "1fr 1fr 1fr";
-  const sizeCols = isMobile ? "1fr 1fr" : "1fr 1fr 90px 1fr";
-  const priceCols = isMobile ? "1fr 1fr" : isSqFtMode ? "repeat(4,1fr)" : "1fr 1fr 1fr";
+  const sizeCols    = isMobile ? "1fr 1fr" : "1fr 1fr 90px 1fr";
+  const priceCols   = isMobile ? "1fr 1fr" : "repeat(3,1fr)";
 
   return (
     <div style={{
       background: "#f9fafb", border: "1px solid #e5e7eb",
       borderRadius: 10, padding: isMobile ? 10 : 14,
     }}>
+      {/* Row Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={{
@@ -268,6 +349,7 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
         </Popconfirm>
       </div>
 
+      {/* Product / Variation / Printing */}
       <div style={{ display: "grid", gridTemplateColumns: productCols, gap: 8, marginBottom: 10 }}>
         <FormField label="Product Name" required>
           <div style={{ position: "relative" }} ref={ref}>
@@ -296,9 +378,9 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
                     onMouseDown={() => {
                       onChange(idx, {
                         ...item,
-                        product_name: p.product_name,
-                        product_id: p.product_id,
-                        variation: "",
+                        product_name:  p.product_name,
+                        product_id:    p.product_id,
+                        variation:     "",
                         printing_type: "",
                       });
                       setShowSuggest(false);
@@ -311,7 +393,7 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
                     onMouseEnter={e => e.currentTarget.style.background = "#eff6ff"}
                     onMouseLeave={e => e.currentTarget.style.background = "#fff"}
                   >
-                    🖨️ {p.product_name}
+                    {p.product_name}
                     <span style={{ marginLeft: 6, fontSize: 10, color: "#6b7280", fontWeight: 400 }}>
                       {p.printing_type?.join(" · ")}
                     </span>
@@ -322,7 +404,7 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
           </div>
         </FormField>
 
-        <FormField label="Variation">
+        <FormField label="Material">
           <Select
             placeholder={selected ? "Select variation" : "—"}
             value={item.variation || undefined}
@@ -349,9 +431,10 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
         </FormField>
       </div>
 
-      {isSqFtMode && (
+      {/* Size Fields — sq.ft mode only */}
+      {isSqFt && (
         <div style={{ display: "grid", gridTemplateColumns: sizeCols, gap: 8, marginBottom: 10, alignItems: "end" }}>
-          <FormField label="Width" required>
+          <FormField label="Width">
             <Input
               size="small"
               placeholder="0"
@@ -363,7 +446,7 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
               onChange={(e) => sizeChange("width", e.target.value)}
             />
           </FormField>
-          <FormField label="Height" required>
+          <FormField label="Height">
             <Input
               size="small"
               placeholder="0"
@@ -385,24 +468,24 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
               {UNIT_OPTIONS.map(u => <Option key={u.value} value={u.value}>{u.label}</Option>)}
             </Select>
           </FormField>
-          <FormField label="Sq. Ft (auto)">
-            <div style={{
-              background: item.sq_ft > 0 ? "#ecfdf5" : "#f9fafb",
-              border: `1px solid ${item.sq_ft > 0 ? "#6ee7b7" : "#e5e7eb"}`,
-              borderRadius: 6, padding: "4px 10px", height: 24,
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}>
-              <span style={{
-                fontSize: 13, fontWeight: 700,
-                color: item.sq_ft > 0 ? "#065f46" : "#9ca3af",
-              }}>
-                {item.sq_ft > 0 ? `${item.sq_ft} ft²` : "—"}
-              </span>
-            </div>
+          <FormField label="Sq. Ft (editable)">
+            <InputNumber
+              size="small"
+              min={0}
+              precision={4}
+              value={item.sq_ft}
+              style={{
+                width: "100%", borderRadius: 6,
+                background: item.sq_ft > 0 ? "#ecfdf5" : undefined,
+                borderColor: item.sq_ft > 0 ? "#6ee7b7" : undefined,
+              }}
+              onChange={(v) => set("sq_ft", parseFloat((v || 0).toFixed(4)))}
+            />
           </FormField>
         </div>
       )}
 
+      {/* Notes */}
       <div style={{ marginBottom: 10 }}>
         <FormField label="Notes / Specs">
           <Input
@@ -415,6 +498,7 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
         </FormField>
       </div>
 
+      {/* Price / GST / Qty */}
       <div style={{ display: "grid", gridTemplateColumns: priceCols, gap: 8, marginBottom: 10 }}>
         <FormField label="Quantity" required>
           <InputNumber
@@ -425,22 +509,7 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
             onChange={(v) => set("quantity", v || 1)}
           />
         </FormField>
-
-        {isSqFtMode && (
-          <FormField label="Sq.Ft / piece">
-            <div style={{
-              background: "#f0fdf4", border: "1px solid #bbf7d0",
-              borderRadius: 6, padding: "4px 10px", height: 24,
-              display: "flex", alignItems: "center",
-            }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: "#065f46" }}>
-                {item.sq_ft > 0 ? `${item.sq_ft} ft²` : "—"}
-              </span>
-            </div>
-          </FormField>
-        )}
-
-        <FormField label={isSqFtMode ? "Price / sq.ft (₹)" : "Unit Price (₹)"} required>
+        <FormField label={isSqFt ? "Price / sq.ft (₹)" : "Unit Price (₹)"} required>
           <InputNumber
             min={0}
             value={item.price}
@@ -450,7 +519,22 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
             onChange={(v) => set("price", v || 0)}
           />
         </FormField>
+        <FormField label="GST %">
+          <Select
+            value={item.gst_percentage ?? 0}
+            size="small"
+            style={{ width: "100%" }}
+            onChange={(v) => set("gst_percentage", v)}
+          >
+            {GST_OPTIONS.map(g => (
+              <Option key={g} value={g}>{g === 0 ? "No GST" : `${g}%`}</Option>
+            ))}
+          </Select>
+        </FormField>
+      </div>
 
+      {/* Design File */}
+      <div style={{ marginBottom: 10 }}>
         <FormField label="Design File">
           <UploadHelper
             setImagePath={(path) => set("design_file", path)}
@@ -458,21 +542,51 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
           />
         </FormField>
       </div>
+      {item.design_file && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            Design Preview
+          </div>
+          <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, background: "#f9fafb", padding: 4, display: "flex", justifyContent: "center" }}>
+            <img
+              src={item.design_file}
+              alt="Design Preview"
+              style={{ maxHeight: 100, maxWidth: "100%", objectFit: "contain", borderRadius: 4 }}
+              onError={(e) => { e.currentTarget.parentElement.style.display = "none"; }}
+            />
+          </div>
+        </div>
+      )}
 
+      {/* Item Total — shows formula clearly */}
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
         <div style={{
           background: "#fff", border: "1px solid #d1fae5",
-          borderRadius: 8, padding: "6px 14px", textAlign: "right",
+          borderRadius: 8, padding: "8px 14px", textAlign: "right", minWidth: "100%",
         }}>
-          <div style={{ fontSize: 10, color: "#6b7280" }}>Item Total</div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "#065f46" }}>
-            ₹{lineTotal.toFixed(2)}
+          <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 2 }}>
+            Base:{" "}
+            <span style={{ fontWeight: 600, color: "#374151" }}>₹{base.toFixed(2)}</span>
+            {isSqFt && item.sq_ft > 0 && (
+              <span style={{ marginLeft: 6, fontSize: 10, color: "#9ca3af" }}>
+                ({item.quantity} qty × {item.sq_ft} ft² × ₹{item.price}/ft²)
+              </span>
+            )}
+            {!isSqFt && (
+              <span style={{ marginLeft: 6, fontSize: 10, color: "#9ca3af" }}>
+                ({item.quantity} qty × ₹{item.price})
+              </span>
+            )}
+            {(item.gst_percentage || 0) > 0 && (
+              <span style={{ marginLeft: 8 }}>
+                + GST ({item.gst_percentage}%):{" "}
+                <span style={{ fontWeight: 600, color: "#d97706" }}>₹{gstAmt.toFixed(2)}</span>
+              </span>
+            )}
           </div>
-          {isSqFtMode && item.sq_ft > 0 && (
-            <div style={{ fontSize: 10, color: "#059669" }}>
-              {item.quantity} × {item.sq_ft} ft² × ₹{item.price}
-            </div>
-          )}
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#065f46" }}>
+            Item Total: ₹{lineTotal.toFixed(2)}
+          </div>
         </div>
       </div>
     </div>
@@ -485,41 +599,47 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
 const AdminJobManagement = () => {
   const { isMobile, isTablet, isDesktop } = useBreakpoint();
 
+  // ── View modal ────────────────────────────────────────────────────────────
+  const [viewModal, setViewModal] = useState(false);
+  const [viewJob, setViewJob]     = useState(null);
+  const openViewModal  = (record) => { setViewJob(record); setViewModal(true); };
+  const closeViewModal = () => { setViewModal(false); setViewJob(null); };
+
   // ── Table state ───────────────────────────────────────────────────────────
-  const [loading, setLoading] = useState(false);
-  const [jobs, setJobs] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState(null);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [loading, setLoading]             = useState(false);
+  const [jobs, setJobs]                   = useState([]);
+  const [total, setTotal]                 = useState(0);
+  const [search, setSearch]               = useState("");
+  const [statusFilter, setStatusFilter]   = useState(null);
+  const [page, setPage]                   = useState(1);
+  const [pageSize, setPageSize]           = useState(10);
   const [lastRefreshed, setLastRefreshed] = useState(dayjs());
-  const [countdown, setCountdown] = useState(AUTO_REFRESH_INTERVAL / 1000);
+  const [countdown, setCountdown]         = useState(AUTO_REFRESH_INTERVAL / 1000);
 
   // ── Edit modal state ──────────────────────────────────────────────────────
-  const [editModal, setEditModal] = useState(false);
-  const [editJob, setEditJob] = useState(null);
-  const [editForm, setEditForm] = useState({ ...DEFAULT_EDIT_FORM });
-  const [editItems, setEditItems] = useState([{ ...EMPTY_ITEM }]);
+  const [editModal, setEditModal]     = useState(false);
+  const [editJob, setEditJob]         = useState(null);
+  const [editForm, setEditForm]       = useState({ ...DEFAULT_EDIT_FORM });
+  const [editItems, setEditItems]     = useState([{ ...EMPTY_ITEM }]);
   const [editLoading, setEditLoading] = useState(false);
-  const [editError, setEditError] = useState("");
+  const [editError, setEditError]     = useState("");
 
   // ── Approve modal state ───────────────────────────────────────────────────
   const [approveModalOpen, setApproveModalOpen] = useState(false);
-  const [approvingJob, setApprovingJob] = useState(null);
-  const [designers, setDesigners] = useState([]);
+  const [approvingJob, setApprovingJob]         = useState(null);
+  const [designers, setDesigners]               = useState([]);
   const [selectedDesigner, setSelectedDesigner] = useState(null);
-  const [approving, setApproving] = useState(false);
+  const [approving, setApproving]               = useState(false);
   const [designersLoading, setDesignersLoading] = useState(false);
 
   const autoRefreshRef = useRef(null);
-  const countdownRef = useRef(null);
+  const countdownRef   = useRef(null);
 
   // ── Fetch jobs ────────────────────────────────────────────────────────────
   const loadJobs = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const res = await fetch("https://job-server-cocj.onrender.com/api/jobs", {
+      const res  = await fetch("https://api.dmedia.in/api/jobs", {
         headers: { Authorization: `Bearer ${localStorage.getItem("authToken")}` },
       });
       const data = await res.json();
@@ -558,19 +678,18 @@ const AdminJobManagement = () => {
 
   const handleManualRefresh = () => { loadJobs(); startAutoRefresh(); };
 
-  // ── FIX: fetchDesigners returns the list so caller can use it immediately ──
+  // ── Designers ─────────────────────────────────────────────────────────────
   const fetchDesigners = async () => {
     setDesignersLoading(true);
     try {
-      const res = await fetch("https://job-server-cocj.onrender.com/api/admin/get_admin", {
+      const res  = await fetch("https://api.dmedia.in/api/admin/get_admin", {
         headers: { Authorization: `Bearer ${localStorage.getItem("authToken")}` },
       });
       const data = await res.json();
-      const designTeam = (data.data || []).filter(user => user.role === "designing team");
+      const designTeam = (data.data || []).filter(u => u.role === "designing team");
       setDesigners(designTeam);
-      return designTeam; // ← return list so openApproveModal can use it immediately
+      return designTeam;
     } catch (err) {
-      console.error("Failed to fetch designers", err);
       ERROR_NOTIFICATION({ message: "Could not load designers list" });
       return [];
     } finally {
@@ -578,61 +697,50 @@ const AdminJobManagement = () => {
     }
   };
 
-  // ── FIX: use returned list, not stale state ────────────────────────────────
   const openApproveModal = async (job) => {
     setApprovingJob(job);
     setSelectedDesigner(null);
-    setApproveModalOpen(true); // open modal first so user sees loading spinner
-    await fetchDesigners();    // then populate list — state update triggers re-render
+    setApproveModalOpen(true);
+    await fetchDesigners();
   };
 
-  // ── FIX: setApproving(false) always runs via finally; adminId/Name guard ──
   const handleApproveWithDesigner = async () => {
     if (!selectedDesigner) {
       ERROR_NOTIFICATION({ message: "Please select a designer to assign this job." });
       return;
     }
-
     setApproving(true);
     try {
-      const adminId = localStorage.getItem("userprofile") ? JSON.parse(localStorage.getItem("userprofile"))._id : null;
-      const adminName = localStorage.getItem("userprofile") ? JSON.parse(localStorage.getItem("userprofile")).name : null;
-
-      // FIX: was early-returning inside try without hitting finally,
-      // leaving the button stuck in loading state forever.
-      // Now we just throw so finally always fires.
-      // if (!adminId || !adminName) {
-      //   throw new Error("Admin information missing. Please log in again.");
-      // }
-
-      // FIX: guard designer name field — API may use 'name', 'fullName', etc.
+      const profile   = localStorage.getItem("userprofile") ? JSON.parse(localStorage.getItem("userprofile")) : {};
+      const adminId   = profile._id   || null;
+      const adminName = profile.name  || null;
       const designerName =
         selectedDesigner.name ||
         selectedDesigner.fullName ||
         selectedDesigner.username ||
         "Unknown";
 
-      const response = await fetch(`https://job-server-cocj.onrender.com/api/jobs/${approvingJob._id}/approve`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
-        },
-        body: JSON.stringify({
-          job_status: "design",
-          approved_by: adminName,
-          approved_by_admin_id: adminId,
-          assign_to: {
-            user_id: selectedDesigner._id,
-            name: designerName,
+      const response = await fetch(
+        `https://api.dmedia.in/api/jobs/${approvingJob._id}/approve`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("authToken")}`,
           },
-        }),
-      });
-
+          body: JSON.stringify({
+            job_status:           "design",
+            approved_by:          adminName,
+            approved_by_admin_id: adminId,
+            assign_to: {
+              user_id: selectedDesigner._id,
+              name:    designerName,
+            },
+          }),
+        }
+      );
       const data = await response.json();
-      if (!response.ok || !data.success) {
-        throw new Error(data.message || "Approval failed");
-      }
+      if (!response.ok || !data.success) throw new Error(data.message || "Approval failed");
 
       SUCCESS_NOTIFICATION({
         message: `Job ${approvingJob.job_no} approved & assigned to ${designerName}`,
@@ -642,16 +750,14 @@ const AdminJobManagement = () => {
       setSelectedDesigner(null);
       loadJobs(true);
     } catch (err) {
-      console.error("Approve error:", err);
       ERROR_NOTIFICATION({ message: err.message || "Failed to approve job" });
     } finally {
-      // FIX: this always runs now — button never gets stuck in loading
       setApproving(false);
     }
   };
 
   const closeApproveModal = () => {
-    if (approving) return; // prevent close while submitting
+    if (approving) return;
     setApproveModalOpen(false);
     setApprovingJob(null);
     setSelectedDesigner(null);
@@ -663,54 +769,63 @@ const AdminJobManagement = () => {
     setEditJob(record);
     setEditError("");
 
-    const addr = record.delivery_address || {};
-    const streetParts = (addr.street || "").split(", ");
+    const addr          = record.delivery_address || {};
+    const streetParts   = (addr.street || "").split(", ");
     const address_line1 = streetParts[0] || "";
     const address_line2 = streetParts.slice(1).join(", ") || "";
 
     setEditForm({
-      customer_name: record.customer_name || "",
-      customer_phone: record.customer_phone || "",
+      customer_name:           record.customer_name || "",
+      customer_phone:          record.customer_phone || "",
       estimated_delivery_date: record.estimated_delivery_date
         ? dayjs(record.estimated_delivery_date).format("YYYY-MM-DDTHH:mm")
         : "",
       address_line1,
       address_line2,
-      city: addr.city || "",
-      state: addr.state || "",
+      city:    addr.city    || "",
+      state:   addr.state   || "",
       pincode: addr.pincode || "",
       country: addr.country || "India",
-      gst_no: record.gst_no || "",
-      delivery_charges: record.delivery_charges ?? 0,
-      free_delivery: record.free_delivery ?? false,
+      gst_no:              record.gst_no || "",
+      delivery_charges:    record.delivery_charges ?? 0,
+      free_delivery:       record.free_delivery ?? false,
+      design_charges:      record.design_charges ?? 0,
       discount_percentage: record.discount_percentage ?? 0,
-      notes: record.notes || "",
+      notes:               record.notes || "",
       terms_and_conditions: record.terms_and_conditions ||
         "Payment due within 30 days.\nPrices subject to change without notice.\nDelivery: 7-10 business days after confirmation.",
     });
 
     const items = (record.cart_items || []).map(it => {
-      let width = String(it.width || "");
-      let height = String(it.height || "");
+      let width     = String(it.width  || "");
+      let height    = String(it.height || "");
       let size_unit = it.size_unit || "ft";
 
       if ((!width || !height) && it.size) {
         const m = it.size.match(/^([\d.]+)\s*[×xX]\s*([\d.]+)\s*(\w+)/);
-        if (m) {
-          width = m[1];
-          height = m[2];
-          size_unit = m[3] || "ft";
-        }
+        if (m) { width = m[1]; height = m[2]; size_unit = m[3] || "ft"; }
       }
 
+      // Restore quantity_type from DB; fall back to inferring from dimensions
       const quantity_type = it.quantity_type ||
         (parseFloat(width) > 0 && parseFloat(height) > 0 ? "sq.ft" : "quantity");
 
-      const sq_ft = quantity_type === "sq.ft"
-        ? parseFloat(toSqFt(width, height, size_unit).toFixed(4))
-        : 0;
+      const sq_ft = it.sq_ft
+        ? parseFloat(it.sq_ft)
+        : quantity_type === "sq.ft"
+          ? parseFloat(toSqFt(width, height, size_unit).toFixed(4))
+          : 0;
 
-      return { ...EMPTY_ITEM, ...it, width, height, size_unit, sq_ft, quantity_type };
+      return {
+        ...EMPTY_ITEM,
+        ...it,
+        width,
+        height,
+        size_unit,
+        sq_ft,
+        quantity_type,     // explicitly set so it's always present
+        gst_percentage: it.gst_percentage ?? 0,
+      };
     });
 
     setEditItems(items.length ? items : [{ ...EMPTY_ITEM }]);
@@ -727,23 +842,40 @@ const AdminJobManagement = () => {
 
   // ── Edit item helpers ─────────────────────────────────────────────────────
   const handleEditInput = (k, v) => setEditForm(p => ({ ...p, [k]: v }));
-  const handleEditItem = (i, u) => setEditItems(p => p.map((it, j) => j === i ? u : it));
-  const addEditItem = () => setEditItems(p => [...p, { ...EMPTY_ITEM }]);
-  const removeEditItem = (i) => setEditItems(p => p.filter((_, j) => j !== i));
+  const handleEditItem  = (i, u) => setEditItems(p => p.map((it, j) => j === i ? u : it));
+  const addEditItem     = () => setEditItems(p => [...p, { ...EMPTY_ITEM }]);
+  const removeEditItem  = (i) => setEditItems(p => p.filter((_, j) => j !== i));
 
-  // ── Totals ────────────────────────────────────────────────────────────────
+  // ── Edit totals (computed live) ───────────────────────────────────────────
+  // Formula:
+  //   sq.ft  item base = qty * sq_ft * price
+  //   qty    item base = qty * price
+  //   subtotal         = Σ item bases
+  //   discount         = subtotal * discountPct / 100
+  //   taxableAmount    = subtotal - discount
+  //   totalGST         = Σ (item base * item gstPct / 100)
+  //   grandTotal       = taxableAmount + totalGST + designCharges + deliveryCharges
   const editTotals = useMemo(() => {
-    const sub = editItems.reduce((s, it) => {
-      const line = it.quantity_type === "sq.ft"
-        ? (it.quantity || 0) * (it.sq_ft || 0) * (it.price || 0)
-        : (it.quantity || 0) * (it.price || 0);
-      return s + line;
-    }, 0);
-    const disc = sub * ((parseFloat(editForm.discount_percentage) || 0) / 100);
-    const after = sub - disc;
-    const tax = after * 0.18;
-    const del = editForm.free_delivery ? 0 : parseFloat(editForm.delivery_charges) || 0;
-    return { sub, disc, after, tax, del, total: after + tax + del };
+    let subtotal  = 0;
+    let taxAmount = 0;
+
+    editItems.forEach(it => {
+      const { base, gstAmt } = calcItemTotals(it);
+      subtotal  += base;
+      taxAmount += gstAmt;
+    });
+
+    const discountPct     = parseFloat(editForm.discount_percentage) || 0;
+    const discountAmt     = subtotal * (discountPct / 100);
+    const taxableAmount   = subtotal - discountAmt;
+    const designCharges   = parseFloat(editForm.design_charges)   || 0;
+    const deliveryCharges = editForm.free_delivery ? 0 : (parseFloat(editForm.delivery_charges) || 0);
+    const grandTotal      = taxableAmount + taxAmount + designCharges + deliveryCharges;
+
+    return {
+      subtotal, taxAmount, discountPct, discountAmt,
+      taxableAmount, designCharges, deliveryCharges, grandTotal,
+    };
   }, [editItems, editForm]);
 
   // ── Submit edit ───────────────────────────────────────────────────────────
@@ -764,48 +896,57 @@ const AdminJobManagement = () => {
       if (!valid.length) throw new Error("Add at least one valid product with size/qty and price");
 
       const payload = {
-        customer_name: editForm.customer_name.trim(),
+        customer_name:  editForm.customer_name.trim(),
         customer_phone: editForm.customer_phone.trim(),
         estimated_delivery_date: dayjs(editForm.estimated_delivery_date).toISOString(),
         delivery_address: {
-          street: [editForm.address_line1, editForm.address_line2].filter(Boolean).join(", "),
-          city: editForm.city,
-          state: editForm.state,
+          street:  [editForm.address_line1, editForm.address_line2].filter(Boolean).join(", "),
+          city:    editForm.city,
+          state:   editForm.state,
           pincode: editForm.pincode,
           country: editForm.country,
         },
-        cart_items: valid.map(it => ({
-          product_id: it.product_id || "",
-          product_name: it.product_name,
-          variation: it.variation || "",
-          printing_type: it.printing_type || "",
-          quantity: it.quantity,
-          quantity_type: it.quantity_type,
-          price: it.price,
-          design_file: it.design_file || "",
-          notes: it.notes || "",
-          width: it.quantity_type === "sq.ft" ? it.width : "",
-          height: it.quantity_type === "sq.ft" ? it.height : "",
-          size_unit: it.quantity_type === "sq.ft" ? it.size_unit : "",
-          sq_ft: it.quantity_type === "sq.ft" ? it.sq_ft : 0,
-          size: it.quantity_type === "sq.ft" && it.width && it.height
-            ? `${it.width}×${it.height} ${it.size_unit} (${it.sq_ft} sq.ft)`
-            : "",
-        })),
-        gst_no: editForm.gst_no.trim(),
-        delivery_charges: editForm.free_delivery ? 0 : parseFloat(editForm.delivery_charges) || 0,
-        free_delivery: editForm.free_delivery,
-        discount_percentage: parseFloat(editForm.discount_percentage || 0),
-        subtotal: editTotals.sub,
-        discount_amount: editTotals.disc,
-        taxable_amount: editTotals.after,
-        tax_amount: editTotals.tax,
-        total_amount: editTotals.total,
-        notes: editForm.notes,
+
+        // ── Cart items — quantity_type always stored alongside all fields ──
+        cart_items: valid.map(it => {
+          const isSqFt = it.quantity_type === "sq.ft";
+          return {
+            product_id:     it.product_id    || "",
+            product_name:   it.product_name,
+            variation:      it.variation     || "",
+            printing_type:  it.printing_type || "",
+            quantity:       it.quantity,
+            quantity_type:  it.quantity_type,   // ← always persisted
+            price:          it.price,
+            gst_percentage: it.gst_percentage || 0,
+            design_file:    it.design_file   || "",
+            notes:          it.notes         || "",
+            // Size fields — only meaningful in sq.ft mode
+            width:     isSqFt ? it.width     : "",
+            height:    isSqFt ? it.height    : "",
+            size_unit: isSqFt ? it.size_unit : "pcs",
+            sq_ft:     isSqFt ? it.sq_ft     : 0,
+            size:      isSqFt && it.width && it.height
+              ? `${it.width}×${it.height} ${it.size_unit} (${it.sq_ft} sq.ft)`
+              : "",
+          };
+        }),
+
+        gst_no:              editForm.gst_no.trim(),
+        delivery_charges:    editTotals.deliveryCharges,
+        free_delivery:       editForm.free_delivery,
+        design_charges:      editTotals.designCharges,
+        discount_percentage: editTotals.discountPct,
+        subtotal:            editTotals.subtotal,
+        discount_amount:     editTotals.discountAmt,
+        taxable_amount:      editTotals.taxableAmount,
+        tax_amount:          editTotals.taxAmount,
+        total_amount:        editTotals.grandTotal,
+        notes:               editForm.notes,
         terms_and_conditions: editForm.terms_and_conditions,
       };
 
-      const res = await fetch(`https://job-server-cocj.onrender.com/api/jobs/${editJob._id}`, {
+      const res  = await fetch(`https://api.dmedia.in/api/jobs/${editJob._id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -827,11 +968,12 @@ const AdminJobManagement = () => {
   };
 
   // ── Layout vars ───────────────────────────────────────────────────────────
-  const p = isMobile ? 8 : 12;
-  const g = isMobile ? 8 : 12;
+  const p  = isMobile ? 8 : 12;
+  const g  = isMobile ? 8 : 12;
   const c2 = isMobile ? "1fr" : "1fr 1fr";
   const c3 = isMobile ? "1fr" : isTablet ? "1fr 1fr" : "1fr 1fr 1fr";
   const c4 = isMobile ? "1fr 1fr" : isTablet ? "1fr 1fr" : "repeat(4,1fr)";
+  const c5 = isMobile ? "1fr 1fr" : isTablet ? "1fr 1fr 1fr" : "repeat(5,1fr)";
 
   const formatCountdown = (secs) => {
     const m = Math.floor(secs / 60);
@@ -839,14 +981,14 @@ const AdminJobManagement = () => {
     return `${m}:${String(s).padStart(2, "0")}`;
   };
 
-  const modalWidth = isMobile ? "100vw" : isTablet ? "94vw" : "min(96vw,900px)";
+  const modalWidth      = isMobile ? "100vw" : isTablet ? "94vw" : "min(96vw,900px)";
   const mobileFullStyle = isMobile ? { top: 0, margin: 0, maxWidth: "100vw", padding: 0 } : {};
-  const modalBodyStyle = {
+  const modalBodyStyle  = {
     maxHeight: isMobile ? "calc(100dvh - 56px)" : "85vh",
     overflowY: "auto",
     padding: isMobile ? 10 : 16,
   };
-  const sheetStyle = isMobile
+  const sheetStyle     = isMobile
     ? { top: "auto", bottom: 0, margin: 0, maxWidth: "100vw", padding: 0 }
     : {};
   const sheetBodyStyle = {
@@ -879,7 +1021,6 @@ const AdminJobManagement = () => {
           <div style={{ fontSize: 11, color: "#6b7280" }}>{r.customer_phone || ""}</div>
           {isMobile && (() => {
             const cfg = STATUS_CONFIG[r.job_status] || STATUS_CONFIG.draft;
-
             return (
               <Tag color={cfg.color} icon={cfg.icon} style={{ marginTop: 4, fontSize: 10 }}>
                 {cfg.label}
@@ -923,9 +1064,19 @@ const AdminJobManagement = () => {
       },
     }] : []),
     {
-      title: "", width: isMobile ? 90 : 120,
+      title: "", width: isMobile ? 90 : 150,
       render: (_, record) => (
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+          <Tooltip title="View Job">
+            <Button
+              icon={<EyeOutlined />}
+              size="small"
+              style={{ color: "#6b7280", borderColor: "#e5e7eb" }}
+              onClick={() => openViewModal(record)}
+            >
+              {!isMobile && "View"}
+            </Button>
+          </Tooltip>
           <Tooltip title="Edit Job">
             <Button
               icon={<EditOutlined />}
@@ -936,12 +1087,11 @@ const AdminJobManagement = () => {
               {!isMobile && "Edit"}
             </Button>
           </Tooltip>
-          {record.job_status === "draft" ? (
+          {record.job_status === "draft" && (
             <Tooltip title="Approve & Assign">
               <Button
                 type="primary"
                 icon={<CheckCircleOutlined />}
-                disabled={false}
                 size="small"
                 style={{ background: "#16a34a", borderColor: "#16a34a" }}
                 onClick={() => openApproveModal(record)}
@@ -949,16 +1099,6 @@ const AdminJobManagement = () => {
                 {!isMobile && "Approve"}
               </Button>
             </Tooltip>
-          ) : (
-            <Button
-              type="primary"
-              icon={<CheckCircleOutlined />}
-              disabled={true}
-              size="small"
-              style={{ background: "#9ca3af", borderColor: "#9ca3af", cursor: "not-allowed" }}
-            >
-              {!isMobile && "Approved"}
-            </Button>
           )}
         </div>
       ),
@@ -972,15 +1112,9 @@ const AdminJobManagement = () => {
       {/* ── Header ── */}
       <Card
         bodyStyle={{ padding: `${p}px ${p + 4}px` }}
-        style={{
-          borderRadius: 12, border: "1px solid #e5e7eb",
-          marginBottom: g, boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
-        }}
+        style={{ borderRadius: 12, border: "1px solid #e5e7eb", marginBottom: g, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}
       >
-        <div style={{
-          display: "flex", justifyContent: "space-between",
-          alignItems: "center", flexWrap: "wrap", gap: 8,
-        }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
           <div>
             <h2 style={{ margin: 0, fontSize: isMobile ? 15 : 18, fontWeight: 700, color: "#1a1a2e" }}>
               Job Management
@@ -1018,10 +1152,7 @@ const AdminJobManagement = () => {
       {/* ── Filters ── */}
       <Card
         bodyStyle={{ padding: `${p}px ${p + 4}px` }}
-        style={{
-          borderRadius: 12, border: "1px solid #e5e7eb",
-          marginBottom: g, boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
-        }}
+        style={{ borderRadius: 12, border: "1px solid #e5e7eb", marginBottom: g, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}
       >
         <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 8 }}>
           <Input.Search
@@ -1051,10 +1182,7 @@ const AdminJobManagement = () => {
       {/* ── Table ── */}
       <Card
         bodyStyle={{ padding: "0 0 8px 0" }}
-        style={{
-          borderRadius: 12, border: "1px solid #e5e7eb",
-          boxShadow: "0 1px 4px rgba(0,0,0,0.06)", overflow: "hidden",
-        }}
+        style={{ borderRadius: 12, border: "1px solid #e5e7eb", boxShadow: "0 1px 4px rgba(0,0,0,0.06)", overflow: "hidden" }}
       >
         <CustomTable
           dataSource={jobs}
@@ -1074,6 +1202,416 @@ const AdminJobManagement = () => {
           }}
         />
       </Card>
+
+      {/* ════════════ VIEW JOB MODAL ════════════ */}
+      <Modal
+        open={viewModal}
+        onCancel={closeViewModal}
+        footer={
+          <Button onClick={closeViewModal} style={{ borderRadius: 8 }}>
+            Close
+          </Button>
+        }
+        title={
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <EyeOutlined style={{ color: "#6b7280" }} />
+            <span style={{ fontWeight: 700 }}>View Job</span>
+            {viewJob && (
+              <Tag color="blue" style={{ fontFamily: "monospace", fontWeight: 600, fontSize: 11 }}>
+                {viewJob.job_no}
+              </Tag>
+            )}
+          </div>
+        }
+        width={isMobile ? "100vw" : "min(96vw, 760px)"}
+        style={isMobile ? { top: 0, margin: 0, maxWidth: "100vw", padding: 0 } : {}}
+        styles={{
+          body: {
+            maxHeight: isMobile ? "calc(100dvh - 56px)" : "85vh",
+            overflowY: "auto",
+            padding: isMobile ? 10 : 16,
+          },
+        }}
+        destroyOnClose
+      >
+        {viewJob && (() => {
+          const cfg     = STATUS_CONFIG[viewJob.job_status] || STATUS_CONFIG.draft;
+          const addr    = viewJob.delivery_address || {};
+          const totals  = calcJobTotals(viewJob);
+          const cartItems = viewJob.cart_items || [];
+
+          const fullAddress = [
+            addr.street, addr.city, addr.state, addr.pincode, addr.country,
+          ].filter(Boolean).join(", ");
+
+          const stageCfg = viewJob.current_stage;
+
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+
+              {/* ── Status & Meta ── */}
+              <div style={{
+                display: "flex", alignItems: "center", flexWrap: "wrap",
+                gap: 8, justifyContent: "space-between",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <Tag
+                    color={cfg.color}
+                    icon={cfg.icon}
+                    style={{ fontWeight: 600, fontSize: 13, padding: "3px 10px" }}
+                  >
+                    {cfg.label}
+                  </Tag>
+                  {stageCfg?.stage && (
+                    <Tag color="purple" icon={<BranchesOutlined />} style={{ fontSize: 11 }}>
+                      {WORKFLOW_STAGES.find(s => s.value === stageCfg.stage)?.label || stageCfg.stage_label}
+                    </Tag>
+                  )}
+                </div>
+                {viewJob.order_date && (
+                  <span style={{ fontSize: 12, color: "#6b7280" }}>
+                    Ordered: {dayjs(viewJob.order_date).format("DD MMM YYYY, HH:mm")}
+                  </span>
+                )}
+              </div>
+
+              {/* ── Customer Info ── */}
+              <div style={{
+                background: "#f9fafb", borderRadius: 10,
+                padding: "12px 14px", border: "1px solid #e5e7eb",
+              }}>
+                <SectionHeader icon={<UserOutlined />} title="Customer Info" />
+                <div style={{ display: "grid", gridTemplateColumns: c2, gap: 10 }}>
+                  <InfoRow label="Name"          value={viewJob.customer_name} />
+                  <InfoRow label="Phone"         value={viewJob.customer_phone} />
+                  <InfoRow
+                    label="Estimated Delivery"
+                    value={viewJob.estimated_delivery_date
+                      ? dayjs(viewJob.estimated_delivery_date).format("DD MMM YYYY, HH:mm")
+                      : "—"}
+                  />
+                  <InfoRow label="GST Number"    value={viewJob.gst_no || "—"} />
+                  <InfoRow label="Created By"    value={viewJob.created_by || "—"} />
+                  <InfoRow
+                    label="Valid Until"
+                    value={viewJob.valid_until
+                      ? dayjs(viewJob.valid_until).format("DD MMM YYYY")
+                      : "—"}
+                  />
+                </div>
+              </div>
+
+              {/* ── Assigned Designer ── */}
+              {stageCfg?.assigned_to?.name && (
+                <div style={{
+                  background: "#eff6ff", borderRadius: 10,
+                  padding: "10px 14px", border: "1px solid #bfdbfe",
+                  display: "flex", alignItems: "center", gap: 10,
+                }}>
+                  <UserOutlined style={{ color: "#2563eb", fontSize: 16 }} />
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#2563eb", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      Assigned Designer
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "#1e3a8a" }}>
+                      {stageCfg.assigned_to.name}
+                      <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 400, color: "#3b82f6" }}>
+                        {stageCfg.assigned_to.role}
+                      </span>
+                    </div>
+                    {stageCfg.since && (
+                      <div style={{ fontSize: 11, color: "#6b7280" }}>
+                        Since {dayjs(stageCfg.since).format("DD MMM YYYY, HH:mm")}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Delivery Address ── */}
+              {fullAddress && (
+                <div style={{
+                  background: "#f9fafb", borderRadius: 10,
+                  padding: "12px 14px", border: "1px solid #e5e7eb",
+                }}>
+                  <SectionHeader icon={<EnvironmentOutlined />} title="Delivery Address" />
+                  <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.8 }}>
+                    {fullAddress}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Cart Items ── */}
+              <div>
+                <SectionHeader icon={<ShoppingCartOutlined />} title={`Job Items (${cartItems.length})`} />
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {cartItems.map((it, i) => {
+                    const { base, gstAmt, lineTotal, isSqFt, qty, sqFt, price, gstPct } = calcItemTotals(it);
+
+                    return (
+                      <div
+                        key={i}
+                        style={{
+                          background: "#fff", border: "1px solid #e5e7eb",
+                          borderRadius: 10, padding: "12px 14px",
+                        }}
+                      >
+                        {/* Item header */}
+                        <div style={{
+                          display: "flex", justifyContent: "space-between",
+                          alignItems: "flex-start", flexWrap: "wrap", gap: 6,
+                          marginBottom: 8,
+                        }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                            <span style={{
+                              fontSize: 11, fontWeight: 700, color: "#374151",
+                              background: "#e0e7ff", padding: "2px 8px", borderRadius: 20,
+                            }}>
+                              #{i + 1}
+                            </span>
+                            <span style={{ fontWeight: 700, fontSize: 14, color: "#1a1a2e", textTransform: "capitalize" }}>
+                              {it.product_name || "—"}
+                            </span>
+                            {it.variation && (
+                              <Tag style={{ fontSize: 10, margin: 0 }}>{it.variation}</Tag>
+                            )}
+                            {it.printing_type && (
+                              <Tag color="blue" style={{ fontSize: 10, margin: 0 }}>{it.printing_type}</Tag>
+                            )}
+                            {/* Show quantity_type badge */}
+                            <Tag
+                              color={isSqFt ? "cyan" : "orange"}
+                              style={{ fontSize: 10, margin: 0 }}
+                            >
+                              {isSqFt ? "Sq. Ft" : "Qty"}
+                            </Tag>
+                          </div>
+                          <div style={{
+                            fontWeight: 700, color: "#065f46", fontSize: 15,
+                            background: "#d1fae5", padding: "2px 10px", borderRadius: 8,
+                          }}>
+                            ₹{lineTotal.toFixed(2)}
+                          </div>
+                        </div>
+
+                        {/* Item details grid */}
+                        <div style={{
+                          display: "grid",
+                          gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)",
+                          gap: 8, marginBottom: 8,
+                        }}>
+                          <InfoRow label="Quantity" value={`${qty}`} />
+                          {isSqFt ? (
+                            <>
+                              <InfoRow label="Sq. Ft"  value={`${sqFt} ft²`} />
+                              <InfoRow label="Size"    value={it.size || `${it.width}×${it.height} ${it.size_unit}`} />
+                              <InfoRow label="Rate"    value={`₹${price} / ft²`} />
+                            </>
+                          ) : (
+                            <InfoRow label="Unit Price" value={`₹${price}`} />
+                          )}
+                        </div>
+
+                        {/* Pricing breakdown */}
+                        <div style={{
+                          background: "#f9fafb", borderRadius: 8,
+                          padding: "8px 12px", border: "1px solid #e5e7eb",
+                          fontSize: 12,
+                        }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", color: "#4b5563", marginBottom: 2 }}>
+                            <span>
+                              Base Amount
+                              {isSqFt && (
+                                <span style={{ color: "#9ca3af", marginLeft: 4 }}>
+                                  ({qty} qty × {sqFt} ft² × ₹{price}/ft²)
+                                </span>
+                              )}
+                              {!isSqFt && (
+                                <span style={{ color: "#9ca3af", marginLeft: 4 }}>
+                                  ({qty} qty × ₹{price})
+                                </span>
+                              )}
+                            </span>
+                            <span style={{ fontWeight: 600, color: "#374151" }}>₹{base.toFixed(2)}</span>
+                          </div>
+                          {gstPct > 0 && (
+                            <div style={{ display: "flex", justifyContent: "space-between", color: "#92400e", marginBottom: 2 }}>
+                              <span>GST @ {gstPct}%</span>
+                              <span style={{ fontWeight: 600 }}>+ ₹{gstAmt.toFixed(2)}</span>
+                            </div>
+                          )}
+                          <div style={{
+                            display: "flex", justifyContent: "space-between",
+                            fontWeight: 700, color: "#065f46",
+                            borderTop: "1px solid #d1fae5", paddingTop: 4, marginTop: 4,
+                          }}>
+                            <span>Item Total</span>
+                            <span>₹{lineTotal.toFixed(2)}</span>
+                          </div>
+                        </div>
+
+                        {/* Notes */}
+                        {it.notes && (
+                          <div style={{
+                            marginTop: 8, fontSize: 12, color: "#6b7280",
+                            fontStyle: "italic", background: "#fffbeb",
+                            border: "1px solid #fde68a", borderRadius: 6, padding: "4px 8px",
+                          }}>
+                            Note: "{it.notes}"
+                          </div>
+                        )}
+
+                        {/* Design file preview */}
+                        {it.design_file && (
+                          <div style={{ marginTop: 8 }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", marginBottom: 4, textTransform: "uppercase" }}>
+                              Design File
+                            </div>
+                            <img
+                              src={it.design_file}
+                              alt="Design"
+                              style={{
+                                maxHeight: 80, maxWidth: "100%",
+                                borderRadius: 6, objectFit: "contain",
+                                border: "1px solid #e5e7eb",
+                              }}
+                              onError={(e) => { e.currentTarget.style.display = "none"; }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* ── Order Summary ── */}
+              <div style={{
+                background: "linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%)",
+                border: "1px solid #bfdbfe", borderRadius: 10,
+                padding: isMobile ? 12 : "14px 16px",
+              }}>
+                <div style={{
+                  fontWeight: 700, color: "#1e40af", marginBottom: 12,
+                  fontSize: 14, display: "flex", alignItems: "center", gap: 6,
+                }}>
+                  <WalletOutlined /> Order Summary
+                </div>
+
+                <SummaryRow
+                  label="Subtotal (items base)"
+                  value={`₹${totals.subtotal.toFixed(2)}`}
+                />
+
+                {totals.discountAmt > 0 && (
+                  <SummaryRow
+                    label={`Discount (${totals.discountPct}%)`}
+                    value={`− ₹${totals.discountAmt.toFixed(2)}`}
+                    color="#059669"
+                  />
+                )}
+
+                {totals.discountAmt > 0 && (
+                  <SummaryRow
+                    label="Taxable Amount"
+                    value={`₹${totals.taxableAmount.toFixed(2)}`}
+                    color="#374151"
+                  />
+                )}
+
+                <SummaryRow
+                  label="Total GST (all items)"
+                  value={`₹${totals.taxAmount.toFixed(2)}`}
+                  color="#d97706"
+                />
+
+                {totals.designCharges > 0 && (
+                  <SummaryRow
+                    label="Design Charges"
+                    value={`₹${totals.designCharges.toFixed(2)}`}
+                    color="#7c3aed"
+                  />
+                )}
+
+                <SummaryRow
+                  label="Delivery Charges"
+                  value={totals.freeDelivery ? "Free" : `₹${totals.deliveryCharges.toFixed(2)}`}
+                  color={totals.freeDelivery ? "#059669" : undefined}
+                />
+
+                <Divider style={{ margin: "10px 0" }} />
+
+                <SummaryRow
+                  label="Grand Total"
+                  value={`₹${totals.grandTotal.toFixed(2)}`}
+                  bold
+                />
+
+                {/* Stored vs computed note if mismatch */}
+                {Math.abs(totals.grandTotal - parseFloat(viewJob.total_amount || 0)) > 0.5 && (
+                  <div style={{
+                    marginTop: 8, fontSize: 11, color: "#92400e",
+                    background: "#fffbeb", border: "1px solid #fde68a",
+                    borderRadius: 6, padding: "4px 8px",
+                  }}>
+                    Stored total: ₹{parseFloat(viewJob.total_amount || 0).toFixed(2)} · Computed: ₹{totals.grandTotal.toFixed(2)}
+                  </div>
+                )}
+              </div>
+
+              {/* ── Payment Info ── */}
+              {(viewJob.payment_mode || parseFloat(viewJob.payment_amount || 0) > 0) && (
+                <div style={{
+                  background: "#f0fdf4", borderRadius: 10,
+                  padding: "12px 14px", border: "1px solid #bbf7d0",
+                }}>
+                  <SectionHeader icon={<WalletOutlined />} title="Payment" />
+                  <div style={{ display: "grid", gridTemplateColumns: c2, gap: 10 }}>
+                    <InfoRow label="Payment Mode"   value={viewJob.payment_mode || "—"} />
+                    <InfoRow
+                      label="Amount Paid"
+                      value={parseFloat(viewJob.payment_amount || 0) > 0
+                        ? `₹${parseFloat(viewJob.payment_amount).toFixed(2)}`
+                        : "Unpaid"}
+                      valueStyle={{ color: parseFloat(viewJob.payment_amount || 0) > 0 ? "#16a34a" : "#dc2626" }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* ── Notes ── */}
+              {viewJob.notes && (
+                <div style={{
+                  fontSize: 13, color: "#374151",
+                  background: "#fffbeb", border: "1px solid #fde68a",
+                  borderRadius: 8, padding: "10px 12px",
+                }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#92400e", textTransform: "uppercase", marginBottom: 4 }}>
+                    Notes
+                  </div>
+                  {viewJob.notes}
+                </div>
+              )}
+
+              {/* ── Terms ── */}
+              {viewJob.terms_and_conditions && (
+                <div style={{
+                  fontSize: 12, color: "#6b7280",
+                  background: "#f9fafb", border: "1px solid #e5e7eb",
+                  borderRadius: 8, padding: "10px 12px",
+                }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#374151", textTransform: "uppercase", marginBottom: 4 }}>
+                    Terms & Conditions
+                  </div>
+                  <div style={{ whiteSpace: "pre-line", lineHeight: 1.7 }}>
+                    {viewJob.terms_and_conditions}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </Modal>
 
       {/* ════════════ EDIT JOB MODAL ════════════ */}
       <Modal
@@ -1113,6 +1651,7 @@ const AdminJobManagement = () => {
             </div>
           )}
 
+          {/* ── Customer Info ── */}
           <SectionHeader icon={<UserOutlined />} title="Customer Info" />
           <div style={{ display: "grid", gridTemplateColumns: c3, gap: g, marginBottom: 14 }}>
             <FormField label="Customer Name" required>
@@ -1144,6 +1683,7 @@ const AdminJobManagement = () => {
             </FormField>
           </div>
 
+          {/* ── Delivery Address ── */}
           <SectionHeader icon={<EnvironmentOutlined />} title="Delivery Address" />
           <div style={{ display: "flex", flexDirection: "column", gap: g, marginBottom: 14 }}>
             <div style={{ display: "grid", gridTemplateColumns: c2, gap: g }}>
@@ -1166,8 +1706,8 @@ const AdminJobManagement = () => {
             </div>
             <div style={{ display: "grid", gridTemplateColumns: c4, gap: g }}>
               {[
-                ["city", "City", "City"],
-                ["state", "State", "State"],
+                ["city",    "City",    "City"],
+                ["state",   "State",   "State"],
                 ["pincode", "Pincode", "6-digit"],
                 ["country", "Country", "Country"],
               ].map(([k, label, ph]) => (
@@ -1183,6 +1723,7 @@ const AdminJobManagement = () => {
             </div>
           </div>
 
+          {/* ── Job Items ── */}
           <SectionHeader icon={<ShoppingCartOutlined />} title="Job Items" />
           <div style={{ display: "flex", flexDirection: "column", gap: g, marginBottom: 14 }}>
             {editItems.map((item, idx) => (
@@ -1206,8 +1747,9 @@ const AdminJobManagement = () => {
             </Button>
           </div>
 
+          {/* ── Pricing & Tax ── */}
           <SectionHeader icon={<TagOutlined />} title="Pricing & Tax" />
-          <div style={{ display: "grid", gridTemplateColumns: c4, gap: g, marginBottom: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: c5, gap: g, marginBottom: 14 }}>
             <FormField label="GST Number">
               <Input
                 placeholder="GSTIN"
@@ -1217,16 +1759,17 @@ const AdminJobManagement = () => {
                 style={{ borderRadius: 8 }}
               />
             </FormField>
+
             <FormField label="Discount (%)">
               <InputNumber
-                min={0}
-                max={100}
+                min={0} max={100}
                 value={editForm.discount_percentage}
                 style={{ width: "100%", borderRadius: 8 }}
                 prefix={<PercentageOutlined />}
                 onChange={(v) => handleEditInput("discount_percentage", v || 0)}
               />
             </FormField>
+
             <FormField label="Delivery Charges (₹)">
               <InputNumber
                 min={0}
@@ -1237,6 +1780,21 @@ const AdminJobManagement = () => {
                 onChange={(v) => handleEditInput("delivery_charges", v || 0)}
               />
             </FormField>
+
+            <FormField label="Design Charges (₹)">
+              <InputNumber
+                min={0}
+                value={editForm.design_charges}
+                style={{
+                  width: "100%", borderRadius: 8,
+                  background: (editForm.design_charges || 0) > 0 ? "#faf5ff" : undefined,
+                  borderColor: (editForm.design_charges || 0) > 0 ? "#c4b5fd" : undefined,
+                }}
+                prefix="₹"
+                onChange={(v) => handleEditInput("design_charges", v || 0)}
+              />
+            </FormField>
+
             <FormField label="Free Delivery">
               <div
                 onClick={() => handleEditInput("free_delivery", !editForm.free_delivery)}
@@ -1261,16 +1819,14 @@ const AdminJobManagement = () => {
                     boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
                   }} />
                 </div>
-                <span style={{
-                  fontSize: 12, fontWeight: 600,
-                  color: editForm.free_delivery ? "#16a34a" : "#6b7280",
-                }}>
-                  {editForm.free_delivery ? "Free 🎉" : "Paid"}
+                <span style={{ fontSize: 12, fontWeight: 600, color: editForm.free_delivery ? "#16a34a" : "#6b7280" }}>
+                  {editForm.free_delivery ? "Free" : "Paid"}
                 </span>
               </div>
             </FormField>
           </div>
 
+          {/* ── Notes & Terms ── */}
           <SectionHeader icon={<FileTextOutlined />} title="Notes & Terms" />
           <div style={{ display: "grid", gridTemplateColumns: c2, gap: g, marginBottom: 14 }}>
             <FormField label="Notes">
@@ -1292,7 +1848,7 @@ const AdminJobManagement = () => {
             </FormField>
           </div>
 
-          {/* Order Summary */}
+          {/* ── Order Summary (live preview) ── */}
           <div style={{
             background: "linear-gradient(135deg,#eff6ff 0%,#f8fafc 100%)",
             border: "1px solid #bfdbfe", borderRadius: 10,
@@ -1304,37 +1860,48 @@ const AdminJobManagement = () => {
             }}>
               <FileTextOutlined /> Order Summary
             </div>
-            {[
-              { label: "Subtotal", value: `₹${editTotals.sub.toFixed(2)}` },
-              ...(editTotals.disc > 0 ? [{
-                label: `Discount (${editForm.discount_percentage}%)`,
-                value: `- ₹${editTotals.disc.toFixed(2)}`,
-                color: "#059669",
-              }] : []),
-              { label: "GST (18%)", value: `₹${editTotals.tax.toFixed(2)}` },
-              {
-                label: "Delivery",
-                value: editForm.free_delivery ? "Free 🎉" : `₹${editTotals.del.toFixed(2)}`,
-              },
-            ].map(({ label, value, color }) => (
-              <div key={label} style={{
-                display: "flex", justifyContent: "space-between",
-                fontSize: 13, color: color || "#4b5563", marginBottom: 4,
-              }}>
-                <span>{label}</span>
-                <span style={{ fontWeight: 600 }}>{value}</span>
-              </div>
-            ))}
+
+            <SummaryRow label="Subtotal (items base)" value={`₹${editTotals.subtotal.toFixed(2)}`} />
+
+            {editTotals.discountAmt > 0 && (
+              <SummaryRow
+                label={`Discount (${editTotals.discountPct}%)`}
+                value={`− ₹${editTotals.discountAmt.toFixed(2)}`}
+                color="#059669"
+              />
+            )}
+
+            {editTotals.discountAmt > 0 && (
+              <SummaryRow
+                label="Taxable Amount"
+                value={`₹${editTotals.taxableAmount.toFixed(2)}`}
+                color="#374151"
+              />
+            )}
+
+            <SummaryRow label="Total GST" value={`₹${editTotals.taxAmount.toFixed(2)}`} color="#d97706" />
+
+            {editTotals.designCharges > 0 && (
+              <SummaryRow label="Design Charges" value={`₹${editTotals.designCharges.toFixed(2)}`} color="#7c3aed" />
+            )}
+
+            <SummaryRow
+              label="Delivery"
+              value={editForm.free_delivery ? "Free" : `₹${editTotals.deliveryCharges.toFixed(2)}`}
+              color={editForm.free_delivery ? "#059669" : undefined}
+            />
+
             <Divider style={{ margin: "8px 0" }} />
-            <div style={{
-              display: "flex", justifyContent: "space-between",
-              fontSize: isMobile ? 14 : 15, fontWeight: 800,
-            }}>
-              <span style={{ color: "#1a1a2e" }}>Grand Total</span>
-              <span style={{ color: "#2563eb" }}>₹{editTotals.total.toFixed(2)}</span>
+
+            <SummaryRow label="Grand Total" value={`₹${editTotals.grandTotal.toFixed(2)}`} bold />
+
+            {/* Formula hint */}
+            <div style={{ marginTop: 8, fontSize: 10, color: "#6b7280" }}>
+              Formula: Sq.Ft items = qty × sq.ft × rate &nbsp;|&nbsp; Qty items = qty × rate
             </div>
           </div>
 
+          {/* ── Actions ── */}
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
             <Button
               onClick={resetEditModal}
@@ -1393,16 +1960,12 @@ const AdminJobManagement = () => {
       >
         {approvingJob && (
           <div>
-            {/* Job summary card */}
             <div style={{
               background: "#f8fafc", borderRadius: 8,
               padding: "10px 12px", marginBottom: 16,
               border: "1px solid #e5e7eb",
             }}>
-              <div style={{
-                fontFamily: "monospace", fontWeight: 700,
-                color: "#2563eb", fontSize: 14,
-              }}>
+              <div style={{ fontFamily: "monospace", fontWeight: 700, color: "#2563eb", fontSize: 14 }}>
                 {approvingJob.job_no}
               </div>
               <div style={{ fontSize: 13, color: "#374151", marginTop: 2 }}>
@@ -1424,12 +1987,8 @@ const AdminJobManagement = () => {
               </div>
             </div>
 
-            {/* Designer selector */}
             <div style={{ marginBottom: 16 }}>
-              <label style={{
-                display: "block", fontWeight: 600,
-                marginBottom: 8, fontSize: 13,
-              }}>
+              <label style={{ display: "block", fontWeight: 600, marginBottom: 8, fontSize: 13 }}>
                 Select Designer to Assign <span style={{ color: "#ef4444" }}>*</span>
               </label>
               <Select
@@ -1439,14 +1998,9 @@ const AdminJobManagement = () => {
                 loading={designersLoading}
                 disabled={designersLoading}
                 onChange={(id) => {
-                  const designer = designers.find(d => d._id === id);
-                  setSelectedDesigner(designer || null);
+                  setSelectedDesigner(designers.find(d => d._id === id) || null);
                 }}
-                notFoundContent={
-                  designersLoading
-                    ? "Loading…"
-                    : "No designers found"
-                }
+                notFoundContent={designersLoading ? "Loading…" : "No designers found"}
               >
                 {designers.map(d => (
                   <Option key={d._id} value={d._id}>
@@ -1464,18 +2018,17 @@ const AdminJobManagement = () => {
                   background: "#fffbeb", border: "1px solid #fde68a",
                   borderRadius: 6, padding: "6px 10px",
                 }}>
-                  ⚠️ No designers found. Add a user with role "designing team" first.
+                  No designers found. Add a user with role "designing team" first.
                 </div>
               )}
             </div>
 
-            {/* Info note */}
             <div style={{
               fontSize: 12, color: "#6b7280",
               background: "#fefce8", padding: "8px 10px",
               borderRadius: 6, border: "1px solid #fef08a",
             }}>
-              ℹ️ The job will be approved and assigned to the selected designer with stage set to <strong>Design</strong>.
+              The job will be approved and assigned to the selected designer with stage set to <strong>Design</strong>.
             </div>
           </div>
         )}

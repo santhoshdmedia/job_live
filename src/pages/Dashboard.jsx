@@ -666,7 +666,7 @@ const ErrorBanner = ({ message, onRetry }) => (
 
 export default function Dashboard() {
   const token   = localStorage.getItem("admintoken") || "";
-  const baseURL = "https://job-server-cocj.onrender.com/api";
+  const baseURL = "https://api.dmedia.in/api";
   const { user } = useSelector((state) => state.authSlice);
   const isSuperAdmin = user.role === "super admin";
 

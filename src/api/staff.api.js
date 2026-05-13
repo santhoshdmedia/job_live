@@ -5,7 +5,7 @@
 import axios from "axios"; // or import your configured axios instance
 
 const API = axios.create({
-  baseURL:  "https://job-server-cocj.onrender.com/api",
+  baseURL:  "https://api.dmedia.in/api",
 });
 
 // Attach token on every request (same pattern as your existing api files)

@@ -62,7 +62,7 @@ const profile = () => {
     return {};
   }
 };
-const BASE = "https://job-server-cocj.onrender.com/api/jobs";
+const BASE = "https://api.dmedia.in/api/jobs";
 
 // ─── Google Drive shared folder ID for design uploads (configure this) ────────
 // Set this to your shared Google Drive folder ID where designers upload originals.

@@ -14,7 +14,6 @@ import QualityCheckDashboard from "../pages/QualityCheckDashboard";
 import ErectionPanel from "../pages/Erectionpanel";
 import AddProduct from "../pages/AddProduct";
 
-// Wrapper component for permission-protected routes
 const ProtectedRoute = ({ children, pageName }) => (
   <PermissionGuard pageName={pageName}>{children}</PermissionGuard>
 );
@@ -25,7 +24,6 @@ export const router = createBrowserRouter([
     element: <Login />,
   },
 
-  // All authenticated pages share one Layout instance
   {
     path: "/",
     element: <Layout />,
@@ -118,10 +116,14 @@ export const router = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
-      {
-        path: "*",
-        element: <Navigate to="/dashboard" replace />,
-      },
+      // ← REMOVED wildcard here — it was fighting the auth redirect
     ],
+  },
+
+  // Top-level wildcard: only reached after Layout auth check passes
+  // Redirects unknown paths to dashboard
+  {
+    path: "*",
+    element: <Navigate to="/dashboard" replace />,
   },
 ]);
