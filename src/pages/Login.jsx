@@ -4,17 +4,17 @@ import { EmailValidation, PasswordValidation } from "../helper/formvalidation";
 import { useEffect, useState } from "react";
 import { login } from "../api";
 import _, { toLower } from "lodash";
-import { admintoken, ERROR_NOTIFICATION, SUCCESS_NOTIFICATION } from "../helper/notification_helper";
+import {
+  admintoken,
+  ERROR_NOTIFICATION,
+  SUCCESS_NOTIFICATION,
+} from "../helper/notification_helper";
 import { useNavigate } from "react-router-dom";
 import { useDispatch } from "react-redux";
 import { isLoginSuccess } from "../redux/slices/authSlice";
 
-// ── import your PNGs ──────────────────────────────────────────────────────────
-// import heroImage from "../assets/hero-3d.png";   // the 3-D clipboard + laptop image
-// import logoImage from "../assets/dmedia-logo.png"; // D Media logo
 
 import { IMAGE_HELPER } from "../helper/imagehelper";
-
 
 const Login = () => {
   const [form] = Form.useForm();
@@ -26,7 +26,10 @@ const Login = () => {
     try {
       setLoading(true);
       const validValues = toLower(values.email);
-      const result = await login({ email: validValues, password: values.password });
+      const result = await login({
+        email: validValues,
+        password: values.password,
+      });
 
       if (_.isEmpty(_.get(result, "data.data", []))) {
         setLoading(false);
@@ -35,7 +38,10 @@ const Login = () => {
 
       dispatch(isLoginSuccess(_.get(result, "data.data", {})));
       localStorage.setItem(admintoken, _.get(result, "data.data.token", ""));
-      localStorage.setItem("userprofile", JSON.stringify(_.get(result, "data.data", "")));
+      localStorage.setItem(
+        "userprofile",
+        JSON.stringify(_.get(result, "data.data", "")),
+      );
       SUCCESS_NOTIFICATION(result);
 
       setTimeout(() => {
@@ -55,60 +61,88 @@ const Login = () => {
 
   return (
     <div className="min-h-screen flex overflow-hidden bg-white font-sans">
-
       {/* ── LEFT PANEL ─────────────────────────────────────────────────────── */}
-      <div className=""></div>
-      <div
-        className="hidden lg:flex lg:w-[46%] flex-col justify-between p-10 relative overflow-hidden"
-        style={{ background: "linear-gradient(145deg, #7c6ef7 0%, #9b8df9 50%, #b3a6fb 100%)" }}
-      >
-        {/* subtle noise / grain overlay */}
+      <div className="lg:w-[46%] hidden lg:block h-screen border-[40px] border-white">
         <div
-          className="absolute inset-0 opacity-10 pointer-events-none"
+          className="hidden lg:flex  flex-col h-full justify-between p-10 relative overflow-hidden   rounded-2xl"
           style={{
-            backgroundImage:
-              "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E\")",
-            backgroundSize: "200px 200px",
+            background:
+              "linear-gradient(145deg, #7c6ef7 0%, #9b8df9 50%, #b3a6fb 100%)",
           }}
-        />
-
-        {/* top content */}
-        <div className="relative z-10">
-          <p className="text-white/80 text-lg font-light tracking-wide">Simplify customer relationships with</p>
-          <h1 className="text-white text-5xl font-extrabold leading-tight mt-1 drop-shadow-sm">
-            Job Sheet.
-          </h1>
-          <p className="text-white/60 text-sm mt-3 tracking-widest uppercase">
-            Track · Assign · Deliver
-          </p>
-        </div>
-
-        {/* 3-D hero illustration */}
-        <div className="relative z-10 flex items-end justify-center flex-1 mt-8">
-          <img
-            src={IMAGE_HELPER.LOGIN_IMAGE}
-            alt="Job Sheet 3D illustration"
-            className="w-full  object-contain drop-shadow-2xl
-                       animate-[float_4s_ease-in-out_infinite]"
+        >
+          {/* subtle noise / grain overlay */}
+          <div
+            className="absolute inset-0 opacity-10 pointer-events-none"
+            style={{
+              backgroundImage:
+                "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E\")",
+              backgroundSize: "200px 200px",
+            }}
           />
-        </div>
 
-        {/* floating decorative blobs */}
-        <div className="absolute -top-16 -left-16 w-56 h-56 rounded-full bg-white/10 blur-3xl" />
-        <div className="absolute bottom-10 -right-10 w-40 h-40 rounded-full bg-white/10 blur-2xl" />
+          {/* top content */}
+          <div className="relative z-10">
+            <p className="text-white  font-light tracking-wide text-3xl">
+              {" "}
+              <strong className="text-4xl font-bold">
+                Simplify
+              </strong> <br /> customer relationships with
+            </p>
+            <h1 className="text-white text-5xl font-extrabold leading-tight mt-1 drop-shadow-sm">
+              Job Sheet.
+            </h1>
+            <p className="text-white/60 text-sm mt-3 tracking-widest uppercase">
+              Track · Assign · Deliver
+            </p>
+          </div>
+
+          {/* 3-D hero illustration */}
+          <div className="relative z-10 flex items-end justify-center flex-1 mt-8">
+            <img
+              src={IMAGE_HELPER.LOGIN_IMAGE}
+              alt="Job Sheet 3D illustration"
+              className="w-full  object-contain drop-shadow-2xl
+                       animate-[float_4s_ease-in-out_infinite]"
+            />
+          </div>
+
+          {/* floating decorative blobs */}
+          <div className="absolute -top-16 -left-16 w-56 h-56 rounded-full bg-white/10 blur-3xl" />
+          <div className="absolute bottom-10 -right-10 w-40 h-40 rounded-full bg-white/10 blur-2xl" />
+        </div>
       </div>
 
       {/* ── RIGHT PANEL ────────────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col items-center justify-center px-6 sm:px-12 py-10 bg-white">
+      <div className="flex-1 flex flex-col items-center justify-center px-6 sm:px-12 py-10 bg-white relative">
+        <div
+          className="absolute inset-0 lg:hidden block  pointer-events-none"
+          style={{
+            background:
+              "linear-gradient(145deg, #7c6ef7 0%, #9b8df9 50%, #b3a6fb 100%)",
+          }}
+        ></div>
 
         {/* logo */}
-        <div className="mb-8 flex flex-col items-center gap-2">
-          <img src={IMAGE_HELPER.Dlogo} alt="D Media" className="h-14 object-contain" />
+        <div className="lg:hidden lg:mb-8 mb-0 flex flex-col items-center gap-2 z-20">
+          <img
+            src={IMAGE_HELPER.WhiteLogo}
+            alt="D Media"
+            className="h-14 object-contain"
+          />
+        </div>
+        <div className="hidden lg:mb-8 mb-0 lg:flex flex-col items-center gap-2 z-20">
+          <img
+            src={IMAGE_HELPER.Dlogo}
+            alt="D Media"
+            className="h-14 object-contain"
+          />
         </div>
 
         {/* heading */}
-        <div className="text-center mb-8">
-          <h2 className="text-3xl font-bold text-gray-900 tracking-tight">Sign in to Continue</h2>
+        <div className="text-center lg:mb-8 mb-0">
+          <h2 className="text-3xl font-bold lg:text-gray-900 text-white tracking-tight">
+            Sign in to Continue
+          </h2>
         </div>
 
         {/* form card */}
@@ -125,7 +159,9 @@ const Login = () => {
             <Form.Item
               name="email"
               label={
-                <span className="text-sm font-semibold text-gray-700">Email</span>
+                <span className="text-sm font-semibold lg:text-gray-700 text-white">
+                  Email
+                </span>
               }
               rules={[EmailValidation("Enter Email")]}
             >
@@ -140,7 +176,9 @@ const Login = () => {
             <Form.Item
               name="password"
               label={
-                <span className="text-sm font-semibold text-gray-700">Password</span>
+                <span className="text-sm font-semibold lg:text-gray-700 text-white">
+                  Password
+                </span>
               }
               rules={[PasswordValidation("Enter Password")]}
             >
@@ -152,8 +190,12 @@ const Login = () => {
             </Form.Item>
 
             {/* Remember me */}
-            <Form.Item name="remember" valuePropName="checked" className="!mb-2">
-              <Checkbox disabled={loading} className="text-gray-500 text-sm">
+            <Form.Item
+              name="remember"
+              valuePropName="checked"
+              className="!mb-2"
+            >
+              <Checkbox disabled={loading} className="lg:text-gray-500 !text-white text-sm">
                 Remember me
               </Checkbox>
             </Form.Item>
@@ -166,7 +208,10 @@ const Login = () => {
                 className="w-full h-12 rounded-xl font-semibold text-white text-base
                            transition-all duration-200 active:scale-95
                            disabled:opacity-60 disabled:cursor-not-allowed"
-                style={{ background: "linear-gradient(135deg, #7c6ef7 0%, #9b8df9 100%)" }}
+                style={{
+                  background:
+                    "#6364f0",
+                }}
               >
                 {loading ? (
                   <span className="flex items-center justify-center gap-2">
@@ -183,14 +228,17 @@ const Login = () => {
           {/* footer link */}
           <p className="text-center text-sm text-gray-500 mt-2">
             Already have an account?{" "}
-            <a
-              href="#"
-              className="font-medium"
-              style={{ color: "#7c6ef7" }}
-            >
+            <a href="#" className="font-medium" style={{ color: "#7c6ef7" }}>
               Log in
             </a>
           </p>
+        </div>
+        <div className="lg:hidden block">
+          <img
+            src={IMAGE_HELPER.LOGIN_IMAGE}
+            alt="Job Sheet 3D illustration"
+            className="w-full object-contain drop-shadow-xl lg:mt-10 mt-0"
+          />
         </div>
 
         {/* mobile hero (shown only on small screens) */}

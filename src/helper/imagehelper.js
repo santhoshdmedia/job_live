@@ -5,6 +5,8 @@ import Dlogo from "../assets/images/logos/dlogo.jpg";
 import Dfav from "../assets/images/logos/dlogo.png";
 import Plogo from '../assets/logo.png'
 import sign from '../assets/signature.png'
+import whiteLogo from '../assets/whitelogo.png'
+
 // import FULLLOGO from "../assets/images/logos/printelogo.jpg";
 
 export const IMAGE_HELPER = {
@@ -12,6 +14,7 @@ export const IMAGE_HELPER = {
   logo: logo,
   PDF_logo:Plogo,
   Sign:sign,
+  WhiteLogo: whiteLogo,
   // FULLLOGO: FULLLOGO,
   fav: fav,
   Dlogo: Dlogo,
