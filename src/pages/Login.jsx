@@ -13,7 +13,6 @@ import { useNavigate } from "react-router-dom";
 import { useDispatch } from "react-redux";
 import { isLoginSuccess } from "../redux/slices/authSlice";
 
-
 import { IMAGE_HELPER } from "../helper/imagehelper";
 
 const Login = () => {
@@ -60,7 +59,7 @@ const Login = () => {
   }, []);
 
   return (
-    <div className="min-h-screen flex overflow-hidden bg-white font-sans">
+    <div className="min-h-screen  flex overflow-hidden bg-white font-sans">
       {/* ── LEFT PANEL ─────────────────────────────────────────────────────── */}
       <div className="lg:w-[46%] hidden lg:block h-screen border-[40px] border-white">
         <div
@@ -113,7 +112,7 @@ const Login = () => {
       </div>
 
       {/* ── RIGHT PANEL ────────────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col items-center justify-center px-6 sm:px-12 py-10 bg-white relative">
+      <div className="flex-1 flex flex-col items-center justify-center px-6 sm:px-12 py-2 bg-white relative">
         <div
           className="absolute inset-0 lg:hidden block  pointer-events-none"
           style={{
@@ -137,16 +136,23 @@ const Login = () => {
             className="h-14 object-contain"
           />
         </div>
-
+        <div className="mt-0 text-center">
+          <h1 className="!text-white text-4xl font-extrabold leading-tight mt-1 drop-shadow-sm">
+            Job Sheet.
+          </h1>
+          <p className="!text-white text-xl  font-thin leading-tight  drop-shadow-sm">
+            Track · Assign · Deliver
+          </p>
+        </div>
         {/* heading */}
         <div className="text-center lg:mb-8 mb-0">
-          <h2 className="text-3xl font-bold lg:text-gray-900 text-white tracking-tight">
+          <h2 className="hidden lg:block text-3xl font-bold lg:text-gray-900 text-white tracking-tight">
             Sign in to Continue
           </h2>
         </div>
 
         {/* form card */}
-        <div className="w-full max-w-sm">
+        <div className="w-full   max-w-sm">
           <Form
             form={form}
             name="login"
@@ -195,7 +201,10 @@ const Login = () => {
               valuePropName="checked"
               className="!mb-2"
             >
-              <Checkbox disabled={loading} className="lg:text-gray-500 !text-white text-sm">
+              <Checkbox
+                disabled={loading}
+                className="lg:text-gray-500 !text-white text-sm"
+              >
                 Remember me
               </Checkbox>
             </Form.Item>
@@ -209,8 +218,7 @@ const Login = () => {
                            transition-all duration-200 active:scale-95
                            disabled:opacity-60 disabled:cursor-not-allowed"
                 style={{
-                  background:
-                    "#6364f0",
+                  background: "#6364f0",
                 }}
               >
                 {loading ? (
@@ -226,12 +234,7 @@ const Login = () => {
           </Form>
 
           {/* footer link */}
-          <p className="text-center text-sm text-gray-500 mt-2">
-            Already have an account?{" "}
-            <a href="#" className="font-medium" style={{ color: "#7c6ef7" }}>
-              Log in
-            </a>
-          </p>
+        
         </div>
         <div className="lg:hidden block">
           <img
