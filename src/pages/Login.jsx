@@ -137,10 +137,10 @@ const Login = () => {
           />
         </div>
         <div className="lg:hidden block mt-0 text-center">
-          <h1 className="!text-white text-2xl font-extrabold leading-tight mt-2 drop-shadow-sm">
+          <h1 className="!text-white text-[32px] font-extrabold leading-tight mt-2 drop-shadow-sm">
             Job Sheet.
           </h1>
-          <p className="!text-white text-sm  font-thin leading-tight  drop-shadow-sm p-1 ">
+          <p className="!text-white text-lg  font-thin leading-tight  drop-shadow-sm p-1 ">
             Track · Assign · Deliver
           </p>
         </div>
