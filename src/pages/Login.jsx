@@ -122,7 +122,7 @@ const Login = () => {
         ></div>
 
         {/* logo */}
-        <div className="lg:hidden lg:mb-8 mb-0 relative left-20 gap-2 z-20">
+        <div className="lg:hidden lg:mb-8 mb-0 relative bottom-5 left-20 gap-2 z-20">
           <img
             src={IMAGE_HELPER.WhiteLogo}
             alt="D Media"
@@ -140,7 +140,7 @@ const Login = () => {
           <h1 className="!text-white text-[32px] font-extrabold leading-tight mt-2 drop-shadow-sm">
             Job Sheet.
           </h1>
-          <p className="!text-white text-lg  font-thin leading-tight  drop-shadow-sm p-1 ">
+          <p className="!text-white text-[16px]  font-thin leading-tight  drop-shadow-sm p-1 ">
             Track · Assign · Deliver
           </p>
         </div>
