@@ -29,7 +29,7 @@ const apiGet = async (url, token) => {
   return res.json();
 };
 
-const fetchDashboardData = async ({ baseURL, token, userId, isSuperAdmin }) => {
+const fetchDashboardData = async ({ baseURL, token, userId, user, isSuperAdmin }) => {
   const todayStr = new Date().toISOString().slice(0, 10);
   const allEndpoint = `${baseURL}/jobs?page=1&limit=500&sort_by=createdAt&sort_order=desc`;
 
@@ -42,16 +42,27 @@ const fetchDashboardData = async ({ baseURL, token, userId, isSuperAdmin }) => {
     return { allJobs, myJobs: allJobs, expiryToday };
   }
 
-  const [assignedData, allData] = await Promise.all([
-    apiGet(`${baseURL}/jobs/assigned-to/${userId}`, token),
-    apiGet(allEndpoint, token),
-  ]);
-
-  const myJobs  = assignedData?.data || [];
+  // For regular users: get ALL jobs first, then filter by creator
+  const allData = await apiGet(allEndpoint, token);
   const allJobs = allData?.data?.jobs || [];
+  
+  // Filter jobs created by the logged-in user
+  const myJobs = allJobs.filter(job => {
+    if (!job.created_by) return false;
+    
+    // Handle different possible formats of created_by
+    if (typeof job.created_by === 'object' && job.created_by !== null) {
+      // If created_by is an object with name or _id
+      return job.created_by.name === user.name || job.created_by._id === userId;
+    }
+    // If created_by is a string (name or ID)
+    return job.created_by === user.name || job.created_by === userId;
+  });
+  
   const expiryToday = allJobs.filter(
     (j) => j.valid_until && j.valid_until.slice(0, 10) === todayStr
   );
+  
   return { allJobs, myJobs, expiryToday };
 };
 
@@ -469,11 +480,9 @@ const JobRow = ({ job, isExpiring, onView }) => {
         <p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {job.customer_name || "—"}
         </p>
-        {stage?.assigned_to?.name && (
-          <p style={{ margin: 0, fontSize: 11, color: "var(--color-text-tertiary)", display: "flex", alignItems: "center", gap: 3 }}>
-            <FiUser size={10} /> {stage.assigned_to.name}
-          </p>
-        )}
+        <p style={{ margin: 0, fontSize: 10, color: "var(--color-text-tertiary)" }}>
+          Created by: {typeof job.created_by === 'object' ? job.created_by?.name : job.created_by || "—"}
+        </p>
       </div>
       <div>
         {stage?.stage_label
@@ -557,6 +566,9 @@ const JobCard = ({ job, isExpiring, onView }) => {
       </div>
       <p style={{ margin: "0 0 8px", fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)" }}>
         {job.customer_name || "—"}
+      </p>
+      <p style={{ margin: "0 0 4px", fontSize: 10, color: "var(--color-text-tertiary)" }}>
+        Created by: {typeof job.created_by === 'object' ? job.created_by?.name : job.created_by || "—"}
       </p>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         {stage?.stage && <StatusBadge status={stage.stage} />}
@@ -693,7 +705,7 @@ export default function Dashboard() {
     setError(null);
     try {
       const result = await fetchDashboardData({
-        baseURL, token, userId: user._id, isSuperAdmin,
+        baseURL, token, userId: user._id, user, isSuperAdmin,
       });
       setData(result);
     } catch (err) {
@@ -705,7 +717,7 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, [baseURL, token, user._id, isSuperAdmin]);
+  }, [baseURL, token, user._id, user, isSuperAdmin]);
 
   useEffect(() => {
     load();
@@ -727,7 +739,7 @@ export default function Dashboard() {
   const expiryToday = data?.expiryToday || [];
   const expiryIds   = new Set(expiryToday.map(j => j._id));
 
-  const todayCreated  = allJobs.filter(j => j.createdAt?.slice(0, 10) === todayStr);
+  const todayCreated  = myJobs.filter(j => j.createdAt?.slice(0, 10) === todayStr);
   const designJobs    = (isSuperAdmin ? allJobs : myJobs).filter(j => j.job_status === "design");
   const productionJobs = (isSuperAdmin ? allJobs : myJobs).filter(j => j.job_status === "production");
   const qcJobs        = (isSuperAdmin ? allJobs : myJobs).filter(j => j.job_status === "quality_check");
@@ -744,7 +756,7 @@ export default function Dashboard() {
     { key: "quality_check", accent: "#B45309", icon: <FiShield       size={18} />, label: "Quality Check",   value: qcJobs.length          },
     { key: "delivery",      accent: "#0F6E56", icon: <FiTruck        size={18} />, label: "Delivery",        value: deliveryJobs.length    },
     { key: "completed",     accent: "#047857", icon: <FiCheckCircle  size={18} />, label: "Completed",       value: completedJobs.length   },
-    { key: "expiry",        accent: "#993C1D", icon: <FiAlertTriangle size={18} />, label: "Expiring today", value: expiryToday.length     },
+    { key: "expiry",        accent: "#993C1D", icon: <FiAlertTriangle size={18} />, label: "Expiring today", value: expiryToday.filter(j => myJobs.some(mj => mj._id === j._id)).length },
   ];
 
   // ── Filter → search → sort ──────────────────────────────────────
@@ -752,7 +764,7 @@ export default function Dashboard() {
     const base = isSuperAdmin ? allJobs : myJobs;
     switch (filter) {
       case "today":         return todayCreated;
-      case "expiry":        return expiryToday;
+      case "expiry":        return expiryToday.filter(j => base.some(bj => bj._id === j._id));
       case "design":        return designJobs;
       case "production":    return productionJobs;
       case "quality_check": return qcJobs;
@@ -800,7 +812,7 @@ export default function Dashboard() {
           </h2>
           <p style={{ margin: "3px 0 0", fontSize: 12, color: "var(--color-text-tertiary)", display: "flex", alignItems: "center", gap: 5 }}>
             <FiWifi size={11} />
-            {isSuperAdmin ? "Super admin — all jobs" : `Assigned to ${user.name}`}
+            {isSuperAdmin ? "Super admin — all jobs" : `Jobs created by ${user.name}`}
             {" · "}
             {new Date().toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short", year: "numeric" })}
           </p>
@@ -827,8 +839,8 @@ export default function Dashboard() {
       {/* Error banner */}
       {error && <ErrorBanner message={error} onRetry={() => load()} />}
 
-      {/* Expiry banner */}
-      {!loading && expiryToday.length > 0 && (
+      {/* Expiry banner - only for user's own expiring jobs */}
+      {!loading && expiryToday.filter(j => myJobs.some(mj => mj._id === j._id)).length > 0 && (
         <div style={{
           display: "flex", alignItems: "center", gap: 10,
           padding: "10px 16px", marginBottom: 18,
@@ -836,8 +848,8 @@ export default function Dashboard() {
         }}>
           <FiAlertTriangle size={15} color="#BA7517" />
           <span style={{ fontSize: 13, color: "#854F0B", fontWeight: 500 }}>
-            {expiryToday.length} job{expiryToday.length > 1 ? "s" : ""} expiring today —&nbsp;
-            {expiryToday.map(j => j.job_no).join(", ")}
+            {expiryToday.filter(j => myJobs.some(mj => mj._id === j._id)).length} job(s) expiring today —&nbsp;
+            {expiryToday.filter(j => myJobs.some(mj => mj._id === j._id)).map(j => j.job_no).join(", ")}
           </span>
           <button
             onClick={() => setFilter("expiry")}
@@ -937,7 +949,7 @@ export default function Dashboard() {
           }}>
             {[
               { label: "Job No." },
-              { label: "Customer" },
+              { label: "Customer / Creator" },
               { label: "Stage" },
               { label: "Status" },
               { label: "Amount" },

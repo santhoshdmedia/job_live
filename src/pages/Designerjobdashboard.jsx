@@ -40,6 +40,7 @@ import {
   InfoCircleOutlined,
   HourglassOutlined,
   TeamOutlined,
+  StarOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import duration from "dayjs/plugin/duration";
@@ -171,9 +172,13 @@ const CustomerInfoBlock = ({
   onRequestInfo,
   requesting,
   isSuperAdmin,
+  userEmail,
 }) => {
-  // Super admins always see details
-  if (isSuperAdmin || hasAccess) {
+  // Check if user is the special allowed user
+  const isSpecialUser = userEmail?.toLowerCase().trim() === "hari@dmedia.in";
+  
+  // Super admins or special users or granted access see details
+  if (isSuperAdmin || isSpecialUser || hasAccess) {
     return (
       <div style={{
         display: "flex", alignItems: "center", gap: 8, marginBottom: 8,
@@ -194,10 +199,16 @@ const CustomerInfoBlock = ({
             <PhoneOutlined style={{ fontSize: 10 }} />
             {job.customer_phone || "—"}
           </div>
-          {hasAccess && !isSuperAdmin && (
+          {hasAccess && !isSuperAdmin && !isSpecialUser && (
             <div style={{ fontSize: 10, color: "#16a34a", fontWeight: 600, marginTop: 2 }}>
               <UnlockOutlined style={{ marginRight: 3 }} />
               Access granted
+            </div>
+          )}
+          {isSpecialUser && (
+            <div style={{ fontSize: 10, color: "#8b5cf6", fontWeight: 600, marginTop: 2 }}>
+              <StarOutlined style={{ marginRight: 3 }} />
+              Special access: hari@dmedia.in
             </div>
           )}
         </div>
@@ -596,6 +607,7 @@ const JobCard = ({
   onViewUpload,
   onRequestInfo,
   requestingInfo,
+  userEmail,
 }) => {
   const delivDate = job.estimated_delivery_date ? dayjs(job.estimated_delivery_date) : null;
   const isOverdue = delivDate && delivDate.isBefore(dayjs());
@@ -647,6 +659,7 @@ const JobCard = ({
           onRequestInfo={() => onRequestInfo(job)}
           requesting={requestingInfo === job._id}
           isSuperAdmin={isSuperAdmin}
+          userEmail={userEmail}
         />
 
         {/* Session status pill */}
@@ -1280,6 +1293,7 @@ const DesignerJobDashboard = () => {
                   onViewUpload={openDesignModal}
                   onRequestInfo={openRequestModal}
                   requestingInfo={requestingInfo}
+                  userEmail={user?.email}
                 />
               );
             })}
@@ -1516,7 +1530,7 @@ const DesignerJobDashboard = () => {
                     Created by: <strong>{designJob.created_by || "—"}</strong>
                   </div>
                   {/* Only show customer details if admin or access granted */}
-                  {(isSuperAdmin || infoRequestMap[designJob._id]?.has_access) && (
+                  {(isSuperAdmin || infoRequestMap[designJob._id]?.has_access || user?.email === "hari@dmedia.in") && (
                     <div style={{ fontSize: 12, color: "#374151", marginTop: 4 }}>
                       <UserOutlined style={{ marginRight: 4 }} />
                       <strong>{designJob.customer_name}</strong>

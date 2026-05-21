@@ -630,41 +630,71 @@ const PaymentGate = ({ job, onCollect }) => {
   );
 };
 
-// ─── Collect payment modal ────────────────────────────────────────────────────
+// ─── Collect payment modal with discount ──────────────────────────────────────
+// ─── Collect payment modal with real discount ──────────────────────────────────────
 const CollectPaymentModal = ({ job, onClose, onCollected }) => {
   const [amount, setAmount] = useState("");
   const [mode, setMode] = useState("cash");
+  const [discountAmount, setDiscountAmount] = useState(0);
+  const [discountApplied, setDiscountApplied] = useState(false);
   const [saving, setSaving] = useState(false);
   const { toast, show, dismiss } = useToast();
 
   const totalPaid = parseFloat(job.payment_amount || 0);
-  const balance = Math.max(0, (job.total_amount || 0) - totalPaid);
+  const totalAmount = job.total_amount || 0;
+  const originalBalance = Math.max(0, totalAmount - totalPaid);
+  
+  // REAL discount - reduces the actual balance
+  const discountedBalance = originalBalance - (discountApplied ? discountAmount : 0);
+  const remainingAfterPayment = discountedBalance - (parseFloat(amount) || 0);
 
   const handleSave = async () => {
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) return show("Enter a valid amount", "warning");
-    if (amt > balance)
+    if (amt > discountedBalance)
       return show(
-        `Amount exceeds balance of ₹${balance.toLocaleString("en-IN")}`,
+        `Amount cannot exceed discounted balance of ₹${discountedBalance.toLocaleString("en-IN")}`,
         "warning",
       );
+    
     setSaving(true);
     try {
+      // Calculate new paid amount (actual money received)
       const newPaid = totalPaid + amt;
+      
+      // Calculate total discount given on this job
+      const totalDiscount = discountApplied ? discountAmount : 0;
+      
       await api(`/jobs/${job._id}`, {
         method: "PUT",
         body: JSON.stringify({
           payment_amount: String(newPaid),
           payment_mode: mode,
+          discount_amount: totalDiscount, // Store discount amount
+          // Optionally store the discounted balance
+          discounted_balance: discountedBalance,
         }),
       });
+      
       onCollected(newPaid, mode);
       onClose();
+      
+      if (discountApplied && discountAmount > 0) {
+        show(`✅ ₹${amt.toLocaleString("en-IN")} collected! Discount of ₹${discountAmount.toLocaleString("en-IN")} applied. Remaining: ₹${remainingAfterPayment.toLocaleString("en-IN")}`, "success");
+      } else {
+        show(`✅ ₹${amt.toLocaleString("en-IN")} collected successfully!`, "success");
+      }
     } catch (err) {
       show(err.message, "error");
     } finally {
       setSaving(false);
     }
+  };
+
+  const resetDiscount = () => {
+    setDiscountAmount(0);
+    setDiscountApplied(false);
+    setAmount("");
   };
 
   return (
@@ -691,25 +721,115 @@ const CollectPaymentModal = ({ job, onClose, onCollected }) => {
           </button>
         </div>
         <div className="px-5 py-4 space-y-3">
+          {/* Original Balance */}
           <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-center">
             <div className="text-xs text-amber-600 font-semibold">
-              Balance due
+              Original Balance
             </div>
             <div className="text-2xl font-bold text-amber-700 mt-1">
-              ₹{balance.toLocaleString("en-IN")}
+              ₹{originalBalance.toLocaleString("en-IN")}
             </div>
           </div>
+
+          {/* Discount Section - Reduces the balance */}
+          <div className="bg-green-50 border border-green-100 rounded-xl p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xs text-green-600 font-semibold">
+                Apply Discount
+                <span className="ml-1 text-[10px] font-normal text-gray-400">
+                  - reduces balance
+                </span>
+              </div>
+              {discountApplied && discountAmount > 0 && (
+                <button
+                  onClick={resetDiscount}
+                  className="text-xs text-green-600 underline hover:text-green-800"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="number"
+                placeholder="Discount amount"
+                value={discountAmount}
+                onChange={(e) => {
+                  const disc = parseFloat(e.target.value) || 0;
+                  if (disc <= originalBalance) {
+                    setDiscountAmount(disc);
+                    if (disc > 0) {
+                      setDiscountApplied(true);
+                      setAmount("");
+                    } else {
+                      setDiscountApplied(false);
+                    }
+                  }
+                }}
+                min={0}
+                max={originalBalance}
+                step={1}
+                className="flex-1 px-3 py-2 border border-green-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm bg-white"
+              />
+              <button
+                onClick={() => {
+                  const percentageDisc = originalBalance * 0.1;
+                  if (percentageDisc > 0 && percentageDisc <= originalBalance) {
+                    setDiscountAmount(percentageDisc);
+                    setDiscountApplied(true);
+                    setAmount("");
+                  }
+                }}
+                className="px-3 py-2 bg-green-100 text-green-700 rounded-lg text-sm font-medium hover:bg-green-200 transition-colors"
+              >
+                10%
+              </button>
+            </div>
+            {discountApplied && discountAmount > 0 && (
+              <div className="text-xs text-green-600 mt-2">
+                ✓ ₹{discountAmount.toLocaleString("en-IN")} discount applied
+              </div>
+            )}
+          </div>
+
+          {/* Updated Balance after discount */}
+          <div className={`rounded-xl p-3 text-center border-2 transition-all ${
+            discountApplied && discountAmount > 0
+              ? "bg-blue-50 border-blue-400 ring-2 ring-blue-200"
+              : "bg-gray-50 border-gray-200"
+          }`}>
+            <div className="text-xs font-semibold mb-1 ${discountApplied ? 'text-blue-600' : 'text-gray-500'}">
+              {discountApplied ? "💰 Balance after discount" : "Current Balance"}
+            </div>
+            <div className={`text-2xl font-bold mt-1 ${discountApplied ? 'text-blue-700' : 'text-gray-700'}`}>
+              ₹{discountedBalance.toLocaleString("en-IN")}
+            </div>
+            {discountApplied && discountAmount > 0 && (
+              <div className="text-[10px] text-green-600 mt-1">
+                Saved: ₹{discountAmount.toLocaleString("en-IN")}
+              </div>
+            )}
+          </div>
+
+          {/* Amount collecting */}
           <Field label="Amount collecting" required>
             <Inp
               type="number"
-              placeholder={`Max ₹${balance}`}
+              placeholder={`Max ₹${discountedBalance}`}
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               min={1}
-              max={balance}
+              max={discountedBalance}
               step={1}
             />
+            {amount && parseFloat(amount) > 0 && (
+              <div className="text-xs text-gray-500 mt-1">
+                Remaining after payment: ₹{Math.max(0, discountedBalance - parseFloat(amount)).toLocaleString("en-IN")}
+              </div>
+            )}
           </Field>
+
+          {/* Payment mode */}
           <Field label="Payment mode" required>
             <Sel value={mode} onChange={(e) => setMode(e.target.value)}>
               <option value="cash">Cash</option>
@@ -719,11 +839,51 @@ const CollectPaymentModal = ({ job, onClose, onCollected }) => {
               <option value="cheque">Cheque</option>
             </Sel>
           </Field>
+
+          {/* Summary Section */}
+          {(discountApplied || amount) && (
+            <div className="bg-gray-50 rounded-xl p-3 space-y-1.5 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Original balance:</span>
+                <span className="font-medium">₹{originalBalance.toLocaleString("en-IN")}</span>
+              </div>
+              {discountApplied && discountAmount > 0 && (
+                <div className="flex justify-between text-green-600">
+                  <span>Discount applied:</span>
+                  <span>- ₹{discountAmount.toLocaleString("en-IN")}</span>
+                </div>
+              )}
+              <div className="flex justify-between pt-1 border-t border-gray-200">
+                <span className="font-semibold">Balance after discount:</span>
+                <span className="font-bold text-blue-600">₹{discountedBalance.toLocaleString("en-IN")}</span>
+              </div>
+              {amount && parseFloat(amount) > 0 && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Paying now:</span>
+                    <span className="font-medium text-green-600">₹{parseFloat(amount).toLocaleString("en-IN")}</span>
+                  </div>
+                  <div className="flex justify-between pt-1 border-t border-gray-200">
+                    <span className="font-semibold">Remaining balance:</span>
+                    <span className="font-bold text-amber-600">
+                      ₹{Math.max(0, discountedBalance - parseFloat(amount)).toLocaleString("en-IN")}
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-2 pt-1 pb-4">
             <Btn variant="ghost" onClick={onClose}>
               Cancel
             </Btn>
-            <Btn variant="success" loading={saving} onClick={handleSave}>
+            <Btn 
+              variant="success" 
+              loading={saving} 
+              onClick={handleSave}
+              disabled={!amount || parseFloat(amount) <= 0 || parseFloat(amount) > discountedBalance}
+            >
               Save payment
             </Btn>
           </div>
@@ -1135,11 +1295,8 @@ const DeliveryPanel = () => {
   const balance = Math.max(0, totalAmount - paidAmount);
   const isPaid = balance <= 0;
 
-  // const paymentBlocked =
-  //   !isPaid && (deliveryMethod === "delivery" || deliveryMethod === "erection");
-  // AFTER
-const paymentBlocked =
-  !isPaid && deliveryMethod === "delivery";
+  const paymentBlocked =
+    !isPaid && (deliveryMethod === "delivery" || deliveryMethod === "erection");
 
   const canSubmit =
     !!deliveryMethod &&
@@ -1370,11 +1527,8 @@ const paymentBlocked =
                 <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-2 xl:grid-cols-4 gap-2">
                   {DELIVERY_METHODS.map((m) => {
                     const isActive = deliveryMethod === m.key;
-                    // const isBlocked =
-                    //   !isPaid && (m.key === "delivery" || m.key === "erection");
-                    // AFTER
-                  const isBlocked =
-                    !isPaid && m.key === "delivery";
+                    const isBlocked =
+                      !isPaid && (m.key === "delivery" || m.key === "erection");
                     return (
                       <button
                         key={m.key}
