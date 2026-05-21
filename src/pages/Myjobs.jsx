@@ -507,8 +507,6 @@ const generateInvoicePDF = async (job) => {
   hr(ty, LGRAY, 0.3);
   ty += 6;
 
-
-
   // ──────────────────────────────────────────────────────────────────────────
   // SECTION 11 — FOOTER
   // ──────────────────────────────────────────────────────────────────────────
@@ -1126,6 +1124,13 @@ const Myjobs = () => {
   const countdownRef   = useRef(null);
   const userProfile    = useMemo(() => getUserProfile(), []);
   const isSuperAdmin   = userProfile?.role === "super admin";
+  
+  // Check if user is authorized for quotation button (admin@dmedia.in or admin@printe.in)
+  const isQuotationAuthorized = useMemo(() => {
+    const userEmail = userProfile?.email || userProfile?.username || "";
+    const authorizedEmails = ["admin@dmedia.in", "admin@printe.in"];
+    return authorizedEmails.includes(userEmail.toLowerCase());
+  }, [userProfile]);
 
   const fetchAllAdmins = async () => {
     const res  = await fetch(`${API_BASE}/admin/get_admin`, { headers: authHeader() });
@@ -1339,12 +1344,13 @@ const Myjobs = () => {
               </Button>
             </Tooltip>
 
-            {record.job_status === "design" && (
+            {/* Quotation button - only show for authorized admins */}
+            {record.job_status === "design" && isQuotationAuthorized && (
               <Tooltip title="Download Quotation PDF">
                 <Button icon={<FileTextOutlined />} size="small"
                   style={{ width: isMobile ? "100%" : "auto", background: THEME.textPrimary, borderColor: THEME.textPrimary, color: "#fff" }}
                   onClick={() => generateInvoicePDF(record)}>
-                  {!isMobile && "Invoice"}
+                  {!isMobile && "Quotation"}
                 </Button>
               </Tooltip>
             )}
