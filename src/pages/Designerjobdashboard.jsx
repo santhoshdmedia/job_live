@@ -42,6 +42,8 @@ const FILTER_LIVE           = "live";
 const FILTER_ON_HOLD        = "on_hold";
 const FILTER_DESIGN_UPLOADED = "design_uploaded";
 const FILTER_ACCESS_PENDING  = "access_pending";
+const FILTER_COMPLETED       = "completed";
+const FILTER_APPROVED_DESIGN = "approved_design";
 
 // ─── Image compression ────────────────────────────────────────────────────────
 const compressImage = (file, maxSizeBytes = 900 * 1024) =>
@@ -540,12 +542,14 @@ const DesignerJobDashboard = () => {
         const res = await fetch(`${BASE}`, { headers: authHeader() });
         const data = await res.json();
         const rows = Array.isArray(data?.data?.jobs) ? data.data.jobs : Array.isArray(data?.data) ? data.data : [];
-        myJobs = rows.filter((j) => j.current_stage?.stage === "design" && j.design_status !== "approved");
+        // REMOVED: filter for design_status !== "approved" to show ALL jobs with design stage
+        myJobs = rows.filter((j) => j.current_stage?.stage === "design");
       } else {
         const res = await fetch(`${BASE}/assigned-to/${userId}`, { headers: authHeader() });
         const data = await res.json();
         const rows = Array.isArray(data?.data) ? data.data : [];
-        myJobs = rows.filter((j) => j.current_stage?.stage === "design" && j.design_status !== "approved");
+        // REMOVED: filter for design_status !== "approved" to show ALL jobs with design stage
+        myJobs = rows.filter((j) => j.current_stage?.stage === "design");
       }
       setJobs(myJobs);
       setLastRefresh(dayjs());
@@ -573,8 +577,8 @@ const DesignerJobDashboard = () => {
             const r = await fetch(`${INFO_BASE}/job/${j._id}?userId=${userId}`, { headers: authHeader() });
             const d = await r.json();
             if (d.success) reqMap[j._id] = d.data;
-          } catch { /* ignore */ }
-        }));
+          } catch { /* ignore */ }}
+        ));
         setInfoRequestMap(reqMap);
       }
     } catch (err) {
@@ -764,6 +768,19 @@ const DesignerJobDashboard = () => {
   const onHoldCount = jobs.filter((j) => j.job_status === "on_hold").length;
   const designUploadedCount = jobs.filter((j) => j.design_file || j.cart_items?.some((i) => i.design_file)).length;
   const accessPendingCount = Object.values(infoRequestMap).filter((r) => r?.status === "pending").length;
+  
+  // ─── NEW: Completed Design count ──────────────────────────────────────────
+  const completedCount = jobs.filter((j) =>
+    j.job_status === "completed" ||
+    j.job_status === "dispatch" ||
+    j.job_status === "delivered" ||
+    j.current_stage?.stage === "dispatch" ||
+    j.current_stage?.stage === "delivered" ||
+    j.current_stage?.stage === "delivery"
+  ).length;
+  
+  // ─── NEW: Approved Design count (design_status === "approved") ────────────
+  const approvedDesignCount = jobs.filter((j) => j.design_status === "approved").length;
 
   // ─── Filtered jobs ────────────────────────────────────────────────────────
   const filteredJobs = jobs.filter((job) => {
@@ -777,17 +794,30 @@ const DesignerJobDashboard = () => {
         return !!(job.design_file || job.cart_items?.some((i) => i.design_file));
       case FILTER_ACCESS_PENDING:
         return infoRequestMap[job._id]?.status === "pending";
+      case FILTER_COMPLETED:
+        return (
+          job.job_status === "completed" ||
+          job.job_status === "dispatch" ||
+          job.job_status === "delivered" ||
+          job.current_stage?.stage === "dispatch" ||
+          job.current_stage?.stage === "delivered" ||
+          job.current_stage?.stage === "delivery"
+        );
+      case FILTER_APPROVED_DESIGN:
+        return job.design_status === "approved";
       default:
         return true;
     }
   });
 
-  // ─── Summary strip config ─────────────────────────────────────────────────
+  // ─── Summary strip config (now with 7 cards) ────────────────────────────────
   const summaryItems = [
     { key: FILTER_ALL,            label: "Total Assigned",   value: jobs.length,           color: "#3b82f6", bg: "#eff6ff", activeBg: "#dbeafe", border: "#bfdbfe" },
     { key: FILTER_LIVE,           label: "Live Sessions",    value: liveCount,              color: "#16a34a", bg: "#f0fdf4", activeBg: "#dcfce7", border: "#86efac" },
     { key: FILTER_ON_HOLD,        label: "On Hold",          value: onHoldCount,            color: "#f97316", bg: "#fff7ed", activeBg: "#ffedd5", border: "#fdba74" },
     { key: FILTER_DESIGN_UPLOADED, label: "Design Uploaded", value: designUploadedCount,    color: "#8b5cf6", bg: "#f5f3ff", activeBg: "#ede9fe", border: "#c4b5fd" },
+    { key: FILTER_COMPLETED,       label: "Completed",       value: completedCount,         color: "#0f766e", bg: "#f0fdfa", activeBg: "#ccfbf1", border: "#99f6e4" },
+    { key: FILTER_APPROVED_DESIGN, label: "Design Approved", value: approvedDesignCount,    color: "#be185d", bg: "#fce7f3", activeBg: "#fbcfe8", border: "#f9a8d4" },
     ...(!isSuperAdmin ? [
       { key: FILTER_ACCESS_PENDING, label: "Access Pending", value: accessPendingCount,     color: "#d97706", bg: "#fffbeb", activeBg: "#fef3c7", border: "#fcd34d" },
     ] : []),
@@ -830,7 +860,7 @@ const DesignerJobDashboard = () => {
       </div>
 
       {/* ── Summary strip (CLICKABLE FILTERS) ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(130px,1fr))", gap: 10, marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${summaryItems.length}, minmax(0, 1fr))`, gap: 10, marginBottom: 16 }}>
         {summaryItems.map(({ key, label, value, color, bg, activeBg, border }) => {
           const isActive = activeFilter === key;
           return (
@@ -839,7 +869,7 @@ const DesignerJobDashboard = () => {
               onClick={() => setActiveFilter(isActive ? FILTER_ALL : key)}
               style={{
                 background: isActive ? activeBg : bg,
-                borderRadius: 10, padding: "10px 14px",
+                borderRadius: 10, padding: "10px 10px",
                 border: `${isActive ? "2px" : "1px"} solid ${isActive ? color : `${color}33`}`,
                 cursor: "pointer",
                 transition: "all 0.18s ease",
@@ -855,10 +885,10 @@ const DesignerJobDashboard = () => {
                   background: color, animation: "pulse 1.5s infinite",
                 }} />
               )}
-              <div style={{ fontSize: 22, fontWeight: 800, color }}>{value}</div>
-              <div style={{ fontSize: 11, color: isActive ? color : "#6b7280", fontWeight: isActive ? 700 : 600 }}>{label}</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color }}>{value}</div>
+              <div style={{ fontSize: 10, color: isActive ? color : "#6b7280", fontWeight: isActive ? 700 : 600 }}>{label}</div>
               {isActive && (
-                <div style={{ fontSize: 9, color, fontWeight: 700, marginTop: 2, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                <div style={{ fontSize: 8, color, fontWeight: 700, marginTop: 2, textTransform: "uppercase", letterSpacing: "0.04em" }}>
                   ● Filtering
                 </div>
               )}
