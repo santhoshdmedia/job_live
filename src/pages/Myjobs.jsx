@@ -43,6 +43,7 @@ import {
   InfoCircleOutlined,
   CalendarOutlined,
   KeyOutlined,
+  PrinterOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
@@ -153,17 +154,6 @@ const getImageDataUri = (url) =>
   });
 
 // ── Generate Invoice PDF ──────────────────────────────────────────────────────
-// Layout matches the quotation format:
-//   • QUOTATION label + "ORIGINAL FOR RECIPIENT" banner
-//   • Company block (left) + Logo (right)
-//   • Quotation #, Date, Validity strip
-//   • Customer Details + Place of Supply
-//   • Items table: #, Item, Rate/Item, Qty, Amount
-//   • Total row + Amount in words
-//   • Bank Details + Authorised Signatory
-//   • Terms & Conditions
-//   • Footer: page info + Powered By D-Media
-// ─────────────────────────────────────────────────────────────────────────────
 const generateInvoicePDF = async (job) => {
   const doc    = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const PW     = 210;
@@ -172,7 +162,6 @@ const generateInvoicePDF = async (job) => {
   const CW     = PW - MARGIN * 2;
   let   y      = 0;
 
-  // ── Colour palette ──────────────────────────────────────────────────────────
   const BLACK   = [0,   0,   0  ];
   const WHITE   = [255, 255, 255];
   const DARK    = [20,  20,  20 ];
@@ -181,7 +170,6 @@ const generateInvoicePDF = async (job) => {
   const BGLIGHT = [248, 248, 248];
   const BLUE    = [30,  80,  160];
 
-  // ── Draw helpers ────────────────────────────────────────────────────────────
   const hr = (yy, color = LGRAY, w = 0.25) => {
     doc.setDrawColor(...color);
     doc.setLineWidth(w);
@@ -192,7 +180,6 @@ const generateInvoicePDF = async (job) => {
     if (stroke) { doc.setDrawColor(...stroke);  doc.setLineWidth(0.25); doc.rect(x, ry, w, h, "S"); }
   };
 
-  // ── Item calculation helpers ────────────────────────────────────────────────
   const isSqFtItem = (it) =>
     it.quantity_type === "sq.ft" || (parseFloat(it.sq_ft) > 0);
 
@@ -210,12 +197,8 @@ const generateInvoicePDF = async (job) => {
   const discountAmt = parseFloat(job.discount_amount    || 0);
   const discountPct = parseFloat(job.discount_percentage || 0);
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // SECTION 1 — TOP BANNER
-  // ──────────────────────────────────────────────────────────────────────────
   y = 8;
 
-  // "QUOTATION" pill (top-left)
   doc.setFillColor(...WHITE);
   doc.roundedRect(MARGIN, y, 4, 6, 1, 1, "F");
   doc.setTextColor(...BLUE);
@@ -223,7 +206,6 @@ const generateInvoicePDF = async (job) => {
   doc.setFont("helvetica", "bold");
   doc.text("QUOTATION", MARGIN + 10, y + 4.2, { align: "center" });
 
-  // "ORIGINAL FOR RECIPIENT" (top-right)
   doc.setTextColor(...MID);
   doc.setFontSize(7);
   doc.setFont("helvetica", "normal");
@@ -231,17 +213,12 @@ const generateInvoicePDF = async (job) => {
 
   y += 10;
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // SECTION 2 — COMPANY BLOCK (left) + LOGO (right)
-  // ──────────────────────────────────────────────────────────────────────────
   const logoUrl = IMAGE_HELPER?.Dlogo ||
     "https://www.dmedia.in/assets/images/edit_white_logo1.png";
 
-  // Company name
   doc.setTextColor(...DARK);
   doc.setFontSize(10);
   doc.setFont("helvetica", "bold");
-  // Wrap if too long
   const companyNameLines = doc.splitTextToSize(
     "PAZHANAM DESIGNS AND CONSTRUCTIONS PRIVATE LIMITED",
     CW - 36
@@ -249,12 +226,12 @@ const generateInvoicePDF = async (job) => {
   doc.text(companyNameLines, MARGIN, y);
 
   const companyInfoLines = [
-    `GSTIN ${job.gst_no || "33AANCP3376Q1ZN"}   PAN AANCP3376Q`,
+    `GSTIN : 33AANCP3376Q1ZN    PAN : AANCP3376Q`,
     "NO.35, GROUND FLOOR, SUBHAM ILLAM",
     "KUMUTHAM SALAI, Tiruchirappalli",
     "TIRUCHIRAPPALLI, TAMIL NADU, 620018",
-    "Mobile +91 7373610000, 9943026600   Email dmediaculbe@gmail.com",
-    "Website www.dmedia.in",
+    "Mobile : +91 7373610000, 9943026600   Email : dmediaculbe@gmail.com",
+    "Website : www.dmedia.in",
   ];
   let cy = y + companyNameLines.length * 5 + 1;
   doc.setFontSize(7.5);
@@ -265,7 +242,6 @@ const generateInvoicePDF = async (job) => {
     cy += 4;
   });
 
-  // Logo box (right)
   try {
     const logoB64 = await getImageDataUri(logoUrl);
     const logoX   = PW - MARGIN - 32;
@@ -278,9 +254,6 @@ const generateInvoicePDF = async (job) => {
   hr(y, LGRAY, 0.4);
   y += 5;
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // SECTION 3 — QUOTATION META STRIP
-  // ──────────────────────────────────────────────────────────────────────────
   const invDate  = job.order_date
     ? dayjs(job.order_date).format("DD MMM YYYY")
     : dayjs().format("DD MMM YYYY");
@@ -299,23 +272,18 @@ const generateInvoicePDF = async (job) => {
 
   y += 14;
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // SECTION 4 — CUSTOMER DETAILS (left) + PLACE OF SUPPLY (right)
-  // ──────────────────────────────────────────────────────────────────────────
   const addr    = job.delivery_address || {};
   const colMid  = MARGIN + CW * 0.56;
   const leftMaxW = colMid - MARGIN - 4;
 
-  const sectionY = y; // anchor for right column
+  const sectionY = y;
 
-  // Left — Customer Details label
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
   doc.setTextColor(...DARK);
   doc.text("Customer Details:", MARGIN, y);
   y += 5;
 
-  // Customer name
   doc.setFontSize(9.5);
   doc.setFont("helvetica", "bold");
   doc.setTextColor(...DARK);
@@ -323,7 +291,6 @@ const generateInvoicePDF = async (job) => {
   doc.text(nameLines, MARGIN, y);
   y += nameLines.length * 5;
 
-  // Address lines
   const addrParts = [
     addr.street,
     [addr.city, addr.state].filter(Boolean).join(", "),
@@ -340,7 +307,6 @@ const generateInvoicePDF = async (job) => {
     y += wrapped.length * 4.5;
   });
 
-  // Right column — Place of Supply
   let rcy = sectionY;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
@@ -373,14 +339,10 @@ const generateInvoicePDF = async (job) => {
     rcy += 5;
   }
 
-  // Advance y past whichever column is taller
   y = Math.max(y, rcy) + 5;
   hr(y, LGRAY, 0.3);
   y += 5;
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // SECTION 5 — ITEMS TABLE
-  // ──────────────────────────────────────────────────────────────────────────
   const tableRows = cartItems.map((it, i) => {
     const desc  = [it.product_name, it.variation, it.printing_type]
       .filter(Boolean).join(" | ");
@@ -427,9 +389,6 @@ const generateInvoicePDF = async (job) => {
 
   y = doc.lastAutoTable.finalY;
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // SECTION 6 — EXTRA CHARGES (discount / design / delivery)
-  // ──────────────────────────────────────────────────────────────────────────
   const extraRows = [
     ...(discountAmt > 0
       ? [{ label: `Discount (${discountPct}%)`, value: `- Rs. ${discountAmt.toFixed(2)}`, green: true }]
@@ -463,10 +422,8 @@ const generateInvoicePDF = async (job) => {
     doc.line(totX, ty - 1, totRX, ty - 1);
   });
 
-  // ── TOTAL ROW ───────────────────────────────────────────────────────────────
   fillRect(MARGIN, ty, CW, 10, [235, 235, 235], LGRAY);
 
-  // Left: total items / qty
   const totalQty = cartItems.reduce((s, it) => s + parseFloat(it.quantity || 1), 0);
   doc.setFontSize(7.5);
   doc.setFont("helvetica", "normal");
@@ -477,13 +434,11 @@ const generateInvoicePDF = async (job) => {
     ty + 6.5
   );
 
-  // Centre: "Total" label
   doc.setFontSize(10);
   doc.setFont("helvetica", "bold");
   doc.setTextColor(...DARK);
   doc.text("Total", PW / 2, ty + 6.5, { align: "center" });
 
-  // Right: grand total amount
   doc.setFontSize(11);
   doc.setTextColor(...DARK);
   doc.text(
@@ -495,7 +450,6 @@ const generateInvoicePDF = async (job) => {
 
   ty += 13;
 
-  // ── Amount in words ──────────────────────────────────────────────────────────
   doc.setFontSize(7.5);
   doc.setFont("helvetica", "italic");
   doc.setTextColor(...MID);
@@ -507,14 +461,9 @@ const generateInvoicePDF = async (job) => {
   hr(ty, LGRAY, 0.3);
   ty += 6;
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // SECTION 11 — FOOTER
-  // ──────────────────────────────────────────────────────────────────────────
   const footerY = PH - 14;
-
   hr(footerY - 4, LGRAY, 0.25);
 
-  // Left: page info
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7);
   doc.setTextColor(...MID);
@@ -530,22 +479,312 @@ const generateInvoicePDF = async (job) => {
     footerY + 5.5
   );
 
-  
-  // Right: "Powered By D-Media" box
   const pbX = PW - MARGIN - 32;
-  // Reduced height from 15 to 10 and width from 32 to 28
   fillRect(pbX, footerY - 6, 28, 10, null);
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(6); // Reduced from 6 to 5
+  doc.setFontSize(6);
   doc.setTextColor(0, 0, 0);
-  doc.text("Powered By", pbX + 14, footerY - 0, { align: "center" }); // Even more top padding
+  doc.text("Powered By", pbX + 14, footerY - 0, { align: "center" });
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(8); // Reduced from 9 to 8
-  doc.setTextColor(0, 0, 0); // White text on black background
-  doc.text("D-Media", pbX + 14, footerY + 5, { align: "center" }); // Adjusted position
+  doc.setFontSize(8);
+  doc.setTextColor(0, 0, 0);
+  doc.text("D-Media", pbX + 14, footerY + 5, { align: "center" });
 
-  // ── Save ─────────────────────────────────────────────────────────────────────
   doc.save(`Quotation_${job.job_no || "job"}.pdf`);
+};
+
+// ── Generate Job Sheet PDF ────────────────────────────────────────────────────
+// Layout matches the physical D-Media job sheet pad:
+//   • Header: Order Date (left), Order No (right), D-Media logo
+//   • Customer Details line
+//   • Delivery To + Est. Delivery On
+//   • Items table: S.No | Product | Size | Quantity | Amount
+//   • Comments box
+//   • Footer: Total Job Amount, Advance, Bill No
+// ─────────────────────────────────────────────────────────────────────────────
+const generateJobSheetPDF = async (job) => {
+  // Use A5 landscape-ish or stick to A4 but compact layout matching the slip
+  const doc    = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const PW     = 210;
+  const PH     = 297;
+  const MARGIN = 12;
+  const CW     = PW - MARGIN * 2;
+
+  // Colours
+  const WHITE   = [255, 255, 255];
+  const DARK    = [15,  15,  15 ];
+  const MID     = [90,  90,  90 ];
+  const LGRAY   = [200, 200, 200];
+  const BGLIGHT = [245, 245, 245];
+  const NAVY    = [20,  50,  120];
+
+  const cartItems  = job.cart_items || [];
+  const grandTotal = parseFloat(job.total_amount || 0);
+  const addr       = job.delivery_address || {};
+
+  const invDate = job.order_date
+    ? dayjs(job.order_date).format("DD MMM YYYY")
+    : dayjs().format("DD MMM YYYY");
+  const estDate = job.estimated_delivery_date
+    ? dayjs(job.estimated_delivery_date).format("DD MMM YYYY")
+    : "";
+
+  // ── helpers ─────────────────────────────────────────────────────────────────
+  const hr = (yy, color = LGRAY, lw = 0.3) => {
+    doc.setDrawColor(...color);
+    doc.setLineWidth(lw);
+    doc.line(MARGIN, yy, PW - MARGIN, yy);
+  };
+  const rect = (x, y, w, h, fill, stroke, lw = 0.4) => {
+    if (fill)   { doc.setFillColor(...fill);   doc.rect(x, y, w, h, "F"); }
+    if (stroke) { doc.setDrawColor(...stroke); doc.setLineWidth(lw); doc.rect(x, y, w, h, "S"); }
+  };
+  const txt = (text, x, y, opts = {}) => {
+    doc.text(String(text ?? ""), x, y, opts);
+  };
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // OUTER BORDER  (full page border like the physical pad)
+  // ════════════════════════════════════════════════════════════════════════════
+  // rect(MARGIN - 3, 8, CW + 6, PH - 18, null, NAVY, 0.8);
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // SECTION 1 — HEADER
+  // ════════════════════════════════════════════════════════════════════════════
+  let y = 14;
+
+  // "Order Date :" label + value (left)
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...MID);
+  txt("Order Date :", MARGIN, y);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(...DARK);
+  txt(invDate, MARGIN + doc.getTextWidth("Order Date :") + 2, y);
+
+  // "Order No :" label + value (centre-right)
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...MID);
+  const orderNoLabel = "Order No :";
+  const orderNoX = PW / 2 - 1;
+  txt(orderNoLabel, orderNoX, y);
+  doc.setFont("helvetica","bold");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...DARK);
+  txt(job.job_no || "—", orderNoX + doc.getTextWidth(orderNoLabel) + 1, y);
+
+  // Logo (top-right)
+  const logoUrl = IMAGE_HELPER?.Dlogo ||
+    "https://www.dmedia.in/assets/images/edit_white_logo1.png";
+  try {
+    const logoB64 = await getImageDataUri(logoUrl);
+    doc.addImage(logoB64, "PNG", PW - MARGIN - 44, y - 10, 48, 14);
+  } catch { /* skip */ }
+
+  // Company name under logo area
+  // doc.setFont("helvetica", "bold");
+  // doc.setFontSize(7);
+  // doc.setTextColor(...NAVY);
+  // txt("D-Media", PW - MARGIN - 17, y + 12, { align: "center" });
+
+  y += 8;
+  hr(y, LGRAY);
+  y += 5;
+
+  // ── Customer Details ─────────────────────────────────────────────────────────
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...MID);
+  txt("Customer Details :", MARGIN, y);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...DARK);
+  const custDetail = [job.customer_name, job.customer_phone].filter(Boolean).join("   |   ");
+  txt(custDetail, MARGIN + doc.getTextWidth("Customer Details :") + 2, y);
+
+  y += 7;
+  hr(y, LGRAY);
+  y += 5;
+
+  // ── Delivery To + Est. Delivery ─────────────────────────────────────────────
+  const deliveryLine = [addr.street, addr.city, addr.state, addr.pincode]
+    .filter(Boolean).join(", ");
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...MID);
+  txt("Delivery to :", MARGIN, y);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...DARK);
+  const delivLines = doc.splitTextToSize(deliveryLine || "—", CW * 0.55);
+  txt(delivLines, MARGIN + doc.getTextWidth("Delivery to :") + 3, y);
+
+  // Est. Delivery On (right column)
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...MID);
+  txt("Est. Delivery on :", PW - MARGIN - 60, y);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(...DARK);
+  txt(estDate || "—", PW - MARGIN - 60 + doc.getTextWidth("Est. Delivery on :") + 2, y);
+
+  y += Math.max(delivLines.length * 4.5, 6) + 5;
+  hr(y, LGRAY);
+  y += 4;
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // SECTION 2 — ITEMS TABLE
+  // ════════════════════════════════════════════════════════════════════════════
+  const isSqFtItem = (it) =>
+    it.quantity_type === "sq.ft" || (parseFloat(it.sq_ft) > 0);
+
+  const tableRows = cartItems.map((it, i) => {
+    const productDesc = [it.product_name, it.variation, it.printing_type]
+      .filter(Boolean).join("\n");
+    const size = isSqFtItem(it) && it.width && it.height
+      ? `${it.width}×${it.height} ${it.size_unit || ""}\n(${it.sq_ft} ft²)`
+      : (it.size || "—");
+    const qty = isSqFtItem(it)
+      ? `${it.quantity} pcs\n${it.sq_ft} ft²`
+      : String(it.quantity || 1);
+    const lineTotal = isSqFtItem(it)
+      ? (it.quantity || 0) * (it.sq_ft || 0) * (it.price || 0)
+      : (it.quantity || 0) * (it.price || 0);
+    return [i + 1, productDesc || "—", size, qty, `${lineTotal.toFixed(2)}`]; // Removed "Rs. "
+  });
+
+  // Pad rows to at least 6 for the physical look
+  // while (tableRows.length < 6) {
+  //   tableRows.push(["", "", "", "", ""]);
+  // }
+
+  autoTable(doc, {
+    startY: y,
+    head: [["S.No", "Product", "Size", "Quantity", "Amount"]],
+    body: tableRows,
+    theme: "grid",
+    headStyles: {
+      fillColor:   [230, 230, 230],
+      textColor:   DARK,
+      fontSize:    8.5,
+      fontStyle:   "bold",
+      halign:      "center",
+      valign:      "middle",
+      cellPadding: { top: 3, bottom: 3, left: 2, right: 2 },
+    },
+    bodyStyles: {
+      fontSize:    8,
+      textColor:   DARK,
+      cellPadding: { top: 5, bottom: 5, left: 2, right: 1 },  // reduced right padding from 2 to 1
+      valign:      "middle",
+      minCellHeight: 10,
+    },
+    columnStyles: {
+      0: { cellWidth: 12,  halign: "center" },
+      1: { cellWidth: 72,  halign: "left"   },
+      2: { cellWidth: 36,  halign: "center" },
+      3: { cellWidth: 28,  halign: "center" },
+      4: { cellWidth: 34,  halign: "right", fontStyle: "bold", cellPadding: { right: 2 } },
+    },
+    // margin:         { left: MARGIN, right: MARGIN },
+    // tableLineColor: [160, 160, 160],
+    // tableLineWidth: 0.3,
+  });
+
+  y = doc.lastAutoTable.finalY + 4;
+
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // SECTION 4 — FOOTER ROW (Simplified - removed Marketed by and stage boxes)
+  // ════════════════════════════════════════════════════════════════════════════
+  
+// ════════════════════════════════════════════════════════════════════════════
+// SECTION 4 — FOOTER ROW (Simplified - removed Marketed by and stage boxes)
+// ════════════════════════════════════════════════════════════════════════════
+
+// Display Total Job Amount - Aligned with table's Amount column
+// Display Total Job Amount - Both label and amount on the right side
+const footerY = y + 4;
+
+const labelText = "Total Job Amount : ";
+const amountText = `Rs. ${grandTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+
+// Calculate total width
+doc.setFont("helvetica", "normal");
+doc.setFontSize(9);
+const labelWidth = doc.getTextWidth(labelText);
+doc.setFont("helvetica", "bold");
+doc.setFontSize(10);
+const amountWidth = doc.getTextWidth(amountText);
+const totalWidth = labelWidth + amountWidth;
+
+// Position on the right side
+const rightX = (MARGIN + CW) - 8;
+const startX = rightX - totalWidth;
+
+// Draw label (normal)
+doc.setFont("helvetica", "normal");
+doc.setFontSize(9);
+doc.setTextColor(...MID);
+txt(labelText, startX, footerY);
+
+// Draw amount (bold)
+doc.setFont("helvetica", "bold");
+doc.setFontSize(10);
+doc.setTextColor(...DARK);
+txt(amountText, startX + labelWidth, footerY);
+
+  // Advance section
+  // const advanceX = MARGIN + colWidth + 20;
+  // doc.setFont("helvetica", "normal");
+  // doc.setFontSize(9);
+  // doc.setTextColor(...MID);
+  // txt("Advance :", advanceX, footerY);
+  
+  // rect(advanceX, footerY + 4, colWidth, 12, WHITE, [160, 160, 160], 0.3);
+  // if (job.payment_amount) {
+  //   doc.setFont("helvetica", "bold");
+  //   doc.setFontSize(10);
+  //   doc.setTextColor(...DARK);
+  //   txt(
+  //     `Rs. ${parseFloat(job.payment_amount).toFixed(2)}`,
+  //     advanceX + colWidth / 2,
+  //     footerY + 12,
+  //     { align: "center" }
+  //   );
+  // }
+
+  y = footerY + 24;
+  hr(y, LGRAY);
+  y += 8;
+
+  // Bill No only (removed signature)
+  // doc.setFont("helvetica", "normal");
+  // doc.setFontSize(9);
+  // doc.setTextColor(...MID);
+  // txt("Bill No :", MARGIN, y);
+
+  // // Line for Bill No
+  // doc.setDrawColor(...LGRAY);
+  // doc.setLineWidth(0.3);
+  // doc.line(MARGIN + doc.getTextWidth("Bill No :") + 5, y - 2, PW - MARGIN - 50, y - 2);
+
+  y += 12;
+
+  // ── "JOB SHEET" watermark label (bottom-right, matching physical pad) ────
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...DARK);
+  txt("JOB SHEET", PW - MARGIN - 3, PH - 14, { align: "right" });
+
+  // ── Powered By D-Media ───────────────────────────────────────────────────
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...MID);
+  txt("Powered By D-Media  |  www.dmedia.in", MARGIN, PH - 13);
+
+  doc.save(`JobSheet_${job.job_no || "job"}.pdf`);
 };
 
 // ─── Job status config ────────────────────────────────────────────────────────
@@ -1120,6 +1359,9 @@ const Myjobs = () => {
 
   const [pendingInfoCount, setPendingInfoCount] = useState(0);
 
+  // Track which job sheet is generating (for loading state)
+  const [generatingJobSheet, setGeneratingJobSheet] = useState(null);
+
   const autoRefreshRef = useRef(null);
   const countdownRef   = useRef(null);
   const userProfile    = useMemo(() => getUserProfile(), []);
@@ -1289,6 +1531,18 @@ const Myjobs = () => {
     finally { setQcAssigning(false); }
   };
 
+  // ── Job Sheet handler ────────────────────────────────────────────────────────
+  const handleJobSheet = async (record) => {
+    setGeneratingJobSheet(record._id);
+    try {
+      await generateJobSheetPDF(record);
+    } catch (err) {
+      message.error("Failed to generate Job Sheet: " + err.message);
+    } finally {
+      setGeneratingJobSheet(null);
+    }
+  };
+
   // ── Helpers ──────────────────────────────────────────────────────────────────
   const fmtCountdown = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   const p         = isMobile ? 8  : 16;
@@ -1331,9 +1585,10 @@ const Myjobs = () => {
     ...(!isMobile ? [{ title: "Status", dataIndex: "job_status", render: (s) => <StatusTag status={s} /> }] : []),
     ...(isDesktop  ? [{ title: "Stage",  key: "stage",            render: (_, r) => <StageTag stage={r.current_stage?.stage} /> }] : []),
     {
-      title: "", width: isMobile ? 110 : 230,
+      title: "", width: isMobile ? 110 : 260,
       render: (_, record) => {
         const isQC = record.job_status === "quality_check";
+        const isJobSheetGenerating = generatingJobSheet === record._id;
         return (
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: isMobile ? "flex-start" : "flex-end", flexDirection: isMobile ? "column" : "row" }}>
             <Tooltip title="View Job Details">
@@ -1354,6 +1609,24 @@ const Myjobs = () => {
                 </Button>
               </Tooltip>
             )}
+
+            {/* ── Job Sheet button — visible for all jobs ── */}
+            <Tooltip title="Download Job Sheet PDF">
+              <Button
+                icon={<PrinterOutlined />}
+                size="small"
+                loading={isJobSheetGenerating}
+                style={{
+                  width: isMobile ? "100%" : "auto",
+                  background: "#0f766e",
+                  borderColor: "#0f766e",
+                  color: "#fff",
+                }}
+                onClick={() => handleJobSheet(record)}
+              >
+                {!isMobile && "Job Sheet"}
+              </Button>
+            </Tooltip>
 
             {isQC && (
               <Tooltip title="Assign Quality Check Person">
@@ -1415,7 +1688,7 @@ const Myjobs = () => {
           <Card bodyStyle={{ padding: "0 0 8px 0" }} style={{ borderRadius: 12, border: `1px solid ${THEME.border}`, boxShadow: "0 2px 12px rgba(30,111,220,0.08)", background: THEME.bgCard, overflow: "hidden" }}>
             <Table
               dataSource={pagedJobs} loading={loading} columns={columns}
-              scroll={{ x: isMobile ? 360 : 900 }} rowKey={(r) => r._id || r.job_no}
+              scroll={{ x: isMobile ? 360 : 960 }} rowKey={(r) => r._id || r.job_no}
               size="small" rowClassName={(_, i) => (i % 2 === 0 ? "row-alt" : "")}
               pagination={{
                 current: page, pageSize, total: filteredJobs.length,
