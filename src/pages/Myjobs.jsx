@@ -44,6 +44,12 @@ import {
   CalendarOutlined,
   KeyOutlined,
   PrinterOutlined,
+  WhatsAppOutlined,
+  MailOutlined,
+  DownloadOutlined,
+  ShareAltOutlined,
+  CopyOutlined,
+  MessageOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
@@ -493,30 +499,22 @@ const generateInvoicePDF = async (job) => {
   doc.save(`Quotation_${job.job_no || "job"}.pdf`);
 };
 
-// ── Generate Job Sheet PDF ────────────────────────────────────────────────────
-// Layout matches the physical D-Media job sheet pad:
-//   • Header: Order Date (left), Order No (right), D-Media logo
-//   • Customer Details line
-//   • Delivery To + Est. Delivery On
-//   • Items table: S.No | Product | Size | Quantity | Amount
-//   • Comments box
-//   • Footer: Total Job Amount, Advance, Bill No
+// ── Generate Job Sheet PDF ─────────────────────────────────────────────────────
+// Returns { blob, filename } instead of saving directly, so the caller can
+// show a share / download dialog.
 // ─────────────────────────────────────────────────────────────────────────────
-const generateJobSheetPDF = async (job) => {
-  // Use A5 landscape-ish or stick to A4 but compact layout matching the slip
+const buildJobSheetPDF = async (job) => {
   const doc    = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const PW     = 210;
   const PH     = 297;
   const MARGIN = 12;
   const CW     = PW - MARGIN * 2;
 
-  // Colours
   const WHITE   = [255, 255, 255];
   const DARK    = [15,  15,  15 ];
   const MID     = [90,  90,  90 ];
   const LGRAY   = [200, 200, 200];
   const BGLIGHT = [245, 245, 245];
-  const NAVY    = [20,  50,  120];
 
   const cartItems  = job.cart_items || [];
   const grandTotal = parseFloat(job.total_amount || 0);
@@ -529,31 +527,17 @@ const generateJobSheetPDF = async (job) => {
     ? dayjs(job.estimated_delivery_date).format("DD MMM YYYY")
     : "";
 
-  // ── helpers ─────────────────────────────────────────────────────────────────
   const hr = (yy, color = LGRAY, lw = 0.3) => {
     doc.setDrawColor(...color);
     doc.setLineWidth(lw);
     doc.line(MARGIN, yy, PW - MARGIN, yy);
   };
-  const rect = (x, y, w, h, fill, stroke, lw = 0.4) => {
-    if (fill)   { doc.setFillColor(...fill);   doc.rect(x, y, w, h, "F"); }
-    if (stroke) { doc.setDrawColor(...stroke); doc.setLineWidth(lw); doc.rect(x, y, w, h, "S"); }
-  };
   const txt = (text, x, y, opts = {}) => {
     doc.text(String(text ?? ""), x, y, opts);
   };
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // OUTER BORDER  (full page border like the physical pad)
-  // ════════════════════════════════════════════════════════════════════════════
-  // rect(MARGIN - 3, 8, CW + 6, PH - 18, null, NAVY, 0.8);
-
-  // ════════════════════════════════════════════════════════════════════════════
-  // SECTION 1 — HEADER
-  // ════════════════════════════════════════════════════════════════════════════
   let y = 14;
 
-  // "Order Date :" label + value (left)
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(...MID);
@@ -562,7 +546,6 @@ const generateJobSheetPDF = async (job) => {
   doc.setTextColor(...DARK);
   txt(invDate, MARGIN + doc.getTextWidth("Order Date :") + 2, y);
 
-  // "Order No :" label + value (centre-right)
   doc.setFont("helvetica", "normal");
   doc.setTextColor(...MID);
   const orderNoLabel = "Order No :";
@@ -573,7 +556,6 @@ const generateJobSheetPDF = async (job) => {
   doc.setTextColor(...DARK);
   txt(job.job_no || "—", orderNoX + doc.getTextWidth(orderNoLabel) + 1, y);
 
-  // Logo (top-right)
   const logoUrl = IMAGE_HELPER?.Dlogo ||
     "https://www.dmedia.in/assets/images/edit_white_logo1.png";
   try {
@@ -581,17 +563,10 @@ const generateJobSheetPDF = async (job) => {
     doc.addImage(logoB64, "PNG", PW - MARGIN - 44, y - 10, 48, 14);
   } catch { /* skip */ }
 
-  // Company name under logo area
-  // doc.setFont("helvetica", "bold");
-  // doc.setFontSize(7);
-  // doc.setTextColor(...NAVY);
-  // txt("D-Media", PW - MARGIN - 17, y + 12, { align: "center" });
-
   y += 8;
   hr(y, LGRAY);
   y += 5;
 
-  // ── Customer Details ─────────────────────────────────────────────────────────
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(...MID);
@@ -606,7 +581,6 @@ const generateJobSheetPDF = async (job) => {
   hr(y, LGRAY);
   y += 5;
 
-  // ── Delivery To + Est. Delivery ─────────────────────────────────────────────
   const deliveryLine = [addr.street, addr.city, addr.state, addr.pincode]
     .filter(Boolean).join(", ");
 
@@ -620,7 +594,6 @@ const generateJobSheetPDF = async (job) => {
   const delivLines = doc.splitTextToSize(deliveryLine || "—", CW * 0.55);
   txt(delivLines, MARGIN + doc.getTextWidth("Delivery to :") + 3, y);
 
-  // Est. Delivery On (right column)
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(...MID);
@@ -633,9 +606,6 @@ const generateJobSheetPDF = async (job) => {
   hr(y, LGRAY);
   y += 4;
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // SECTION 2 — ITEMS TABLE
-  // ════════════════════════════════════════════════════════════════════════════
   const isSqFtItem = (it) =>
     it.quantity_type === "sq.ft" || (parseFloat(it.sq_ft) > 0);
 
@@ -651,13 +621,8 @@ const generateJobSheetPDF = async (job) => {
     const lineTotal = isSqFtItem(it)
       ? (it.quantity || 0) * (it.sq_ft || 0) * (it.price || 0)
       : (it.quantity || 0) * (it.price || 0);
-    return [i + 1, productDesc || "—", size, qty, `${lineTotal.toFixed(2)}`]; // Removed "Rs. "
+    return [i + 1, productDesc || "—", size, qty, `${lineTotal.toFixed(2)}`];
   });
-
-  // Pad rows to at least 6 for the physical look
-  // while (tableRows.length < 6) {
-  //   tableRows.push(["", "", "", "", ""]);
-  // }
 
   autoTable(doc, {
     startY: y,
@@ -676,7 +641,7 @@ const generateJobSheetPDF = async (job) => {
     bodyStyles: {
       fontSize:    8,
       textColor:   DARK,
-      cellPadding: { top: 5, bottom: 5, left: 2, right: 1 },  // reduced right padding from 2 to 1
+      cellPadding: { top: 5, bottom: 5, left: 2, right: 1 },
       valign:      "middle",
       minCellHeight: 10,
     },
@@ -687,104 +652,59 @@ const generateJobSheetPDF = async (job) => {
       3: { cellWidth: 28,  halign: "center" },
       4: { cellWidth: 34,  halign: "right", fontStyle: "bold", cellPadding: { right: 2 } },
     },
-    // margin:         { left: MARGIN, right: MARGIN },
-    // tableLineColor: [160, 160, 160],
-    // tableLineWidth: 0.3,
   });
 
   y = doc.lastAutoTable.finalY + 4;
 
+  const footerY = y + 4;
+  const labelText = "Total Job Amount : ";
+  const amountText = `Rs. ${grandTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // SECTION 4 — FOOTER ROW (Simplified - removed Marketed by and stage boxes)
-  // ════════════════════════════════════════════════════════════════════════════
-  
-// ════════════════════════════════════════════════════════════════════════════
-// SECTION 4 — FOOTER ROW (Simplified - removed Marketed by and stage boxes)
-// ════════════════════════════════════════════════════════════════════════════
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  const labelWidth = doc.getTextWidth(labelText);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  const amountWidth = doc.getTextWidth(amountText);
+  const totalWidth = labelWidth + amountWidth;
+  const rightX = (MARGIN + CW) - 8;
+  const startX = rightX - totalWidth;
 
-// Display Total Job Amount - Aligned with table's Amount column
-// Display Total Job Amount - Both label and amount on the right side
-const footerY = y + 4;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(...MID);
+  txt(labelText, startX, footerY);
 
-const labelText = "Total Job Amount : ";
-const amountText = `Rs. ${grandTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
-
-// Calculate total width
-doc.setFont("helvetica", "normal");
-doc.setFontSize(9);
-const labelWidth = doc.getTextWidth(labelText);
-doc.setFont("helvetica", "bold");
-doc.setFontSize(10);
-const amountWidth = doc.getTextWidth(amountText);
-const totalWidth = labelWidth + amountWidth;
-
-// Position on the right side
-const rightX = (MARGIN + CW) - 8;
-const startX = rightX - totalWidth;
-
-// Draw label (normal)
-doc.setFont("helvetica", "normal");
-doc.setFontSize(9);
-doc.setTextColor(...MID);
-txt(labelText, startX, footerY);
-
-// Draw amount (bold)
-doc.setFont("helvetica", "bold");
-doc.setFontSize(10);
-doc.setTextColor(...DARK);
-txt(amountText, startX + labelWidth, footerY);
-
-  // Advance section
-  // const advanceX = MARGIN + colWidth + 20;
-  // doc.setFont("helvetica", "normal");
-  // doc.setFontSize(9);
-  // doc.setTextColor(...MID);
-  // txt("Advance :", advanceX, footerY);
-  
-  // rect(advanceX, footerY + 4, colWidth, 12, WHITE, [160, 160, 160], 0.3);
-  // if (job.payment_amount) {
-  //   doc.setFont("helvetica", "bold");
-  //   doc.setFontSize(10);
-  //   doc.setTextColor(...DARK);
-  //   txt(
-  //     `Rs. ${parseFloat(job.payment_amount).toFixed(2)}`,
-  //     advanceX + colWidth / 2,
-  //     footerY + 12,
-  //     { align: "center" }
-  //   );
-  // }
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(...DARK);
+  txt(amountText, startX + labelWidth, footerY);
 
   y = footerY + 24;
   hr(y, LGRAY);
-  y += 8;
 
-  // Bill No only (removed signature)
-  // doc.setFont("helvetica", "normal");
-  // doc.setFontSize(9);
-  // doc.setTextColor(...MID);
-  // txt("Bill No :", MARGIN, y);
-
-  // // Line for Bill No
-  // doc.setDrawColor(...LGRAY);
-  // doc.setLineWidth(0.3);
-  // doc.line(MARGIN + doc.getTextWidth("Bill No :") + 5, y - 2, PW - MARGIN - 50, y - 2);
-
-  y += 12;
-
-  // ── "JOB SHEET" watermark label (bottom-right, matching physical pad) ────
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8.5);
   doc.setTextColor(...DARK);
   txt("JOB SHEET", PW - MARGIN - 3, PH - 14, { align: "right" });
 
-  // ── Powered By D-Media ───────────────────────────────────────────────────
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(...MID);
   txt("Powered By D-Media  |  www.dmedia.in", MARGIN, PH - 13);
 
-  doc.save(`JobSheet_${job.job_no || "job"}.pdf`);
+  const filename = `JobSheet_${job.job_no || "job"}.pdf`;
+  const blob = doc.output("blob");
+  return { blob, filename };
+};
+
+// ── Legacy direct-save wrapper (used from table row button) ───────────────────
+const generateJobSheetPDF = async (job) => {
+  const { blob, filename } = await buildJobSheetPDF(job);
+  const url = URL.createObjectURL(blob);
+  const a   = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
 };
 
 // ─── Job status config ────────────────────────────────────────────────────────
@@ -863,34 +783,354 @@ const InfoStatusBadge = ({ status }) => {
   );
 };
 
+// ─── Job Sheet Share Modal ────────────────────────────────────────────────────
+const JobSheetShareModal = ({ open, onClose, job }) => {
+  const [generating, setGenerating] = useState(false);
+  const [pdfReady,   setPdfReady]   = useState(false);
+  const [blobUrl,    setBlobUrl]    = useState(null);
+  const [filename,   setFilename]   = useState("");
+  const [blobRef,    setBlobRef]    = useState(null);
+  const [copyDone,   setCopyDone]   = useState(false);
+
+  // Generate PDF as soon as modal opens
+  useEffect(() => {
+    if (!open || !job) return;
+    let cancelled = false;
+    setPdfReady(false); setBlobUrl(null); setGenerating(true);
+
+    buildJobSheetPDF(job).then(({ blob, filename: fn }) => {
+      if (cancelled) return;
+      const url = URL.createObjectURL(blob);
+      setBlobUrl(url);
+      setFilename(fn);
+      setBlobRef(blob);
+      setPdfReady(true);
+    }).catch((err) => {
+      if (!cancelled) message.error("PDF generation failed: " + err.message);
+    }).finally(() => {
+      if (!cancelled) setGenerating(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, job]);
+
+  // Revoke blob URL on close
+  useEffect(() => {
+    if (!open && blobUrl) {
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+      setBlobUrl(null); setPdfReady(false);
+    }
+  }, [open]);
+
+  const handleDownload = () => {
+    if (!blobUrl) return;
+    const a = document.createElement("a");
+    a.href = blobUrl; a.download = filename; a.click();
+  };
+
+  const handleWhatsApp = () => {
+    if (!job) return;
+    const phone    = (job.customer_phone || "").replace(/\D/g, "");
+    const jobNo    = job.job_no   || "—";
+    const name     = job.customer_name || "Customer";
+    const total    = parseFloat(job.total_amount || 0)
+      .toLocaleString("en-IN", { minimumFractionDigits: 2 });
+    const estDate  = job.estimated_delivery_date
+      ? dayjs(job.estimated_delivery_date).format("DD MMM YYYY")
+      : "—";
+
+    const text = encodeURIComponent(
+      `Hello ${name},\n\nYour Job Sheet from D-Media:\n\n` +
+      `📋 Job No: ${jobNo}\n` +
+      `💰 Total: ₹${total}\n` +
+      `📅 Est. Delivery: ${estDate}\n\n` +
+      `Please download your job sheet PDF attached.\n\nThank you!\nD-Media Team\nwww.dmedia.in`
+    );
+
+    // If we have a phone number, open direct chat; otherwise open share picker
+    const waUrl = phone
+      ? `https://wa.me/91${phone}?text=${text}`
+      : `https://wa.me/?text=${text}`;
+    window.open(waUrl, "_blank");
+
+    // Also trigger download so user can manually attach
+    if (pdfReady) {
+      setTimeout(handleDownload, 500);
+    }
+  };
+
+  const handleEmail = () => {
+    if (!job) return;
+    const name    = job.customer_name || "Customer";
+    const jobNo   = job.job_no   || "—";
+    const total   = parseFloat(job.total_amount || 0)
+      .toLocaleString("en-IN", { minimumFractionDigits: 2 });
+    const estDate = job.estimated_delivery_date
+      ? dayjs(job.estimated_delivery_date).format("DD MMM YYYY")
+      : "—";
+
+    const subject = encodeURIComponent(`Job Sheet – ${jobNo} | D-Media`);
+    const body    = encodeURIComponent(
+      `Hello ${name},\n\nPlease find your job sheet details below:\n\n` +
+      `Job No    : ${jobNo}\n` +
+      `Total     : ₹${total}\n` +
+      `Est. Date : ${estDate}\n\n` +
+      `Please find the PDF job sheet attached to this email.\n\n` +
+      `Thank you,\nD-Media Team\nwww.dmedia.in`
+    );
+
+    window.open(`mailto:?subject=${subject}&body=${body}`, "_self");
+
+    // Trigger download so user can attach the PDF
+    if (pdfReady) {
+      setTimeout(handleDownload, 500);
+    }
+  };
+
+  const handleNativeShare = async () => {
+    if (!pdfReady || !blobRef) { message.warning("PDF is still generating…"); return; }
+    try {
+      const file = new File([blobRef], filename, { type: "application/pdf" });
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ title: `Job Sheet – ${job?.job_no || ""}`, files: [file] });
+      } else {
+        // Fallback: just download
+        handleDownload();
+        message.info("Direct sharing not supported on this browser — PDF downloaded instead.");
+      }
+    } catch (err) {
+      if (err.name !== "AbortError") message.error("Share failed: " + err.message);
+    }
+  };
+
+  const handleCopyJobInfo = () => {
+    if (!job) return;
+    const jobNo   = job.job_no   || "—";
+    const name    = job.customer_name || "—";
+    const phone   = job.customer_phone || "—";
+    const total   = parseFloat(job.total_amount || 0)
+      .toLocaleString("en-IN", { minimumFractionDigits: 2 });
+    const estDate = job.estimated_delivery_date
+      ? dayjs(job.estimated_delivery_date).format("DD MMM YYYY")
+      : "—";
+    const text =
+      `Job No: ${jobNo}\nCustomer: ${name}\nPhone: ${phone}\nTotal: ₹${total}\nEst. Delivery: ${estDate}`;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopyDone(true);
+      setTimeout(() => setCopyDone(false), 2000);
+    });
+  };
+
+  // ── Share option cards ──────────────────────────────────────────────────────
+  const shareOptions = [
+    {
+      key:     "whatsapp",
+      icon:    <WhatsAppOutlined style={{ fontSize: 22 }} />,
+      label:   "WhatsApp",
+      sub:     "Send to customer",
+      bg:      "linear-gradient(135deg,#128C7E,#25D366)",
+      onClick: handleWhatsApp,
+    },
+    {
+      key:     "email",
+      icon:    <MailOutlined style={{ fontSize: 22 }} />,
+      label:   "Email",
+      sub:     "Open mail client",
+      bg:      "linear-gradient(135deg,#1e6fdc,#3b82f6)",
+      onClick: handleEmail,
+    },
+    {
+      key:     "share",
+      icon:    <ShareAltOutlined style={{ fontSize: 22 }} />,
+      label:   "Share",
+      sub:     "System share sheet",
+      bg:      "linear-gradient(135deg,#7c3aed,#a855f7)",
+      onClick: handleNativeShare,
+    },
+    {
+      key:     "download",
+      icon:    <DownloadOutlined style={{ fontSize: 22 }} />,
+      label:   "Download",
+      sub:     "Save PDF to device",
+      bg:      "linear-gradient(135deg,#0f766e,#14b8a6)",
+      onClick: handleDownload,
+      disabled: !pdfReady,
+    },
+    {
+      key:     "copy",
+      icon:    copyDone ? <CheckCircleOutlined style={{ fontSize: 22 }} /> : <CopyOutlined style={{ fontSize: 22 }} />,
+      label:   copyDone ? "Copied!" : "Copy Info",
+      sub:     "Copy job details",
+      bg:      copyDone
+        ? "linear-gradient(135deg,#059669,#10b981)"
+        : "linear-gradient(135deg,#475569,#64748b)",
+      onClick: handleCopyJobInfo,
+    },
+  ];
+
+  return (
+    <Modal
+      open={open}
+      onCancel={onClose}
+      footer={null}
+      width={420}
+      destroyOnClose
+      title={
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <PrinterOutlined style={{ color: "#0f766e", fontSize: 16 }} />
+          <span style={{ fontWeight: 700, color: THEME.textPrimary }}>Job Sheet</span>
+          {job && (
+            <Tag color="teal" style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 11, background: "#f0fdfa", borderColor: "#99f6e4", color: "#0f766e" }}>
+              {job.job_no}
+            </Tag>
+          )}
+        </div>
+      }
+    >
+      {/* PDF preview / status */}
+      <div style={{ background: generating ? "#f8fafc" : "#f0fdfa", border: `1px solid ${generating ? "#e5e7eb" : "#99f6e4"}`, borderRadius: 12, padding: "14px 16px", marginBottom: 18, display: "flex", alignItems: "center", gap: 12 }}>
+        {generating ? (
+          <>
+            <Spin size="small" />
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 13, color: THEME.textPrimary }}>Generating PDF…</div>
+              <div style={{ fontSize: 11, color: THEME.textMuted }}>Please wait a moment</div>
+            </div>
+          </>
+        ) : pdfReady ? (
+          <>
+            <div style={{ width: 38, height: 38, borderRadius: 10, background: "linear-gradient(135deg,#0f766e,#14b8a6)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <PrinterOutlined style={{ color: "#fff", fontSize: 18 }} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 13, color: "#0f766e" }}>PDF Ready</div>
+              <div style={{ fontSize: 11, color: THEME.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {filename}
+              </div>
+            </div>
+            <a href={blobUrl} target="_blank" rel="noreferrer"
+              style={{ fontSize: 11, color: THEME.primary, fontWeight: 600, whiteSpace: "nowrap" }}>
+              Preview ↗
+            </a>
+          </>
+        ) : (
+          <div style={{ color: THEME.danger, fontSize: 13 }}>Failed to generate PDF.</div>
+        )}
+      </div>
+
+      {/* Job summary strip */}
+      {job && (
+        <div style={{ background: THEME.primaryLight, border: `1px solid ${THEME.border}`, borderRadius: 10, padding: "10px 14px", marginBottom: 18, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 13, color: THEME.textPrimary }}>{job.customer_name || "—"}</div>
+            <div style={{ fontSize: 11, color: THEME.textSecondary }}>{job.customer_phone || ""}</div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontWeight: 800, fontSize: 15, color: THEME.primary }}>
+              ₹{parseFloat(job.total_amount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+            </div>
+            {job.estimated_delivery_date && (
+              <div style={{ fontSize: 11, color: THEME.textMuted }}>
+                Est. {dayjs(job.estimated_delivery_date).format("DD MMM YYYY")}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Share options grid */}
+      <div style={{ marginBottom: 6 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: THEME.textMuted, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>
+          Share or Download
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8 }}>
+          {shareOptions.map((opt) => (
+            <button
+              key={opt.key}
+              onClick={opt.onClick}
+              disabled={opt.disabled}
+              style={{
+                background:    opt.disabled ? "#f1f5f9" : opt.bg,
+                border:        "none",
+                borderRadius:  12,
+                padding:       "12px 4px 10px",
+                cursor:        opt.disabled ? "not-allowed" : "pointer",
+                display:       "flex",
+                flexDirection: "column",
+                alignItems:    "center",
+                gap:           5,
+                opacity:       opt.disabled ? 0.5 : 1,
+                transition:    "transform 0.15s, box-shadow 0.15s",
+                boxShadow:     "0 2px 8px rgba(0,0,0,0.12)",
+              }}
+              onMouseEnter={(e) => { if (!opt.disabled) { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 6px 16px rgba(0,0,0,0.18)"; } }}
+              onMouseLeave={(e) => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.12)"; }}
+            >
+              <span style={{ color: opt.disabled ? THEME.textMuted : "#fff" }}>{opt.icon}</span>
+              <span style={{ fontSize: 10, fontWeight: 700, color: opt.disabled ? THEME.textMuted : "#fff", textAlign: "center", lineHeight: 1.2 }}>{opt.label}</span>
+              <span style={{ fontSize: 9, color: opt.disabled ? THEME.textMuted : "rgba(255,255,255,0.8)", textAlign: "center", lineHeight: 1.2 }}>{opt.sub}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Hint */}
+      <div style={{ marginTop: 14, fontSize: 11, color: THEME.textMuted, background: "#f8fafc", borderRadius: 8, padding: "8px 12px", border: "1px solid #e5e7eb" }}>
+        💡 <strong>Tip:</strong> For WhatsApp & Email, the PDF is downloaded automatically so you can attach it manually.
+      </div>
+    </Modal>
+  );
+};
+
 // ─── Job Detail View ──────────────────────────────────────────────────────────
-const JobDetailView = ({ job, isMobile }) => {
+const JobDetailView = ({ job, isMobile, onOpenJobSheetShare }) => {
   if (!job) return null;
   const addr        = job.delivery_address || {};
   const fullAddress = [addr.street, addr.city, addr.state, addr.pincode, addr.country]
     .filter(Boolean).join(", ");
-
-  const LV = ({ label, value, mono }) => (
-    <div style={{ marginBottom: 8 }}>
-      <div style={{ fontSize: 10, fontWeight: 700, color: THEME.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>
-        {label}
-      </div>
-      <div style={{ fontSize: 13, color: THEME.textPrimary, fontFamily: mono ? "monospace" : undefined, fontWeight: mono ? 600 : 400 }}>
-        {value ?? "—"}
-      </div>
-    </div>
-  );
 
   const grid2 = { display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3,1fr)", gap: "4px 16px", marginBottom: 12 };
   const grid4 = { display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4,1fr)", gap: "4px 16px", marginBottom: 12 };
 
   return (
     <div>
+      {/* ── Job Sheet action bar at the top of detail view ── */}
+      <div style={{ background: "linear-gradient(135deg,#f0fdfa,#e0f2fe)", border: "1px solid #99f6e4", borderRadius: 12, padding: "12px 16px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg,#0f766e,#14b8a6)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <PrinterOutlined style={{ color: "#fff", fontSize: 16 }} />
+          </div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 13, color: "#0f766e" }}>Job Sheet PDF</div>
+            <div style={{ fontSize: 11, color: "#475569" }}>Download, share via WhatsApp or Email</div>
+          </div>
+        </div>
+        <Button
+          type="primary"
+          icon={<ShareAltOutlined />}
+          onClick={onOpenJobSheetShare}
+          style={{ background: "#0f766e", borderColor: "#0f766e", borderRadius: 8, fontWeight: 700, height: 36, paddingInline: 18 }}
+        >
+          Job Sheet
+        </Button>
+      </div>
+
       <SectionDivider icon={<UserOutlined />} title="Customer Info" />
       <div style={grid2}>
-        <LV label="Name"  value={job.customer_name} />
-        <LV label="Phone" value={job.customer_phone} />
-        <LV label="Est. Delivery" value={job.estimated_delivery_date ? dayjs(job.estimated_delivery_date).format("DD MMM YYYY, hh:mm A") : null} />
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: THEME.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>Name</div>
+          <div style={{ fontSize: 13, color: THEME.textPrimary }}>{job.customer_name ?? "—"}</div>
+        </div>
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: THEME.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>Phone</div>
+          <div style={{ fontSize: 13, color: THEME.textPrimary }}>{job.customer_phone ?? "—"}</div>
+        </div>
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: THEME.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>Est. Delivery</div>
+          <div style={{ fontSize: 13, color: THEME.textPrimary }}>{job.estimated_delivery_date ? dayjs(job.estimated_delivery_date).format("DD MMM YYYY, hh:mm A") : "—"}</div>
+        </div>
       </div>
 
       {fullAddress && (
@@ -1213,7 +1453,6 @@ const InfoRequestsPanel = ({ userProfile }) => {
 
   return (
     <div>
-      {/* Sub-header */}
       <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e5e7eb", padding: "12px 16px", marginBottom: 14, boxShadow: "0 2px 8px rgba(0,0,0,0.05)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg,#d97706,#f59e0b)", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -1232,7 +1471,6 @@ const InfoRequestsPanel = ({ userProfile }) => {
         </Tooltip>
       </div>
 
-      {/* Tabs + cards */}
       <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e5e7eb", padding: "12px 16px", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
         <Tabs activeKey={infoTab} onChange={setInfoTab} items={infoTabItems} style={{ marginBottom: 14 }} />
         <Spin spinning={loading}>
@@ -1250,7 +1488,6 @@ const InfoRequestsPanel = ({ userProfile }) => {
         </Spin>
       </div>
 
-      {/* Action Modal */}
       <Modal
         open={actionModal}
         onCancel={() => !submitting && setActionModal(false)}
@@ -1359,15 +1596,21 @@ const Myjobs = () => {
 
   const [pendingInfoCount, setPendingInfoCount] = useState(0);
 
-  // Track which job sheet is generating (for loading state)
+  // Job Sheet share modal (from table row button)
+  const [shareJob,           setShareJob]           = useState(null);
+  const [shareModalOpen,     setShareModalOpen]     = useState(false);
+
+  // Job Sheet share modal (from View Detail modal)
+  const [viewShareModalOpen, setViewShareModalOpen] = useState(false);
+
+  // Track which job sheet is generating from the table row (legacy direct download)
   const [generatingJobSheet, setGeneratingJobSheet] = useState(null);
 
   const autoRefreshRef = useRef(null);
   const countdownRef   = useRef(null);
   const userProfile    = useMemo(() => getUserProfile(), []);
   const isSuperAdmin   = userProfile?.role === "super admin";
-  
-  // Check if user is authorized for quotation button (admin@dmedia.in or admin@printe.in)
+
   const isQuotationAuthorized = useMemo(() => {
     const userEmail = userProfile?.email || userProfile?.username || "";
     const authorizedEmails = ["admin@dmedia.in", "admin@printe.in"];
@@ -1531,16 +1774,16 @@ const Myjobs = () => {
     finally { setQcAssigning(false); }
   };
 
-  // ── Job Sheet handler ────────────────────────────────────────────────────────
-  const handleJobSheet = async (record) => {
-    setGeneratingJobSheet(record._id);
-    try {
-      await generateJobSheetPDF(record);
-    } catch (err) {
-      message.error("Failed to generate Job Sheet: " + err.message);
-    } finally {
-      setGeneratingJobSheet(null);
-    }
+  // ── Job Sheet from table row — opens share modal ────────────────────────────
+  const handleJobSheet = (record) => {
+    setShareJob(record);
+    setShareModalOpen(true);
+  };
+
+  // ── Job Sheet from View detail modal ────────────────────────────────────────
+  const handleJobSheetFromView = () => {
+    if (!viewJob) return;
+    setViewShareModalOpen(true);
   };
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -1588,7 +1831,6 @@ const Myjobs = () => {
       title: "", width: isMobile ? 110 : 260,
       render: (_, record) => {
         const isQC = record.job_status === "quality_check";
-        const isJobSheetGenerating = generatingJobSheet === record._id;
         return (
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: isMobile ? "flex-start" : "flex-end", flexDirection: isMobile ? "column" : "row" }}>
             <Tooltip title="View Job Details">
@@ -1599,7 +1841,6 @@ const Myjobs = () => {
               </Button>
             </Tooltip>
 
-            {/* Quotation button - only show for authorized admins */}
             {record.job_status === "design" && isQuotationAuthorized && (
               <Tooltip title="Download Quotation PDF">
                 <Button icon={<FileTextOutlined />} size="small"
@@ -1610,12 +1851,11 @@ const Myjobs = () => {
               </Tooltip>
             )}
 
-            {/* ── Job Sheet button — visible for all jobs ── */}
-            <Tooltip title="Download Job Sheet PDF">
+            {/* Job Sheet button — opens share modal */}
+            <Tooltip title="Job Sheet PDF & Share">
               <Button
                 icon={<PrinterOutlined />}
                 size="small"
-                loading={isJobSheetGenerating}
                 style={{
                   width: isMobile ? "100%" : "auto",
                   background: "#0f766e",
@@ -1663,7 +1903,6 @@ const Myjobs = () => {
       ),
       children: (
         <div>
-          {/* Filters */}
           <Card bodyStyle={{ padding: `${p}px ${p + 4}px` }} style={{ borderRadius: 12, border: `1px solid ${THEME.border}`, marginBottom: g, background: THEME.bgCard, boxShadow: "0 2px 12px rgba(30,111,220,0.08)" }}>
             <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 8 }}>
               <Input.Search
@@ -1684,7 +1923,6 @@ const Myjobs = () => {
             </div>
           </Card>
 
-          {/* Table */}
           <Card bodyStyle={{ padding: "0 0 8px 0" }} style={{ borderRadius: 12, border: `1px solid ${THEME.border}`, boxShadow: "0 2px 12px rgba(30,111,220,0.08)", background: THEME.bgCard, overflow: "hidden" }}>
             <Table
               dataSource={pagedJobs} loading={loading} columns={columns}
@@ -1775,7 +2013,20 @@ const Myjobs = () => {
       <Modal
         open={!!viewJob}
         onCancel={() => setViewJob(null)}
-        footer={[<Button key="close" onClick={() => setViewJob(null)} style={{ borderColor: THEME.border, color: THEME.textSecondary }}>Close</Button>]}
+        footer={[
+          // Job Sheet button in footer
+          <Button
+            key="jobsheet"
+            icon={<PrinterOutlined />}
+            onClick={handleJobSheetFromView}
+            style={{ background: "#0f766e", borderColor: "#0f766e", color: "#fff", fontWeight: 700, borderRadius: 8 }}
+          >
+            Job Sheet
+          </Button>,
+          <Button key="close" onClick={() => setViewJob(null)} style={{ borderColor: THEME.border, color: THEME.textSecondary }}>
+            Close
+          </Button>,
+        ]}
         title={
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <EyeOutlined style={{ color: THEME.primary }} />
@@ -1788,7 +2039,11 @@ const Myjobs = () => {
         styles={{ body: { maxHeight: isMobile ? "90dvh" : "85vh", overflowY: "auto", padding: isMobile ? 12 : 20 } }}
         destroyOnClose
       >
-        <JobDetailView job={viewJob} isMobile={isMobile} />
+        <JobDetailView
+          job={viewJob}
+          isMobile={isMobile}
+          onOpenJobSheetShare={handleJobSheetFromView}
+        />
       </Modal>
 
       {/* ── Delete Modal ───────────────────────────────────────────────────── */}
@@ -1917,6 +2172,20 @@ const Myjobs = () => {
           infoText="The selected person will perform quality check for this job."
         />
       </Modal>
+
+      {/* ── Job Sheet Share Modal — from table row ──────────────────────── */}
+      <JobSheetShareModal
+        open={shareModalOpen}
+        onClose={() => { setShareModalOpen(false); setShareJob(null); }}
+        job={shareJob}
+      />
+
+      {/* ── Job Sheet Share Modal — from View detail ────────────────────── */}
+      <JobSheetShareModal
+        open={viewShareModalOpen}
+        onClose={() => setViewShareModalOpen(false)}
+        job={viewJob}
+      />
 
       <style>{`
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
