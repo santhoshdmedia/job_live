@@ -81,8 +81,6 @@ const computeLineTotal = (item) => {
 };
 
 // ─── Canvas-based image compressor (target ≤ maxKB) ──────────────────────────
-// Iteratively reduces quality 0.85 → 0.10 until blob fits the size limit.
-// Non-image files or already-small files are passed through unchanged.
 const compressImageFile = (file, maxKB = 500) =>
   new Promise((resolve) => {
     if (!file.type.startsWith("image/") || file.size <= maxKB * 1024) {
@@ -98,7 +96,6 @@ const compressImageFile = (file, maxKB = 500) =>
     img.onload = () => {
       URL.revokeObjectURL(blobUrl);
 
-      // Scale pixel dimensions down proportionally
       let { naturalWidth: w, naturalHeight: h } = img;
       const ratio = (maxKB * 1024) / file.size;
       if (ratio < 0.9) {
@@ -112,7 +109,6 @@ const compressImageFile = (file, maxKB = 500) =>
       canvas.height = h;
       canvas.getContext("2d").drawImage(img, 0, 0, w, h);
 
-      // PNG → JPEG for much smaller output
       const outType = file.type === "image/png" ? "image/jpeg" : file.type;
 
       const tryQuality = (q) => {
@@ -137,10 +133,7 @@ const compressImageFile = (file, maxKB = 500) =>
     img.src = blobUrl;
   });
 
-// ─── DesignFileUpload — fully self-contained, compression always runs ─────────
-// Replaces UploadHelper entirely for design files.
-// Uses a hidden <input type="file"> so we fully control the pipeline:
-//   file selected → compressImageFile → FileReader → base64 → setImagePath
+// ─── DesignFileUpload ─────────────────────────────────────────────────────────
 const DesignFileUpload = ({ value, setImagePath }) => {
   const inputRef          = useRef(null);
   const [busy, setBusy]   = useState(false);
@@ -179,7 +172,6 @@ const DesignFileUpload = ({ value, setImagePath }) => {
 
   return (
     <div>
-      {/* Hidden native file input */}
       <input
         ref={inputRef}
         type="file"
@@ -188,7 +180,6 @@ const DesignFileUpload = ({ value, setImagePath }) => {
         onChange={(e) => handleFile(e.target.files?.[0])}
       />
 
-      {/* Upload button row */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <Button
           size="small"
@@ -214,7 +205,6 @@ const DesignFileUpload = ({ value, setImagePath }) => {
         )}
       </div>
 
-      {/* Size feedback */}
       {!busy && origSize && compSize && (
         <div style={{ marginTop: 4, fontSize: 10, color: "#059669", fontWeight: 600 }}>
           ✅ Compressed: {formatKB(origSize)} → {formatKB(compSize)}
@@ -232,7 +222,6 @@ const DesignFileUpload = ({ value, setImagePath }) => {
         <div style={{ marginTop: 4, fontSize: 10, color: "#dc2626" }}>⚠ {error}</div>
       )}
 
-      {/* Preview */}
       {value && !busy && (
         <div style={{
           marginTop: 8, border: "1px solid #e5e7eb", borderRadius: 8,
@@ -483,7 +472,7 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
         </FormField>
       </div>
 
-      {/* Design File — fully self-contained with real compression */}
+      {/* Design File */}
       <div style={{ marginBottom: 10 }}>
         <FormField label="Design File">
           <DesignFileUpload
@@ -579,9 +568,11 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
         valid_until:             validUntil.toISOString(),
         estimated_delivery_date: dayjs(formData.estimated_delivery_date).toISOString(),
 
+        // ── Customer Info ──────────────────────────────────────────────
         customer_name:  formData.customer_name.trim(),
         customer_phone: formData.customer_phone.trim(),
-        company_name:   formData.company_name?.trim() || "",
+        // ✅ FIX: explicitly trimmed and always sent — was missing in some edge cases
+        company_name:   (formData.company_name || "").trim(),
 
         delivery_address: {
           street:  [formData.address_line1, formData.address_line2].filter(Boolean).join(", "),
@@ -646,14 +637,20 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
         },
         body: JSON.stringify(payload),
       });
+
+      // ✅ FIX: parse response once and handle both data shapes
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.message || "Failed to create job");
 
+      // ✅ FIX: controller returns { success, message, job, data }
+      // Support both shapes: data.job (new) and data.data (fallback)
+      const createdJob = data.job || data.data;
       SUCCESS_NOTIFICATION({
-        message: data.job?.job_no
-          ? `Job ${data.job.job_no} created successfully!`
+        message: createdJob?.job_no
+          ? `Job ${createdJob.job_no} created successfully!`
           : "Job created successfully!",
       });
+
       onClose();
       onCreated?.();
     } catch (err) {
@@ -672,7 +669,6 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
   const modalWidth      = isMobile ? "100vw" : isTablet ? "94vw" : "min(96vw,900px)";
   const mobileFullStyle = isMobile ? { top: 0, margin: 0, maxWidth: "100vw", padding: 0 } : {};
 
-  // Compute min datetime (now) for the date picker
   const now = new Date();
   const pad = (n) => String(n).padStart(2, "0");
   const minDateVal = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
@@ -737,7 +733,6 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
             />
           </FormField>
 
-          {/* Est. Delivery Date — min blocks past dates, no forced blur */}
           <FormField label="Est. Delivery Date" required>
             <input
               type="datetime-local"
@@ -758,7 +753,7 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
 
         {/* Company Name + GST Number */}
         <div style={{ display: "grid", gridTemplateColumns: c2, gap: g, marginBottom: 14 }}>
-          {/* <FormField label="Company Name">
+          <FormField label="Company Name">
             <Input
               prefix={<BankOutlined style={{ color: "#9ca3af" }} />}
               placeholder="Company / Business name"
@@ -766,7 +761,7 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
               onChange={(e) => handleInput("company_name", e.target.value)}
               style={{ borderRadius: 8 }}
             />
-          </FormField> */}
+          </FormField>
           <FormField label="GST Number">
             <Input
               placeholder="GSTIN (15 chars)"

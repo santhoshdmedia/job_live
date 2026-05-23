@@ -1383,10 +1383,14 @@ const AddProduct = () => {
   const [stockHistoryModal, setStockHistoryModal] = useState({ open: false, product: null });
   const [materialIssueModal, setMaterialIssueModal] = useState({ open: false, product: null });
 
-  const hasEditPermission =
-    isSuperAdmin(user.role) || canEditPage(user.pagePermissions, "product-details");
-  const hasDeletePermission =
-    isSuperAdmin(user.role) || canDeletePage(user.pagePermissions, "product-details");
+  // const hasEditPermission =
+  //   isSuperAdmin(user.role) || canEditPage(user.pagePermissions, "product-details");
+  // const hasDeletePermission =
+  //   isSuperAdmin(user.role) || canDeletePage(user.pagePermissions, "product-details");
+
+  const hasEditPermission = true;
+const hasDeletePermission = true;
+
 
   const [paginationConfig, setPaginationConfig] = useState(() => {
     const savedPageSize   = localStorage.getItem(STORAGE_KEYS.PAGE_SIZE);

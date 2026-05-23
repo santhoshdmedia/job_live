@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useSelector } from "react-redux";
+import { useNavigate } from "react-router-dom";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const API_BASE = "https://api.dmedia.in/api";
@@ -12,6 +13,17 @@ const WASTAGE_REASONS = [
   { value: "customer_change",   label: "Customer spec change" },
   { value: "equipment_fault",   label: "Equipment fault" },
   { value: "other",             label: "Other" },
+];
+
+const OUTSOURCE_TYPES = [
+  { value: "none",          label: "In-House (No Outsource)" },
+  { value: "printing",      label: "Printing" },
+  { value: "lamination",    label: "Lamination" },
+  { value: "fabrication",   label: "Fabrication" },
+  { value: "installation",  label: "Installation" },
+  { value: "cutting",       label: "Cutting / Finishing" },
+  { value: "full_job",      label: "Full Job Outsource" },
+  { value: "other",         label: "Other" },
 ];
 
 // ─── API helper ───────────────────────────────────────────────────────────────
@@ -35,6 +47,7 @@ const generateSlipPDF = (issue, user) => {
   const now = new Date();
   const dateStr = now.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
   const timeStr = now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+  const outsourceLabel = OUTSOURCE_TYPES.find(o => o.value === issue?.outsource_type)?.label || "In-House";
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
 <title>Material Issue Slip - ${issue?.issue_no || "SLIP"}</title>
 <style>
@@ -54,6 +67,7 @@ const generateSlipPDF = (issue, user) => {
   .highlight{background:#f5f5f5;border:1px solid #ddd;border-radius:4px;padding:8px;margin:8px 0;text-align:center}
   .big{font-size:22px;font-weight:900}
   .unit{font-size:11px;color:#555}
+  .outsource-badge{display:inline-block;background:#e0f2fe;border:1px solid #bae6fd;border-radius:4px;padding:2px 8px;font-size:10px;font-weight:700;color:#0369a1;margin-top:4px}
   .footer{text-align:center;border-top:1px dashed #999;padding-top:8px;margin-top:10px;font-size:9px;color:#888}
   .sig-box{border:1px solid #ddd;height:30px;margin-top:8px;border-radius:3px}
   .sig-label{font-size:9px;color:#999;text-align:center;margin-top:2px}
@@ -75,6 +89,7 @@ const generateSlipPDF = (issue, user) => {
     <div class="section-title">Material</div>
     <div class="row"><span class="label">Product</span><span class="value">${issue?.material?.product_name || "—"}</span></div>
     <div class="row"><span class="label">Unit</span><span class="value">${issue?.material?.unit || "sqft"}</span></div>
+    <div class="row"><span class="label">Out Source</span><span class="value">${outsourceLabel}</span></div>
   </div>
   <div class="highlight">
     <div class="unit">Issued Quantity</div>
@@ -152,6 +167,7 @@ const Badge = ({ children, variant = "default" }) => {
     green:   "bg-emerald-100 text-emerald-700",
     amber:   "bg-amber-100 text-amber-700",
     red:     "bg-rose-100 text-rose-700",
+    indigo:  "bg-indigo-100 text-indigo-700",
   }[variant] || "bg-slate-100 text-slate-600";
   return <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${v}`}>{children}</span>;
 };
@@ -334,31 +350,27 @@ const Modal = ({ open, title, onClose, children, size = "md" }) => {
 };
 
 // ─── Calculation Preview ──────────────────────────────────────────────────────
-// Two display modes driven by `mode` prop:
-//   "sqft"   — cart item has sq_ft; client computed breakdown shown
-//   "server" — manual W×H; server-returned breakdown shown
 const CalcPreview = ({ mode, calc, issuedQty }) => {
   if (!calc) return null;
 
-  const issued   = parseFloat(issuedQty) || 0;
+  const issued      = parseFloat(issuedQty) || 0;
   const recommended = parseFloat(calc.required_sqft) || 0;
-  const diff     = issued - recommended;
-  const over     = diff >  0.01;
-  const under    = diff < -0.01;
+  const diff        = issued - recommended;
+  const over        = diff >  0.01;
+  const under       = diff < -0.01;
 
-  // Build rows depending on mode
   const rows =
     mode === "sqft"
       ? [
-          ["Cart sq.ft",   calc.job_sqft,      "From cart item"],
-          ["Wastage Buf",  calc.wastage_sqft,  `${calc.wastage_buffer_pct}% of cart area`],
-          ["Total",        calc.required_sqft, "Cart + Buffer"],
+          ["Cart sq.ft",  calc.job_sqft,      "From cart item"],
+          ["Wastage Buf", calc.wastage_sqft,  `${calc.wastage_buffer_pct}% of cart area`],
+          ["Total",       calc.required_sqft, "Cart + Buffer"],
         ]
       : [
-          ["Job Area",     calc.job_sqft,      "Width × Height"],
-          ["Margin Area",  calc.margin_sqft,   "Top + Bottom margins"],
-          ["Gross Area",   calc.gross_sqft,    "Job + Margins"],
-          ["Recommended",  calc.required_sqft, `After ${calc.wastage_buffer_pct ?? "—"}% buffer`],
+          ["Job Area",    calc.job_sqft,      "Width × Height"],
+          ["Margin Area", calc.margin_sqft,   "Top + Bottom margins"],
+          ["Gross Area",  calc.gross_sqft,    "Job + Margins"],
+          ["Recommended", calc.required_sqft, `After ${calc.wastage_buffer_pct ?? "—"}% buffer`],
         ];
 
   const accentColor = mode === "sqft" ? "bg-violet-600" : "bg-sky-600";
@@ -375,8 +387,6 @@ const CalcPreview = ({ mode, calc, issuedQty }) => {
           {mode === "sqft" ? "Auto from cart" : "Manual W×H"}
         </span>
       </div>
-
-      {/* Breakdown tiles */}
       <div className={`grid gap-2 mb-3 ${rows.length === 3 ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-4"}`}>
         {rows.map(([k, v, hint]) => (
           <div key={k} className="bg-white rounded-lg p-2.5 text-center border border-white shadow-sm">
@@ -388,16 +398,12 @@ const CalcPreview = ({ mode, calc, issuedQty }) => {
           </div>
         ))}
       </div>
-
-      {/* Recommended banner */}
       <div className={`flex items-center justify-between ${accentColor} text-white rounded-lg px-4 py-2.5`}>
         <span className="text-xs font-bold tracking-wide">Recommended Issue Qty</span>
         <span className="text-lg font-black">
           {calc.required_sqft} <span className="text-xs font-normal opacity-80">sqft</span>
         </span>
       </div>
-
-      {/* Deviation indicator */}
       {issued > 0 && (over || under) && (
         <p className={`mt-2 text-xs font-semibold ${over ? "text-amber-600" : "text-emerald-600"}`}>
           {over
@@ -444,8 +450,8 @@ const JobLookup = ({ onJobSelected, issuedJobIds = new Set() }) => {
     );
   }, [jobs, filter, issuedJobIds]);
 
-  const selectJob  = job  => { setSelected(job); onJobSelected(job); };
-  const clearJob   = ()   => { setSelected(null); onJobSelected(null); };
+  const selectJob = job => { setSelected(job); onJobSelected(job); };
+  const clearJob  = ()  => { setSelected(null); onJobSelected(null); };
 
   useEffect(() => {
     if (selected && issuedJobIds.has(selected._id)) { setSelected(null); onJobSelected(null); }
@@ -526,44 +532,25 @@ const JobLookup = ({ onJobSelected, issuedJobIds = new Set() }) => {
 };
 
 // ─── Issue Panel ──────────────────────────────────────────────────────────────
-//
-// CALCULATION MODES
-// ─────────────────
-// Mode A — "sqft" (default when cart item has sq_ft > 0):
-//   • job_sqft      = cart_item.sq_ft  (stored in backend, already the real area)
-//   • wastage_sqft  = job_sqft × (buffer / 100)
-//   • required_sqft = job_sqft + wastage_sqft
-//   • Pure client-side — NO API call to /material/calculate
-//   • User can still manually change issuedQty
-//
-// Mode B — "manual" (user toggles, or sq_ft is missing/zero):
-//   • User enters width_ft × height_ft + optional top/bottom margins
-//   • Calls backend POST /material/calculate  → returns full breakdown
-//   • issued qty pre-filled from res.data.required_sqft
-//
 const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
   const { user } = useSelector(s => s.authSlice);
 
-  // ── form state ──────────────────────────────────────────────────────────────
-  const [job,         setJob]         = useState(null);
-  const [cartItemIdx, setCartItemIdx] = useState(0);
-  const [productId,   setProductId]   = useState("");
-  const [empId,       setEmpId]       = useState("");
-  const [issueNotes,  setIssueNotes]  = useState("");
-  const [issuedQty,   setIssuedQty]   = useState("");
-  const [buffer,      setBuffer]      = useState(20);   // wastage % — used in both modes
+  const [job,            setJob]            = useState(null);
+  const [cartItemIdx,    setCartItemIdx]    = useState(0);
+  const [productId,      setProductId]      = useState("");
+  const [empId,          setEmpId]          = useState("");
+  const [issueNotes,     setIssueNotes]     = useState("");
+  const [issuedQty,      setIssuedQty]      = useState("");
+  const [buffer,         setBuffer]         = useState(20);
+  const [outsourceType,  setOutsourceType]  = useState("none");
+  const [outsourceVendor,setOutsourceVendor]= useState("");
 
-  // Mode B (manual W×H) fields
   const [manualMode,  setManualMode]  = useState(false);
   const [width,       setWidth]       = useState("");
   const [height,      setHeight]      = useState("");
   const [marginTop,   setMarginTop]   = useState(4);
   const [marginBot,   setMarginBot]   = useState(3);
 
-  // ── calculation state ───────────────────────────────────────────────────────
-  // `calc` shape always has: { job_sqft, required_sqft, wastage_buffer_pct }
-  // Mode A adds:   { wastage_sqft }
-  // Mode B adds:   { margin_sqft, gross_sqft }
   const [calc,        setCalc]        = useState(null);
   const [calcLoading, setCalcLoading] = useState(false);
   const [submitLoad,  setSubmitLoad]  = useState(false);
@@ -571,50 +558,35 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
   const { toasts, show, dismiss } = useToast();
   const calcTimer = useRef(null);
 
-  // ── helpers ─────────────────────────────────────────────────────────────────
   const cartItem = job?.cart_items?.[cartItemIdx];
 
-  // Cart sq_ft — numeric, 0 if missing/invalid
   const cartSqFt = useMemo(() => {
     const v = parseFloat(cartItem?.sq_ft);
     return isNaN(v) ? 0 : v;
   }, [cartItem]);
 
-  // Parse W×H from size string (fallback for manual mode pre-fill)
   const parseDimensions = (sizeStr) => {
     if (!sizeStr) return null;
     const m = sizeStr.match(/^(\d+(?:\.\d+)?)\s*[xX×]\s*(\d+(?:\.\d+)?)/);
     return m ? { w: parseFloat(m[1]), h: parseFloat(m[2]) } : null;
   };
 
-  // ── Mode A: client-side sq_ft calc ─────────────────────────────────────────
-  // Runs whenever sq_ft, buffer, or mode changes (and we are NOT in manual mode)
   useEffect(() => {
     if (manualMode) return;
     if (!cartSqFt || cartSqFt <= 0) { setCalc(null); setIssuedQty(""); return; }
-
-    const buf        = parseFloat(buffer) || 0;
-    const wastage    = parseFloat((cartSqFt * buf / 100).toFixed(4));
-    const required   = parseFloat((cartSqFt + wastage).toFixed(4));
-    const newCalc = {
-      job_sqft:          cartSqFt,
-      wastage_sqft:      wastage,
-      required_sqft:     required,
-      wastage_buffer_pct: buf,
-    };
-    setCalc(newCalc);
+    const buf      = parseFloat(buffer) || 0;
+    const wastage  = parseFloat((cartSqFt * buf / 100).toFixed(4));
+    const required = parseFloat((cartSqFt + wastage).toFixed(4));
+    setCalc({ job_sqft: cartSqFt, wastage_sqft: wastage, required_sqft: required, wastage_buffer_pct: buf });
     setIssuedQty(required);
   }, [cartSqFt, buffer, manualMode]);
 
-  // ── Mode B: backend calc ────────────────────────────────────────────────────
-  // Debounced — fires when manual mode is active and dimensions are valid
   useEffect(() => {
     if (!manualMode) return;
     clearTimeout(calcTimer.current);
     const w = parseFloat(width);
     const h = parseFloat(height);
     if (!w || !h || w <= 0 || h <= 0) { setCalc(null); return; }
-
     calcTimer.current = setTimeout(async () => {
       setCalcLoading(true);
       try {
@@ -636,17 +608,12 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
         setCalcLoading(false);
       }
     }, 600);
-
     return () => clearTimeout(calcTimer.current);
   }, [manualMode, width, height, marginTop, marginBot, buffer]);
 
-  // ── Reset when cart item changes ────────────────────────────────────────────
   const applyCartItem = useCallback((job, idx) => {
     const item = job?.cart_items?.[idx];
-    setCalc(null);
-    setIssuedQty("");
-    setManualMode(false);  // always start in sqft mode
-    // Pre-fill W/H in case user switches to manual mode
+    setCalc(null); setIssuedQty(""); setManualMode(false);
     if (item?.size) {
       const dims = parseDimensions(item.size);
       if (dims) { setWidth(dims.w); setHeight(dims.h); }
@@ -658,6 +625,7 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
     setJob(selectedJob);
     setCartItemIdx(0);
     setProductId(""); setEmpId(""); setIssueNotes("");
+    setOutsourceType("none"); setOutsourceVendor("");
     if (selectedJob) applyCartItem(selectedJob, 0);
     else { setCalc(null); setIssuedQty(""); setManualMode(false); }
   };
@@ -668,22 +636,18 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
     applyCartItem(job, idx);
   };
 
-  // Switching modes: recalc resets
   const toggleManualMode = (toManual) => {
     setManualMode(toManual);
     setCalc(null);
     setIssuedQty("");
-    if (!toManual && cartSqFt > 0) {
-      // Will re-fire the Mode A effect automatically
-    }
   };
 
-  // ── Derived ─────────────────────────────────────────────────────────────────
-  const selectedProduct = products.find(p => p._id === productId);
-  const selectedEmp     = employees.find(e => e._id === empId);
-  const calcMode        = manualMode ? "server" : "sqft";
+  const selectedProduct   = products.find(p => p._id === productId);
+  const selectedEmp       = employees.find(e => e._id === empId);
+  const calcMode          = manualMode ? "server" : "sqft";
+  const isOutsourced      = outsourceType && outsourceType !== "none";
+  const outsourceLabel    = OUTSOURCE_TYPES.find(o => o.value === outsourceType)?.label || "";
 
-  // ── Submit ──────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     if (!job)        return show("Select a job first", "error");
     if (!productId)  return show("Select a material product", "error");
@@ -704,11 +668,12 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
           product_name: selectedProduct?.name,
           unit:         "sqft",
         },
-        issued_qty:        qty,
-        sq_ft:             cartSqFt || null,            // store original cart sq_ft
-        calc_mode:         calcMode,                    // "sqft" | "server"
+        issued_qty:         qty,
+        sq_ft:              cartSqFt || null,
+        calc_mode:          calcMode,
         wastage_buffer_pct: parseFloat(buffer) || 0,
-        // Only sent in manual mode
+        outsource_type:   outsourceType,
+        outsource_vendor: isOutsourced ? outsourceVendor : "",
         ...(manualMode ? {
           dimensions: {
             width:  parseFloat(width),
@@ -746,23 +711,25 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
           dimensions: { width: parseFloat(width), height: parseFloat(height), unit: "ft" },
         } : {}),
         wastage_buffer_pct: parseFloat(buffer) || 0,
-        calc_mode:     calcMode,
-        sq_ft:         cartSqFt || null,
+        calc_mode:        calcMode,
+        sq_ft:            cartSqFt || null,
+        outsource_type:   outsourceType,
+        outsource_vendor: isOutsourced ? outsourceVendor : "",
         issued_to: { user_id: empId, name: selectedEmp?.name || "", role: selectedEmp?.role || "" },
         issued_by:  { user_id: user?._id, name: user?.name || "Store Manager", role: user?.role || "store manager" },
-        calculation: calc,
-        issue_notes: issueNotes,
-        status:     "issued",
-        issued_at:  new Date().toISOString(),
+        calculation:  calc,
+        issue_notes:  issueNotes,
+        status:       "issued",
+        issued_at:    new Date().toISOString(),
       };
 
       onIssued(newIssue, productId, qty, job._id);
       setTimeout(() => generateSlipPDF(newIssue, user), 400);
 
-      // Reset form
       setJob(null); setProductId(""); setIssuedQty(""); setEmpId("");
       setIssueNotes(""); setCalc(null); setManualMode(false);
       setWidth(""); setHeight("");
+      setOutsourceType("none"); setOutsourceVendor("");
     } catch (err) {
       show(err.message, "error");
     } finally {
@@ -774,7 +741,6 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
     <div className="space-y-4">
       <ToastContainer toasts={toasts} dismiss={dismiss} />
 
-      {/* ── Job Selection ────────────────────────────────────────────────────── */}
       <Card className="p-5">
         <SectionHeader icon="🏭" title="Production Jobs" subtitle="Select a job currently in production" />
         <JobLookup onJobSelected={handleJobSelected} issuedJobIds={issuedJobIds} />
@@ -796,7 +762,7 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
               ["Size",       cartItem.size],
               ["sq.ft",      cartSqFt > 0 ? `${cartSqFt} sqft` : "—"],
               ["Print Type", cartItem.printing_type],
-            ].filter(([, v]) => v && v !== "—" || v === "—").map(([k, v]) => (
+            ].map(([k, v]) => (
               <div key={k} className={`rounded-xl p-2.5 ${k === "sq.ft" && cartSqFt > 0 ? "bg-violet-50 border border-violet-100" : "bg-slate-50"}`}>
                 <p className={`text-[10px] mb-0.5 uppercase tracking-wide ${k === "sq.ft" && cartSqFt > 0 ? "text-violet-400" : "text-slate-400"}`}>{k}</p>
                 <p className={`text-xs font-semibold truncate ${k === "sq.ft" && cartSqFt > 0 ? "text-violet-700" : "text-slate-700"}`}>{v}</p>
@@ -808,9 +774,8 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
 
       {job && (
         <>
-          {/* ── Material ──────────────────────────────────────────────────────── */}
           <Card className="p-5">
-            <SectionHeader icon="📦" title="Material Selection" subtitle="Choose the product to issue" />
+            <SectionHeader icon="📦" title="Material Selection" subtitle="Choose the product and outsource type" />
             <div className="space-y-4">
               <Select label="Product" required value={productId} onChange={setProductId}
                 placeholder="Select material…"
@@ -826,12 +791,38 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
                 </div>
               )}
 
+              <div>
+                <Select
+                  label="Out Source Type"
+                  value={outsourceType}
+                  onChange={setOutsourceType}
+                  options={OUTSOURCE_TYPES}
+                />
+                {isOutsourced && (
+                  <div className="mt-2 flex items-center gap-2 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2">
+                    <span className="text-indigo-500 text-sm">🔗</span>
+                    <span className="text-xs font-semibold text-indigo-700">
+                      Outsourced · {outsourceLabel}
+                    </span>
+                    <Badge variant="indigo" className="ml-auto">External</Badge>
+                  </div>
+                )}
+              </div>
+
+              {isOutsourced && (
+                <Input
+                  label="Vendor / Party Name"
+                  value={outsourceVendor}
+                  onChange={e => setOutsourceVendor(e.target.value)}
+                  placeholder="e.g. Sri Murugan Printers, Chennai…"
+                />
+              )}
+
               <Input label="Issue Notes" value={issueNotes} onChange={e => setIssueNotes(e.target.value)}
                 placeholder="e.g. Day 1 of 3-day job, special instructions…" />
             </div>
           </Card>
 
-          {/* ── Calculation ───────────────────────────────────────────────────── */}
           <Card className="p-5">
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center gap-3">
@@ -847,8 +838,6 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
                   </p>
                 </div>
               </div>
-
-              {/* Mode toggle */}
               <div className="flex rounded-xl overflow-hidden border border-slate-200 flex-shrink-0 text-xs font-semibold">
                 <button onClick={() => toggleManualMode(false)}
                   className={`px-3 py-1.5 transition-colors ${!manualMode ? "bg-violet-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}>
@@ -861,10 +850,8 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
               </div>
             </div>
 
-            {/* ── Mode A: sq.ft ─────────────────────────────────────────────── */}
             {!manualMode && (
               <div className="space-y-4">
-                {/* sq.ft source info */}
                 {cartSqFt > 0 ? (
                   <div className="flex items-center gap-2 bg-violet-50 border border-violet-100 rounded-xl px-3 py-2.5 text-xs font-semibold text-violet-700">
                     <span>▣</span>
@@ -876,8 +863,6 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
                     <span>⚠</span> Cart item has no sq.ft — switch to W × H mode or enter qty manually
                   </div>
                 )}
-
-                {/* Wastage buffer (applies in both modes) */}
                 <div className="grid grid-cols-2 gap-3 items-end">
                   <NumberInput label="Wastage Buffer %" value={buffer} onChange={setBuffer} min={0} max={100} step={1} suffix="%" />
                   {cartSqFt > 0 && calc && (
@@ -890,7 +875,6 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
               </div>
             )}
 
-            {/* ── Mode B: Manual W×H ────────────────────────────────────────── */}
             {manualMode && (
               <div className="space-y-4">
                 <div>
@@ -916,22 +900,13 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
               </div>
             )}
 
-            {/* ── Calculation breakdown (both modes) ────────────────────────── */}
             <CalcPreview mode={calcMode} calc={calc} issuedQty={issuedQty} />
 
-            {/* ── Actual qty to issue ────────────────────────────────────────── */}
             <div className="mt-4 pt-4 border-t border-slate-100">
               <p className="text-xs text-slate-400 mb-2">
                 Recommended qty pre-filled. Override if issuing a different amount.
               </p>
-              <NumberInput
-                label="Actual Qty to Issue *"
-                value={issuedQty}
-                onChange={setIssuedQty}
-                min={0.01}
-                step={0.1}
-                suffix="sqft"
-              />
+              <NumberInput label="Actual Qty to Issue *" value={issuedQty} onChange={setIssuedQty} min={0.01} step={0.1} suffix="sqft" />
               {calc && issuedQty !== "" && parseFloat(issuedQty) !== calc.required_sqft && (
                 <p className="text-xs text-amber-500 font-medium mt-1.5">
                   ⚠ Differs from recommended ({calc.required_sqft} sqft) — manual override
@@ -940,7 +915,6 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
             </div>
           </Card>
 
-          {/* ── Personnel ─────────────────────────────────────────────────────── */}
           <Card className="p-5">
             <SectionHeader icon="👤" title="Personnel" subtitle="Who is receiving this material" />
             <div className="grid grid-cols-2 gap-3 mb-4">
@@ -1015,10 +989,10 @@ const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
             <Select value={statusFilter} onChange={v => { setStatusFilter(v); setPage(1); }}
               placeholder="All statuses"
               options={[
-                { value: "issued",   label: "Issued" },
-                { value: "returned", label: "Returned" },
-                { value: "no_return",label: "No Return" },
-                { value: "flagged",  label: "🚩 Flagged" },
+                { value: "issued",    label: "Issued" },
+                { value: "returned",  label: "Returned" },
+                { value: "no_return", label: "No Return" },
+                { value: "flagged",   label: "🚩 Flagged" },
               ]} />
           </div>
           <Btn variant="ghost" onClick={onRefresh} loading={loading} size="md" className="flex-shrink-0">↻</Btn>
@@ -1036,68 +1010,66 @@ const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
         <EmptyState icon="📭" title="No records found" subtitle="Try adjusting your filters" />
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          {paginated.map(issue => (
-            <Card key={issue._id} hoverable className="p-4" onClick={() => onViewIssue(issue, "view")}>
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-black text-sky-600 font-mono tracking-wide">{issue.issue_no}</span>
-                    {issue.return?.is_flagged && !issue.return?.manager_reviewed && <Badge variant="red">🚩 Review</Badge>}
-                  </div>
-                  <p className="text-sm font-bold text-slate-800 mt-0.5">{issue.job_no}</p>
-                </div>
-                <StatusBadge status={issue.status} />
-              </div>
-
-              <div className="flex items-center gap-3 mb-3">
-                <Avatar name={issue.issued_to?.name || "?"} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-slate-700 truncate">{issue.issued_to?.name}</p>
-                  <p className="text-xs text-slate-400">{issue.issued_to?.role}</p>
-                </div>
-                <div className="text-right flex-shrink-0">
-                  <p className="text-xs font-semibold text-slate-700 truncate max-w-[100px]">{issue.material?.product_name}</p>
-                  <p className="text-xs text-slate-400">{issue.issued_qty} sqft</p>
-                </div>
-              </div>
-
-              {/* Calculation summary row */}
-              {issue.calculation && (
-                <div className="grid grid-cols-3 gap-1.5 mb-3">
-                  {[["Job Area", issue.calculation.job_sqft], ["Gross", issue.calculation.gross_sqft], ["Recommended", issue.calculation.required_sqft]].map(([k, v]) => (
-                    <div key={k} className="bg-slate-50 rounded-lg p-1.5 text-center">
-                      <p className="text-[9px] text-slate-400">{k}</p>
-                      <p className="text-xs font-bold text-slate-700">{v}<span className="text-[9px] font-normal text-slate-400 ml-0.5">sqft</span></p>
+          {paginated.map(issue => {
+            const outsourceLabel = OUTSOURCE_TYPES.find(o => o.value === issue.outsource_type)?.label;
+            const isOutsourced   = issue.outsource_type && issue.outsource_type !== "none";
+            return (
+              <Card key={issue._id} hoverable className="p-4" onClick={() => onViewIssue(issue, "view")}>
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-black text-sky-600 font-mono tracking-wide">{issue.issue_no}</span>
+                      {issue.return?.is_flagged && !issue.return?.manager_reviewed && <Badge variant="red">🚩 Review</Badge>}
+                      {isOutsourced && <Badge variant="indigo">🔗 {outsourceLabel}</Badge>}
                     </div>
-                  ))}
+                    <p className="text-sm font-bold text-slate-800 mt-0.5">{issue.job_no}</p>
+                  </div>
+                  <StatusBadge status={issue.status} />
                 </div>
-              )}
 
-              {issue.return ? (
-                <WastageBar pct={issue.return.wastage_ratio_pct || 0} />
-              ) : (
-                <div className="flex items-center gap-2 text-xs text-slate-400">
-                  <div className="flex-1 h-1.5 rounded-full bg-slate-100" />
-                  Pending return
+                <div className="flex items-center gap-3 mb-3">
+                  <Avatar name={issue.issued_to?.name || "?"} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-slate-700 truncate">{issue.issued_to?.name}</p>
+                    <p className="text-xs text-slate-400">{issue.issued_to?.role}</p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-xs font-semibold text-slate-700 truncate max-w-[100px]">{issue.material?.product_name}</p>
+                    <p className="text-xs text-slate-400">{issue.issued_qty} sqft</p>
+                  </div>
                 </div>
-              )}
 
-              <div className="flex gap-2 mt-3 pt-3 border-t border-slate-50">
-                <Btn size="xs" variant="ghost" onClick={e => { e.stopPropagation(); onViewIssue(issue, "view"); }}>
-                  View Details
-                </Btn>
-                {issue.return?.is_flagged && !issue.return?.manager_reviewed && (
-                  <Btn size="xs" variant="danger" onClick={e => { e.stopPropagation(); onViewIssue(issue, "review"); }}>
-                    Review
-                  </Btn>
+                {issue.calculation && (
+                  <div className="grid grid-cols-3 gap-1.5 mb-3">
+                    {[["Job Area", issue.calculation.job_sqft], ["Gross", issue.calculation.gross_sqft], ["Recommended", issue.calculation.required_sqft]].map(([k, v]) => (
+                      <div key={k} className="bg-slate-50 rounded-lg p-1.5 text-center">
+                        <p className="text-[9px] text-slate-400">{k}</p>
+                        <p className="text-xs font-bold text-slate-700">{v}<span className="text-[9px] font-normal text-slate-400 ml-0.5">sqft</span></p>
+                      </div>
+                    ))}
+                  </div>
                 )}
-                <Btn size="xs" variant="ghost" className="ml-auto"
-                  onClick={e => { e.stopPropagation(); generateSlipPDF(issue, null); }}>
-                  📄 Slip
-                </Btn>
-              </div>
-            </Card>
-          ))}
+
+                {issue.return ? (
+                  <WastageBar pct={issue.return.wastage_ratio_pct || 0} />
+                ) : (
+                  <div className="flex items-center gap-2 text-xs text-slate-400">
+                    <div className="flex-1 h-1.5 rounded-full bg-slate-100" />
+                    Pending return
+                  </div>
+                )}
+
+                <div className="flex gap-2 mt-3 pt-3 border-t border-slate-50">
+                  <Btn size="xs" variant="ghost" onClick={e => { e.stopPropagation(); onViewIssue(issue, "view"); }}>View Details</Btn>
+                  {issue.return?.is_flagged && !issue.return?.manager_reviewed && (
+                    <Btn size="xs" variant="danger" onClick={e => { e.stopPropagation(); onViewIssue(issue, "review"); }}>Review</Btn>
+                  )}
+                  <Btn size="xs" variant="ghost" className="ml-auto"
+                    onClick={e => { e.stopPropagation(); generateSlipPDF(issue, null); }}>📄 Slip</Btn>
+                </div>
+              </Card>
+            );
+          })}
         </div>
       )}
 
@@ -1252,13 +1224,13 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
 
   const r    = issue.return;
   const calc = issue.calculation;
+  const isOutsourced   = issue.outsource_type && issue.outsource_type !== "none";
+  const outsourceLabel = OUTSOURCE_TYPES.find(o => o.value === issue.outsource_type)?.label;
 
   return (
     <Modal open title={`${issue.issue_no} · ${issue.job_no}`} onClose={onClose} size="md">
       <ToastContainer toasts={toasts} dismiss={dismiss} />
       <div className="space-y-5">
-
-        {/* Issue Summary */}
         <div>
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Issue Summary</p>
           <div className="space-y-1">
@@ -1267,13 +1239,27 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
               ["Material",    issue.material?.product_name],
               ["Issued Qty",  `${issue.issued_qty} sqft`],
               ["Recommended", `${issue.suggested_qty || calc?.required_sqft || "—"} sqft`],
-              ["Dimensions",  `${issue.dimensions?.width}ft × ${issue.dimensions?.height}ft`],
+              ["Dimensions",  issue.dimensions ? `${issue.dimensions?.width}ft × ${issue.dimensions?.height}ft` : "—"],
             ].map(([k, v]) => (
               <div key={k} className="flex justify-between items-center py-2 border-b border-slate-50">
                 <span className="text-xs text-slate-400">{k}</span>
                 <span className="text-sm font-semibold text-slate-800">{v}</span>
               </div>
             ))}
+            <div className="flex justify-between items-center py-2 border-b border-slate-50">
+              <span className="text-xs text-slate-400">Out Source</span>
+              {isOutsourced ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-indigo-700">{outsourceLabel}</span>
+                  {issue.outsource_vendor && (
+                    <span className="text-xs text-slate-400">· {issue.outsource_vendor}</span>
+                  )}
+                  <Badge variant="indigo">External</Badge>
+                </div>
+              ) : (
+                <span className="text-sm font-semibold text-slate-800">In-House</span>
+              )}
+            </div>
             <div className="flex justify-between items-center py-2">
               <span className="text-xs text-slate-400">Status</span>
               <StatusBadge status={issue.status} />
@@ -1281,7 +1267,6 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
           </div>
         </div>
 
-        {/* Calculation Breakdown */}
         {calc && (
           <div>
             <Divider label="Calculation Breakdown" />
@@ -1300,17 +1285,16 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
           📄 Download / Print Slip
         </Btn>
 
-        {/* Return Details */}
         {r && (
           <div>
             <Divider label="Return Details" />
             <div className="space-y-1">
               {[
-                ["Returned",  `${r.returned_qty} sqft`],
-                ["Used",      `${r.actual_used_qty} sqft`],
-                ["Wastage",   `${r.actual_wastage_qty} sqft`],
-                ["Ratio",     `${r.wastage_ratio_pct}%`],
-                ["Reason",    WASTAGE_REASONS.find(x => x.value === r.wastage_reason)?.label || r.wastage_reason],
+                ["Returned", `${r.returned_qty} sqft`],
+                ["Used",     `${r.actual_used_qty} sqft`],
+                ["Wastage",  `${r.actual_wastage_qty} sqft`],
+                ["Ratio",    `${r.wastage_ratio_pct}%`],
+                ["Reason",   WASTAGE_REASONS.find(x => x.value === r.wastage_reason)?.label || r.wastage_reason],
               ].map(([k, v]) => (
                 <div key={k} className="flex justify-between py-2 border-b border-slate-50">
                   <span className="text-xs text-slate-400">{k}</span>
@@ -1330,7 +1314,6 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
           </div>
         )}
 
-        {/* Manager Review */}
         {mode === "review" && r && (
           <div>
             <Divider label="Manager Review" />
@@ -1360,6 +1343,7 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
 // ─── Root ─────────────────────────────────────────────────────────────────────
 export default function MaterialIssueManager() {
   const { user } = useSelector(s => s.authSlice);
+  const navigate = useNavigate(); // ← ADD PRODUCT navigation
 
   const [tab,        setTab]        = useState("issue");
   const [issues,     setIssues]     = useState([]);
@@ -1429,7 +1413,6 @@ export default function MaterialIssueManager() {
     })(),
   }), [issues]);
 
-  // 3 tabs — Issue / Records / Report (no Returns tab)
   const TABS = [
     { key: "issue",  label: "Issue",   icon: "📋" },
     { key: "issues", label: "Records", icon: "📦", badge: issues.length },
@@ -1446,10 +1429,12 @@ export default function MaterialIssueManager() {
       <div className="min-h-screen bg-slate-50 flex flex-col">
         <ToastContainer toasts={toasts} dismiss={dismiss} />
 
-        {/* Header */}
+        {/* ── Header ─────────────────────────────────────────────────────────── */}
         <header className="bg-white border-b border-slate-100 sticky top-0 z-30 shadow-sm">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between py-4">
+
+              {/* Left: logo + title */}
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-slate-900 flex items-center justify-center flex-shrink-0">
                   <span className="text-white text-xs font-black">DM</span>
@@ -1459,14 +1444,35 @@ export default function MaterialIssueManager() {
                   <p className="text-xs text-slate-400 hidden sm:block">Flex roll & print tracker</p>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+
+              {/* Right: flagged alert + Add Product button + user avatar */}
+              <div className="flex items-center gap-2 sm:gap-3">
+
+                {/* Flagged alert pill */}
                 {stats.flagged > 0 && (
-                  <button onClick={() => setTab("issues")}
-                    className="flex items-center gap-1.5 bg-rose-50 border border-rose-100 rounded-full px-3 py-1.5 hover:bg-rose-100 transition-colors">
+                  <button
+                    onClick={() => setTab("issues")}
+                    className="flex items-center gap-1.5 bg-rose-50 border border-rose-100 rounded-full px-3 py-1.5 hover:bg-rose-100 transition-colors"
+                  >
                     <div className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
                     <span className="text-xs font-bold text-rose-600">{stats.flagged} to review</span>
                   </button>
                 )}
+
+              {/* ── ADD PRODUCT BUTTON ── */}
+              <button
+                onClick={() => {
+                  // Try direct navigation without permission check for testing
+                  navigate("/add-product");
+                }}
+                className="flex items-center gap-1.5 bg-slate-900 text-white rounded-xl px-3 py-2 hover:bg-slate-700 active:scale-95 transition-all duration-150 shadow-sm"
+              >
+                <span className="text-sm leading-none font-bold">+</span>
+                <span className="text-xs font-bold hidden sm:inline">Add Product</span>
+                <span className="text-xs font-bold sm:hidden">Add</span>
+              </button>
+
+                {/* User avatar */}
                 {user?.name && (
                   <div className="hidden sm:flex items-center gap-2">
                     <Avatar name={user.name} size="sm" />
@@ -1512,6 +1518,7 @@ export default function MaterialIssueManager() {
                 </button>
               ))}
             </div>
+
           </div>
         </header>
 
@@ -1551,3 +1558,4 @@ export default function MaterialIssueManager() {
     </>
   );
 }
+

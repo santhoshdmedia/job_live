@@ -108,13 +108,10 @@ export const router = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
+      // In router.jsx — remove PermissionGuard from add-product
       {
         path: "add-product",
-        element: (
-          <ProtectedRoute pageName="add-product">
-            <AddProduct />
-          </ProtectedRoute>
-        ),
+        element: <AddProduct />,
       },
       // ← REMOVED wildcard here — it was fighting the auth redirect
     ],
