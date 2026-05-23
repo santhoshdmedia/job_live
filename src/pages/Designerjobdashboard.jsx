@@ -79,7 +79,7 @@ const STATUS = {
   accepted:    { label: "Accepted",    color: "#22c55e", bg: "#f0fdf4", border: "#86efac" },
   in_progress: { label: "In Progress", color: "#f59e0b", bg: "#fffbeb", border: "#fcd34d" },
   on_hold:     { label: "On Hold",     color: "#f97316", bg: "#fff7ed", border: "#fdba74" },
-  completed:   { label: "Completed",   color: "#8b5cf6", bg: "#f5f3ff", border: "#c4b5fd" },
+  // completed:   { label: "Completed",   color: "#8b5cf6", bg: "#f5f3ff", border: "#c4b5fd" },
   rejected:    { label: "Rejected",    color: "#ef4444", bg: "#fef2f2", border: "#fca5a5" },
   design:      { label: "Design",      color: "#3b82f6", bg: "#eff6ff", border: "#93c5fd" },
 };
@@ -816,7 +816,7 @@ const DesignerJobDashboard = () => {
     { key: FILTER_LIVE,           label: "Live Sessions",    value: liveCount,              color: "#16a34a", bg: "#f0fdf4", activeBg: "#dcfce7", border: "#86efac" },
     { key: FILTER_ON_HOLD,        label: "On Hold",          value: onHoldCount,            color: "#f97316", bg: "#fff7ed", activeBg: "#ffedd5", border: "#fdba74" },
     { key: FILTER_DESIGN_UPLOADED, label: "Design Uploaded", value: designUploadedCount,    color: "#8b5cf6", bg: "#f5f3ff", activeBg: "#ede9fe", border: "#c4b5fd" },
-    { key: FILTER_COMPLETED,       label: "Completed",       value: completedCount,         color: "#0f766e", bg: "#f0fdfa", activeBg: "#ccfbf1", border: "#99f6e4" },
+    // { key: FILTER_COMPLETED,       label: "Completed",       value: completedCount,         color: "#0f766e", bg: "#f0fdfa", activeBg: "#ccfbf1", border: "#99f6e4" },
     { key: FILTER_APPROVED_DESIGN, label: "Design Approved", value: approvedDesignCount,    color: "#be185d", bg: "#fce7f3", activeBg: "#fbcfe8", border: "#f9a8d4" },
     ...(!isSuperAdmin ? [
       { key: FILTER_ACCESS_PENDING, label: "Access Pending", value: accessPendingCount,     color: "#d97706", bg: "#fffbeb", activeBg: "#fef3c7", border: "#fcd34d" },
