@@ -45,14 +45,18 @@ export const UNITS = [
 ];
 
 export const UNIT_MAP = Object.fromEntries(UNITS.map((u) => [u.value, u]));
-
 export const unitLabel = (unit) => UNIT_MAP[unit]?.short || unit || "pcs";
-
-// Format a quantity+unit pair, e.g. "150 sq ft"
 export const formatQty = (qty, unit) => `${Number(qty || 0).toLocaleString()} ${unitLabel(unit)}`;
-
-// Build a unit_qty object
 export const mkUnitQty = (qty, unit) => ({ qty: Number(qty) || 0, unit: unit || "pcs" });
+
+// ─── Size unit options for Width / Height ─────────────────────────────────────
+const SIZE_UNITS = [
+  { value: "inches", label: "Inches (in)" },
+  { value: "feet",   label: "Feet (ft)"   },
+  { value: "cm",     label: "Centimeters (cm)" },
+  { value: "meters", label: "Meters (m)"  },
+  { value: "mm",     label: "Millimeters (mm)" },
+];
 
 const STORAGE_KEYS = {
   PAGE_SIZE:    "products_pageSize",
@@ -228,9 +232,9 @@ const UploadHelper = ({ max = 10, setImagePath, image_path = [], label = "Upload
 // ─── UnitQtyInput — reusable quantity + unit picker ───────────────────────────
 
 const UnitQtyInput = ({
-  value,              // { qty, unit }
-  onChange,           // (val: { qty, unit }) => void
-  allowedUnits,       // string[] — subset of UNITS to show (default: all)
+  value,
+  onChange,
+  allowedUnits,
   label = "Quantity",
   required = false,
   size = "large",
@@ -268,14 +272,61 @@ const UnitQtyInput = ({
   );
 };
 
+// ─── SizeInput — Width × Height with shared unit ──────────────────────────────
+
+const SizeInput = ({ value = {}, onChange, size = "large", disabled = false }) => {
+  const width  = value.width  ?? "";
+  const height = value.height ?? "";
+  const unit   = value.unit   ?? "feet";
+
+  const emit = (patch) => onChange({ width, height, unit, ...patch });
+
+  return (
+    <div className="flex gap-2 items-stretch flex-wrap">
+      <InputNumber
+        value={width === "" ? null : width}
+        onChange={(v) => emit({ width: v ?? "" })}
+        min={0}
+        placeholder="Width"
+        size={size}
+        disabled={disabled}
+        style={{ flex: 1, minWidth: 90, borderRadius: 10 }}
+        addonBefore={<span className="text-xs text-gray-500 font-semibold">W</span>}
+        formatter={(v) => (v ? `${v}` : "")}
+        parser={(v) => v}
+      />
+      <span className="flex items-center text-gray-400 font-bold text-base select-none">×</span>
+      <InputNumber
+        value={height === "" ? null : height}
+        onChange={(v) => emit({ height: v ?? "" })}
+        min={0}
+        placeholder="Height"
+        size={size}
+        disabled={disabled}
+        style={{ flex: 1, minWidth: 90, borderRadius: 10 }}
+        addonBefore={<span className="text-xs text-gray-500 font-semibold">H</span>}
+        formatter={(v) => (v ? `${v}` : "")}
+        parser={(v) => v}
+      />
+      <Select
+        value={unit}
+        onChange={(u) => emit({ unit: u })}
+        options={SIZE_UNITS}
+        size={size}
+        disabled={disabled}
+        style={{ minWidth: 150, borderRadius: 10 }}
+        popupMatchSelectWidth={false}
+      />
+    </div>
+  );
+};
+
 // ─── UnitStockSummaryCard ─────────────────────────────────────────────────────
-// Shows net stock broken down by every unit tracked for a product.
 
 const UnitStockSummaryCard = ({ product }) => {
   const summary = _.get(product, "unit_stock_summary", []);
   const primaryUnit = _.get(product, "primary_unit", "pcs");
 
-  // Compute from raw stock_info / stock_offline if summary missing
   const computed = useMemo(() => {
     if (summary.length > 0) return summary;
     const inEntries  = _.get(product, "stock_info", []);
@@ -627,10 +678,10 @@ const NewProductStockModal = ({ open, onClose, onSuccess, categoryData, subcateg
   const [filteredSubcategories, setFilteredSubcategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState(null);
 
-  // Unit state — primary unit drives all stock entries for this product
   const [primaryUnit, setPrimaryUnit] = useState("pcs");
   const [supportedUnits, setSupportedUnits] = useState(["pcs"]);
   const [stockUnitQty, setStockUnitQty] = useState({ qty: 0, unit: "pcs" });
+  const [productSize, setProductSize] = useState({ width: "", height: "", unit: "feet" });
 
   useEffect(() => {
     if (!open) {
@@ -642,6 +693,7 @@ const NewProductStockModal = ({ open, onClose, onSuccess, categoryData, subcateg
       setPrimaryUnit("pcs");
       setSupportedUnits(["pcs"]);
       setStockUnitQty({ qty: 0, unit: "pcs" });
+      setProductSize({ width: "", height: "", unit: "feet" });
     }
   }, [open]);
 
@@ -668,7 +720,6 @@ const NewProductStockModal = ({ open, onClose, onSuccess, categoryData, subcateg
         date:         values.date ? values.date.toISOString() : new Date().toISOString(),
       };
 
-      // Build initial unit_stock_summary
       const unitStockSummary = supportedUnits.map((u) => ({
         unit:      u,
         total_in:  u === unitQty.unit ? unitQty.qty : 0,
@@ -676,21 +727,35 @@ const NewProductStockModal = ({ open, onClose, onSuccess, categoryData, subcateg
         net_stock: u === unitQty.unit ? unitQty.qty : 0,
       }));
 
+      // Normalise size — only include if at least one dimension is set
+      const sizePayload =
+        (productSize.width !== "" || productSize.height !== "")
+          ? {
+              width:  productSize.width  !== "" ? Number(productSize.width)  : null,
+              height: productSize.height !== "" ? Number(productSize.height) : null,
+              unit:   productSize.unit,
+            }
+          : null;
+
       const payload = {
-        name:                 values.name,
-        HSNcode_time:         values.HSNcode_time || "",
-        type:                 values.type || "Stand Alone Product",
-        MRP_price:            values.MRP_price || "",
+        name:                   values.name,
+        // ── Material Brand & Size ────────────────────────────────────────────
+        material_brand:         values.material_brand || "",
+        size:                   sizePayload,
+        // ────────────────────────────────────────────────────────────────────
+        HSNcode_time:           values.HSNcode_time || "",
+        type:                   values.type || "Stand Alone Product",
+        MRP_price:              values.MRP_price || "",
         customer_product_price: values.customer_price || "",
-        primary_unit:         primaryUnit,
-        supported_units:      supportedUnits,
-        unit_stock_summary:   unitStockSummary,
-        stock_info:           [stockEntry],
-        stock_count:          unitQty.qty || Number(values.initial_stock) || 0,
-        stock_offline:        [],
-        stocks_status:        (unitQty.qty || Number(values.initial_stock) || 0) > 10 ? "In Stock" : "Limited",
-        is_visible:           false,
-        material_issues:      [],
+        primary_unit:           primaryUnit,
+        supported_units:        supportedUnits,
+        unit_stock_summary:     unitStockSummary,
+        stock_info:             [stockEntry],
+        stock_count:            unitQty.qty || Number(values.initial_stock) || 0,
+        stock_offline:          [],
+        stocks_status:          (unitQty.qty || Number(values.initial_stock) || 0) > 10 ? "In Stock" : "Limited",
+        is_visible:             false,
+        material_issues:        [],
         material_stats: {
           total_issued_qty:   0,
           total_returned_qty: 0,
@@ -741,24 +806,73 @@ const NewProductStockModal = ({ open, onClose, onSuccess, categoryData, subcateg
             <div className="w-1 h-5 bg-teal-500 rounded-full" />
             <span className="font-bold text-gray-800 text-sm uppercase tracking-wide">Product Details</span>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
             <Form.Item label="Product Name" name="name"
-              rules={[formValidation("Enter product name")]} className="md:col-span-2">
+              rules={[formValidation("Enter product name")]}>
               <Input placeholder="e.g. Vinyl Banner Roll" className="h-10" />
             </Form.Item>
+
+            <Form.Item
+              label={
+                <span className="flex items-center gap-1">
+                  Material Brand
+                  <Tooltip title="The brand / manufacturer of this material (e.g. 3M, LG, Avery)">
+                    <span className="text-gray-400 cursor-help text-xs border border-gray-300 rounded-full w-4 h-4 inline-flex items-center justify-center ml-1">?</span>
+                  </Tooltip>
+                </span>
+              }
+              name="material_brand"
+            >
+              <Input placeholder="e.g. 3M, LG Hausys, Avery Dennison" className="h-10"
+                prefix={<span className="text-gray-400 text-sm">🏷️</span>} />
+            </Form.Item>
+
             <Form.Item label="HSN Code" name="HSNcode_time">
               <Input placeholder="e.g. VND-001" className="h-10" />
             </Form.Item>
+
             <Form.Item label="Product Type" name="type">
               <Select placeholder="Select type" options={productTypes} allowClear className="h-10" />
             </Form.Item>
+
             <Form.Item label="MRP Price (₹)" name="MRP_price">
               <Input type="number" placeholder="e.g. 999" className="h-10" prefix="₹" />
             </Form.Item>
+
             <Form.Item label="Customer Price (₹)" name="customer_price">
               <Input type="number" placeholder="e.g. 799" className="h-10" prefix="₹" />
             </Form.Item>
+
           </div>
+        </div>
+
+        {/* ── Size Configuration ── */}
+        <div className="rounded-2xl p-4 mb-4" style={{ background: "#fefce8", border: "1.5px solid #fde68a" }}>
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-1 h-5 bg-yellow-400 rounded-full" />
+            <span className="font-bold text-gray-800 text-sm uppercase tracking-wide">Size</span>
+            <Tooltip title="Physical dimensions of this product/material — stored per product for reference and reporting.">
+              <span className="text-gray-400 cursor-help text-xs border border-gray-300 rounded-full w-4 h-4 flex items-center justify-center">?</span>
+            </Tooltip>
+            <span className="ml-auto text-xs text-gray-400 font-medium">Optional</span>
+          </div>
+
+          <Text className="text-sm font-semibold text-gray-700 mb-1 block">
+            Width × Height
+          </Text>
+          <Text className="text-xs text-gray-400 mb-2 block">
+            Enter the physical size of the product and choose the measurement unit
+          </Text>
+
+          <SizeInput value={productSize} onChange={setProductSize} />
+
+          {(productSize.width !== "" || productSize.height !== "") && (
+            <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold"
+              style={{ background: "#fef9c3", border: "1px solid #fde68a", color: "#854d0e" }}>
+              📐 Size: {productSize.width !== "" ? productSize.width : "—"} × {productSize.height !== "" ? productSize.height : "—"} {productSize.unit}
+            </div>
+          )}
         </div>
 
         {/* ── Unit Configuration ── */}
@@ -816,7 +930,6 @@ const NewProductStockModal = ({ open, onClose, onSuccess, categoryData, subcateg
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-            {/* ── Unit-aware quantity input ── */}
             <div className="md:col-span-2">
               <Text className="text-sm font-semibold text-gray-700 mb-1 block">
                 Initial Stock Quantity <span className="text-red-500">*</span>
@@ -907,11 +1020,9 @@ const StockInModal = ({ open, onClose, product, onSuccess }) => {
       };
       const updatedStockInfo = [...existingStockInfo, newEntry];
 
-      // Rebuild unit_stock_summary
       const existingOut = _.get(product, "stock_offline", []);
       const newSummary  = buildUnitSummary(updatedStockInfo, existingOut, primaryUnit);
 
-      // Legacy stock_count: sum of primary unit
       const primarySummary = newSummary.find((s) => s.unit === unitQty.unit);
       const legacyStockCount = primarySummary ? primarySummary.net_stock : 0;
 
@@ -930,10 +1041,6 @@ const StockInModal = ({ open, onClose, product, onSuccess }) => {
       setLoading(false);
     }
   };
-
-  const currentDisplay = unitQty.unit === primaryUnit
-    ? formatQty(_.get(product, "stock_count", 0), primaryUnit)
-    : "—";
 
   return (
     <Modal open={open} onCancel={onClose} footer={null} width={700} destroyOnClose
@@ -960,7 +1067,6 @@ const StockInModal = ({ open, onClose, product, onSuccess }) => {
       <Form form={form} layout="vertical" onFinish={handleSubmit} className="mt-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-          {/* ── Unit-aware quantity ── */}
           <div className="md:col-span-2">
             <Text className="text-sm font-semibold text-gray-700 mb-1 block">
               Add Stock Quantity <span className="text-red-500">*</span>
@@ -1180,7 +1286,6 @@ const StockHistoryModal = ({ open, onClose, product }) => {
     date:            item.date ? moment(item.date).format("DD/MM/YYYY h:mm A") : "—",
   }));
 
-  // Totals grouped by unit
   const inTotals  = groupByUnit(stockIn.map((r) => r.unit_qty));
   const outTotals = groupByUnit(stockOut.map((r) => r.unit_qty));
   const allUnits  = [...new Set([...Object.keys(inTotals), ...Object.keys(outTotals)])];
@@ -1254,7 +1359,6 @@ const StockHistoryModal = ({ open, onClose, product }) => {
         </div>
       }
     >
-      {/* Unit summary bar */}
       {allUnits.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 mb-2">
           {allUnits.map((u) => {
@@ -1319,7 +1423,7 @@ const StockHistoryModal = ({ open, onClose, product }) => {
   );
 };
 
-// ─── Utility: build unit_stock_summary from raw arrays ───────────────────────
+// ─── Utility: build unit_stock_summary ───────────────────────────────────────
 
 function buildUnitSummary(stockInfo = [], stockOffline = [], fallbackUnit = "pcs") {
   const map = {};
@@ -1377,25 +1481,22 @@ const AddProduct = () => {
   const [priceMin, setPriceMin] = useState("");
   const [priceMax, setPriceMax] = useState("");
 
+  // ── FIX: Modal states — product modals only open when product is set ────────
+  // newProductModal: simple boolean
   const [newProductModal, setNewProductModal] = useState(false);
-  const [stockInModal, setStockInModal] = useState({ open: false, product: null });
-  const [stockOutModal, setStockOutModal] = useState({ open: false, product: null });
-  const [stockHistoryModal, setStockHistoryModal] = useState({ open: false, product: null });
-  const [materialIssueModal, setMaterialIssueModal] = useState({ open: false, product: null });
-
-  // const hasEditPermission =
-  //   isSuperAdmin(user.role) || canEditPage(user.pagePermissions, "product-details");
-  // const hasDeletePermission =
-  //   isSuperAdmin(user.role) || canDeletePage(user.pagePermissions, "product-details");
+  // For product-specific modals: null means closed, object means open with that product
+  const [stockInProduct, setStockInProduct] = useState(null);
+  const [stockOutProduct, setStockOutProduct] = useState(null);
+  const [stockHistoryProduct, setStockHistoryProduct] = useState(null);
+  const [materialIssueProduct, setMaterialIssueProduct] = useState(null);
 
   const hasEditPermission = true;
-const hasDeletePermission = true;
-
+  const hasDeletePermission = true;
 
   const [paginationConfig, setPaginationConfig] = useState(() => {
-    const savedPageSize   = localStorage.getItem(STORAGE_KEYS.PAGE_SIZE);
-    const savedCurrentPage= localStorage.getItem(STORAGE_KEYS.CURRENT_PAGE);
-    const savedActiveTab  = localStorage.getItem(STORAGE_KEYS.ACTIVE_TAB);
+    const savedPageSize    = localStorage.getItem(STORAGE_KEYS.PAGE_SIZE);
+    const savedCurrentPage = localStorage.getItem(STORAGE_KEYS.CURRENT_PAGE);
+    const savedActiveTab   = localStorage.getItem(STORAGE_KEYS.ACTIVE_TAB);
     if (savedActiveTab) setActiveTabKey(savedActiveTab);
     return {
       pageSize:    savedPageSize    ? parseInt(savedPageSize, 10)    : 10,
@@ -1439,12 +1540,12 @@ const hasDeletePermission = true;
 
   useEffect(() => {
     if (initialFilters) {
-      if (initialFilters.category)   setFilterByProductCategory(initialFilters.category);
+      if (initialFilters.category)    setFilterByProductCategory(initialFilters.category);
       if (initialFilters.subcategory) setFilterByProductSubcategory(initialFilters.subcategory);
-      if (initialFilters.vendor)     setVendorFilter(initialFilters.vendor);
-      if (initialFilters.type)       setFilterByType(initialFilters.type);
-      if (initialFilters.visibility) setVisibilityFilter(initialFilters.visibility);
-      if (initialFilters.search)     setSearch(initialFilters.search);
+      if (initialFilters.vendor)      setVendorFilter(initialFilters.vendor);
+      if (initialFilters.type)        setFilterByType(initialFilters.type);
+      if (initialFilters.visibility)  setVisibilityFilter(initialFilters.visibility);
+      if (initialFilters.search)      setSearch(initialFilters.search);
       if (initialFilters.stockMin !== undefined) setStockMin(initialFilters.stockMin);
       if (initialFilters.stockMax !== undefined) setStockMax(initialFilters.stockMax);
       if (initialFilters.priceMin !== undefined) setPriceMin(initialFilters.priceMin);
@@ -1607,19 +1708,23 @@ const hasDeletePermission = true;
       setExportLoading(true);
       let csv = "data:text/csv;charset=utf-8,";
       const cols = [
-        "S.No", "Product Name", "PRODUCT S.NO", "VENDOR CODE", "Product Code",
+        "S.No", "Product Name", "Material Brand", "Size",
+        "PRODUCT S.NO", "VENDOR CODE", "Product Code",
         "Category", "Sub Category", "MRP Price",
-        "Primary Unit",
-        "Stock Count", "Stock Unit",
+        "Primary Unit", "Stock Count", "Stock Unit",
         "Total Issued", "Issue Unit", "Total Returned", "Total Wastage", "Avg Wastage %", "Issue Count",
       ];
       csv += cols.join(",") + "\r\n";
       tableData.forEach((product, index) => {
         const stats       = getMaterialStats(product) || {};
         const primaryUnit = product.primary_unit || "pcs";
+        const size        = product.size;
+        const sizeStr     = size ? `${size.width ?? "—"} x ${size.height ?? "—"} ${size.unit}` : "—";
         const row = {
           "S.No":             index + 1,
           "Product Name":     product.name || "N/A",
+          "Material Brand":   product.material_brand || "—",
+          "Size":             sizeStr,
           "PRODUCT S.NO":     product.product_codeS_NO || "N/A",
           "VENDOR CODE":      product.Vendor_Code || "N/A",
           "Product Code":     product.product_code || "N/A",
@@ -1762,32 +1867,49 @@ const hasDeletePermission = true;
       },
     },
     {
-      title: "Name", dataIndex: "name", width: 180,
-      render: (data, record) => (
-        <div className="flex flex-col space-y-1">
-          <Tooltip title={data}>
-            <span className="font-semibold text-gray-900 text-sm line-clamp-2">{data}</span>
-          </Tooltip>
-          <span className="text-xs text-gray-500">Code: {record.product_code || "N/A"}</span>
-          {/* Unit badge */}
-          <span className="inline-flex items-center gap-1">
-            <span className="text-xs px-1.5 py-0.5 rounded font-semibold"
-              style={{ background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe" }}>
-              {UNIT_MAP[record.primary_unit || "pcs"]?.icon} {unitLabel(record.primary_unit || "pcs")}
-            </span>
-            {record.supported_units?.length > 1 && (
-              <Tooltip title={`Also tracked in: ${record.supported_units.filter((u) => u !== record.primary_unit).map(unitLabel).join(", ")}`}>
-                <span className="text-xs text-gray-400 cursor-help">+{record.supported_units.length - 1}</span>
-              </Tooltip>
+      title: "Name", dataIndex: "name", width: 210,
+      render: (data, record) => {
+        const brand = record.material_brand;
+        const size  = record.size;
+        const sizeStr = size
+          ? `${size.width ?? "—"} × ${size.height ?? "—"} ${size.unit}`
+          : null;
+
+        return (
+          <div className="flex flex-col space-y-1">
+            <Tooltip title={data}>
+              <span className="font-semibold text-gray-900 text-sm line-clamp-2">{data}</span>
+            </Tooltip>
+            {brand && (
+              <span className="inline-flex items-center gap-1 text-xs text-indigo-700 font-medium">
+                🏷️ {brand}
+              </span>
             )}
-          </span>
-          {record.variants?.length > 0 && (
-            <span className="text-xs text-blue-600 font-medium">
-              {record.variants.reduce((c, v) => c + (v.options?.length || 0), 0)} variant(s)
+            {sizeStr && (
+              <span className="inline-flex items-center gap-1 text-xs text-amber-700 font-medium">
+                📐 {sizeStr}
+              </span>
+            )}
+            <span className="text-xs text-gray-500">Code: {record.product_code || "N/A"}</span>
+            <span className="inline-flex items-center gap-1">
+              <span className="text-xs px-1.5 py-0.5 rounded font-semibold"
+                style={{ background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe" }}>
+                {UNIT_MAP[record.primary_unit || "pcs"]?.icon} {unitLabel(record.primary_unit || "pcs")}
+              </span>
+              {record.supported_units?.length > 1 && (
+                <Tooltip title={`Also tracked in: ${record.supported_units.filter((u) => u !== record.primary_unit).map(unitLabel).join(", ")}`}>
+                  <span className="text-xs text-gray-400 cursor-help">+{record.supported_units.length - 1}</span>
+                </Tooltip>
+              )}
             </span>
-          )}
-        </div>
-      ),
+            {record.variants?.length > 0 && (
+              <span className="text-xs text-blue-600 font-medium">
+                {record.variants.reduce((c, v) => c + (v.options?.length || 0), 0)} variant(s)
+              </span>
+            )}
+          </div>
+        );
+      },
     },
     {
       title: "Stock", dataIndex: "totalStock", width: 160, align: "center",
@@ -1803,7 +1925,6 @@ const hasDeletePermission = true;
             <span className={`text-xs font-medium ${status === "Limited" ? "text-orange-600" : "text-green-600"}`}>
               {status}
             </span>
-            {/* Multi-unit summary inline */}
             <UnitStockSummaryCard product={record} />
           </div>
         );
@@ -1816,7 +1937,7 @@ const hasDeletePermission = true;
           {hasEditPermission && (
             <Tooltip title={`Stock IN — ${formatQty(record.stock_count || 0, record.primary_unit || "pcs")}`}>
               <Button size="small" icon={<ArrowUpOutlined />}
-                onClick={() => setStockInModal({ open: true, product: record })}
+                onClick={() => setStockInProduct(record)}
                 style={{ background: "#f0fdf4", borderColor: "#16a34a", color: "#16a34a", fontWeight: 600, fontSize: 11, borderRadius: 8 }}>
                 IN
               </Button>
@@ -1825,7 +1946,7 @@ const hasDeletePermission = true;
           {hasEditPermission && (
             <Tooltip title={`Stock OUT — ${formatQty(record.stock_count || 0, record.primary_unit || "pcs")}`}>
               <Button size="small" icon={<ArrowDownOutlined />}
-                onClick={() => setStockOutModal({ open: true, product: record })}
+                onClick={() => setStockOutProduct(record)}
                 style={{ background: "#fff1f2", borderColor: "#dc2626", color: "#dc2626", fontWeight: 600, fontSize: 11, borderRadius: 8 }}>
                 OUT
               </Button>
@@ -1833,12 +1954,11 @@ const hasDeletePermission = true;
           )}
           <Tooltip title="View stock movement history">
             <Button size="small" icon={<EyeOutlined />}
-              onClick={() => setStockHistoryModal({ open: true, product: record })}
+              onClick={() => setStockHistoryProduct(record)}
               style={{ background: "#eff6ff", borderColor: "#2563eb", color: "#2563eb", fontWeight: 600, fontSize: 11, borderRadius: 8 }}>
               History
             </Button>
           </Tooltip>
-     
         </div>
       ),
     },
@@ -1970,7 +2090,6 @@ const hasDeletePermission = true;
               <Select placeholder="Visibility" size="large" className="w-full" options={visibilityOptions}
                 allowClear onChange={(val) => setVisibilityFilter(val)} value={visibilityFilter} />
             </div>
-            {/* Unit filter */}
             <div>
               <Text className="text-sm font-semibold text-gray-700 mb-1 block">Primary Unit</Text>
               <Select placeholder="Filter by unit" size="large" className="w-full" allowClear
@@ -2040,7 +2159,14 @@ const hasDeletePermission = true;
         />
       </Card>
 
-      {/* ── Modals ── */}
+      {/* ── Modals ─────────────────────────────────────────────────────────────
+          FIX: Product-specific modals are conditionally rendered only when their
+          product state is non-null. This prevents Ant Design from mounting ghost
+          close buttons into the portal on page load / refresh.
+          NewProductStockModal uses a simple boolean and is always safe to render
+          because it has no product dependency.
+      ── */}
+
       <NewProductStockModal
         open={newProductModal}
         onClose={() => setNewProductModal(false)}
@@ -2049,28 +2175,44 @@ const hasDeletePermission = true;
         subcategoryData={subcategoryData}
         allVendors={allVendors}
       />
-      <StockInModal
-        open={stockInModal.open}
-        product={stockInModal.product}
-        onClose={() => setStockInModal({ open: false, product: null })}
-        onSuccess={fetchData}
-      />
-      <StockOutModal
-        open={stockOutModal.open}
-        product={stockOutModal.product}
-        onClose={() => setStockOutModal({ open: false, product: null })}
-        onSuccess={fetchData}
-      />
-      <StockHistoryModal
-        open={stockHistoryModal.open}
-        product={stockHistoryModal.product}
-        onClose={() => setStockHistoryModal({ open: false, product: null })}
-      />
-      <MaterialIssueHistoryModal
-        open={materialIssueModal.open}
-        product={materialIssueModal.product}
-        onClose={() => setMaterialIssueModal({ open: false, product: null })}
-      />
+
+      {/* Stock IN — only mount when a product is selected */}
+      {stockInProduct && (
+        <StockInModal
+          open={true}
+          product={stockInProduct}
+          onClose={() => setStockInProduct(null)}
+          onSuccess={() => { fetchData(); setStockInProduct(null); }}
+        />
+      )}
+
+      {/* Stock OUT — only mount when a product is selected */}
+      {stockOutProduct && (
+        <StockOutModal
+          open={true}
+          product={stockOutProduct}
+          onClose={() => setStockOutProduct(null)}
+          onSuccess={() => { fetchData(); setStockOutProduct(null); }}
+        />
+      )}
+
+      {/* Stock History — only mount when a product is selected */}
+      {stockHistoryProduct && (
+        <StockHistoryModal
+          open={true}
+          product={stockHistoryProduct}
+          onClose={() => setStockHistoryProduct(null)}
+        />
+      )}
+
+      {/* Material Issue History — only mount when a product is selected */}
+      {materialIssueProduct && (
+        <MaterialIssueHistoryModal
+          open={true}
+          product={materialIssueProduct}
+          onClose={() => setMaterialIssueProduct(null)}
+        />
+      )}
     </div>
   );
 };

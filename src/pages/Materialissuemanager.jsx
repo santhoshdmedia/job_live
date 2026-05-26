@@ -16,14 +16,14 @@ const WASTAGE_REASONS = [
 ];
 
 const OUTSOURCE_TYPES = [
-  { value: "none",          label: "In-House (No Outsource)" },
-  { value: "printing",      label: "Printing" },
-  { value: "lamination",    label: "Lamination" },
-  { value: "fabrication",   label: "Fabrication" },
-  { value: "installation",  label: "Installation" },
-  { value: "cutting",       label: "Cutting / Finishing" },
-  { value: "full_job",      label: "Full Job Outsource" },
-  { value: "other",         label: "Other" },
+  { value: "none",         label: "In-House (No Outsource)" },
+  { value: "printing",     label: "Printing" },
+  { value: "lamination",   label: "Lamination" },
+  { value: "fabrication",  label: "Fabrication" },
+  { value: "installation", label: "Installation" },
+  { value: "cutting",      label: "Cutting / Finishing" },
+  { value: "full_job",     label: "Full Job Outsource" },
+  { value: "other",        label: "Other" },
 ];
 
 // ─── API helper ───────────────────────────────────────────────────────────────
@@ -44,10 +44,12 @@ const api = async (url, opts = {}) => {
 
 // ─── PDF Slip ─────────────────────────────────────────────────────────────────
 const generateSlipPDF = (issue, user) => {
-  const now = new Date();
-  const dateStr = now.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-  const timeStr = now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+  const now         = new Date();
+  const dateStr     = now.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  const timeStr     = now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
   const outsourceLabel = OUTSOURCE_TYPES.find(o => o.value === issue?.outsource_type)?.label || "In-House";
+  const isOutsourced   = issue?.outsource_type && issue?.outsource_type !== "none";
+
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
 <title>Material Issue Slip - ${issue?.issue_no || "SLIP"}</title>
 <style>
@@ -67,7 +69,6 @@ const generateSlipPDF = (issue, user) => {
   .highlight{background:#f5f5f5;border:1px solid #ddd;border-radius:4px;padding:8px;margin:8px 0;text-align:center}
   .big{font-size:22px;font-weight:900}
   .unit{font-size:11px;color:#555}
-  .outsource-badge{display:inline-block;background:#e0f2fe;border:1px solid #bae6fd;border-radius:4px;padding:2px 8px;font-size:10px;font-weight:700;color:#0369a1;margin-top:4px}
   .footer{text-align:center;border-top:1px dashed #999;padding-top:8px;margin-top:10px;font-size:9px;color:#888}
   .sig-box{border:1px solid #ddd;height:30px;margin-top:8px;border-radius:3px}
   .sig-label{font-size:9px;color:#999;text-align:center;margin-top:2px}
@@ -90,6 +91,7 @@ const generateSlipPDF = (issue, user) => {
     <div class="row"><span class="label">Product</span><span class="value">${issue?.material?.product_name || "—"}</span></div>
     <div class="row"><span class="label">Unit</span><span class="value">${issue?.material?.unit || "sqft"}</span></div>
     <div class="row"><span class="label">Out Source</span><span class="value">${outsourceLabel}</span></div>
+    ${isOutsourced && issue?.outsource_vendor ? `<div class="row"><span class="label">Vendor</span><span class="value">${issue.outsource_vendor}</span></div>` : ""}
   </div>
   <div class="highlight">
     <div class="unit">Issued Quantity</div>
@@ -104,30 +106,38 @@ const generateSlipPDF = (issue, user) => {
   </div>
   <div class="section">
     <div class="section-title">Personnel</div>
-    <div class="row"><span class="label">Issued By</span><span class="label">Issued To</span></div>
-    <div class="row"><span class="value">${issue?.issued_by?.name || user?.name || "Store Manager"}</span><span class="value">${issue?.issued_to?.name || "—"}</span></div>
+    <div class="row">
+      <span class="label">Issued By</span>
+      <span class="label">${isOutsourced ? "Vendor" : "Issued To"}</span>
+    </div>
+    <div class="row">
+      <span class="value">${issue?.issued_by?.name || user?.name || "Store Manager"}</span>
+      <span class="value">${isOutsourced ? (issue?.outsource_vendor || "—") : (issue?.issued_to?.name || "—")}</span>
+    </div>
   </div>
+  ${!isOutsourced ? `
   <div class="section">
     <div class="section-title">Employee Signature</div>
     <div class="sig-box"></div>
     <div class="sig-label">Received by / Date</div>
-  </div>
+  </div>` : ""}
   <div class="footer">
     <div>This slip is system generated</div>
     <div style="margin-top:2px">Keep this slip until job completion</div>
     <div style="margin-top:4px;font-weight:700">DMEDIA © ${now.getFullYear()}</div>
   </div>
 </div></body></html>`;
+
   const blob = new Blob([html], { type: "text/html" });
-  const url = URL.createObjectURL(blob);
-  const win = window.open(url, "_blank");
+  const url  = URL.createObjectURL(blob);
+  const win  = window.open(url, "_blank");
   if (win) win.onload = () => { setTimeout(() => { win.print(); URL.revokeObjectURL(url); }, 500); };
 };
 
 // ─── Toast ────────────────────────────────────────────────────────────────────
 const useToast = () => {
   const [toasts, setToasts] = useState([]);
-  const show = useCallback((message, type = "info") => {
+  const show    = useCallback((message, type = "info") => {
     const id = Date.now();
     setToasts(p => [...p, { id, message, type }]);
     setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 4500);
@@ -197,12 +207,12 @@ const Avatar = ({ name = "?", size = "md" }) => {
   const initials = name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
   const sz = { sm: "w-7 h-7 text-[10px]", md: "w-9 h-9 text-xs", lg: "w-11 h-11 text-sm" }[size];
   const colors = ["bg-sky-100 text-sky-700","bg-violet-100 text-violet-700","bg-emerald-100 text-emerald-700","bg-rose-100 text-rose-700","bg-amber-100 text-amber-700"];
-  const color = colors[name.charCodeAt(0) % colors.length];
+  const color  = colors[name.charCodeAt(0) % colors.length];
   return <div className={`${sz} ${color} rounded-full flex items-center justify-center font-bold flex-shrink-0`}>{initials}</div>;
 };
 
 const WastageBar = ({ pct = 0 }) => {
-  const color = pct <= 10 ? "bg-emerald-500" : pct <= 20 ? "bg-amber-500" : "bg-rose-500";
+  const color     = pct <= 10 ? "bg-emerald-500" : pct <= 20 ? "bg-amber-500" : "bg-rose-500";
   const textColor = pct <= 10 ? "text-emerald-600" : pct <= 20 ? "text-amber-600" : "text-rose-600";
   return (
     <div className="flex items-center gap-2.5">
@@ -221,8 +231,8 @@ const Spinner = ({ size = 16 }) => (
 );
 
 const Btn = ({ children, onClick, disabled, loading, variant = "primary", size = "md", className = "", type = "button", fullWidth }) => {
-  const base = `inline-flex items-center justify-center gap-2 font-semibold rounded-xl transition-all duration-150 active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed select-none ${fullWidth ? "w-full" : ""}`;
-  const sizes = { xs: "px-2.5 py-1.5 text-xs", sm: "px-3.5 py-2 text-xs", md: "px-4 py-2.5 text-sm", lg: "px-5 py-3 text-sm" };
+  const base     = `inline-flex items-center justify-center gap-2 font-semibold rounded-xl transition-all duration-150 active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed select-none ${fullWidth ? "w-full" : ""}`;
+  const sizes    = { xs: "px-2.5 py-1.5 text-xs", sm: "px-3.5 py-2 text-xs", md: "px-4 py-2.5 text-sm", lg: "px-5 py-3 text-sm" };
   const variants = {
     primary: "bg-slate-900 text-white hover:bg-slate-700 shadow-sm",
     danger:  "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100",
@@ -306,7 +316,7 @@ const Divider = ({ label }) => (
 );
 
 const StatTile = ({ label, value, suffix, color = "default" }) => {
-  const colors = { default: "bg-slate-50 border-slate-100", sky: "bg-sky-50 border-sky-100", emerald: "bg-emerald-50 border-emerald-100", rose: "bg-rose-50 border-rose-100", amber: "bg-amber-50 border-amber-100" };
+  const colors     = { default: "bg-slate-50 border-slate-100", sky: "bg-sky-50 border-sky-100", emerald: "bg-emerald-50 border-emerald-100", rose: "bg-rose-50 border-rose-100", amber: "bg-amber-50 border-amber-100" };
   const textColors = { default: "text-slate-800", sky: "text-sky-700", emerald: "text-emerald-700", rose: "text-rose-700", amber: "text-amber-700" };
   return (
     <div className={`rounded-2xl border p-4 ${colors[color]}`}>
@@ -330,7 +340,7 @@ const EmptyState = ({ icon, title, subtitle }) => (
 const Modal = ({ open, title, onClose, children, size = "md" }) => {
   useEffect(() => {
     if (open) document.body.style.overflow = "hidden";
-    else document.body.style.overflow = "";
+    else      document.body.style.overflow = "";
     return () => { document.body.style.overflow = ""; };
   }, [open]);
   if (!open) return null;
@@ -363,14 +373,14 @@ const CalcPreview = ({ mode, calc, issuedQty }) => {
     mode === "sqft"
       ? [
           ["Cart sq.ft",  calc.job_sqft,      "From cart item"],
-          ["Wastage Buf", calc.wastage_sqft,  `${calc.wastage_buffer_pct}% of cart area`],
-          ["Total",       calc.required_sqft, "Cart + Buffer"],
+          ["Wastage Buf", calc.wastage_sqft,   `${calc.wastage_buffer_pct}% of cart area`],
+          ["Total",       calc.required_sqft,  "Cart + Buffer"],
         ]
       : [
-          ["Job Area",    calc.job_sqft,      "Width × Height"],
-          ["Margin Area", calc.margin_sqft,   "Top + Bottom margins"],
-          ["Gross Area",  calc.gross_sqft,    "Job + Margins"],
-          ["Recommended", calc.required_sqft, `After ${calc.wastage_buffer_pct ?? "—"}% buffer`],
+          ["Job Area",    calc.job_sqft,       "Width × Height"],
+          ["Margin Area", calc.margin_sqft,    "Top + Bottom margins"],
+          ["Gross Area",  calc.gross_sqft,     "Job + Margins"],
+          ["Recommended", calc.required_sqft,  `After ${calc.wastage_buffer_pct ?? "—"}% buffer`],
         ];
 
   const accentColor = mode === "sqft" ? "bg-violet-600" : "bg-sky-600";
@@ -420,17 +430,17 @@ const CalcPreview = ({ mode, calc, issuedQty }) => {
 
 // ─── Job Lookup ───────────────────────────────────────────────────────────────
 const JobLookup = ({ onJobSelected, issuedJobIds = new Set() }) => {
-  const [loading, setLoading] = useState(false);
-  const [jobs, setJobs]       = useState([]);
+  const [loading,  setLoading]  = useState(false);
+  const [jobs,     setJobs]     = useState([]);
   const [selected, setSelected] = useState(null);
-  const [filter, setFilter]   = useState("");
+  const [filter,   setFilter]   = useState("");
   const { toasts, show, dismiss } = useToast();
 
   const fetchProductionJobs = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api(`/jobs?job_status=production&limit=100`);
-      let list = res.data?.jobs || res.data || [];
+      const res  = await api(`/jobs?job_status=production&limit=100`);
+      let list   = res.data?.jobs || res.data || [];
       if (!Array.isArray(list)) list = [];
       setJobs(list);
       if (list.length === 0) show("No jobs currently in production", "warning");
@@ -535,29 +545,37 @@ const JobLookup = ({ onJobSelected, issuedJobIds = new Set() }) => {
 const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
   const { user } = useSelector(s => s.authSlice);
 
-  const [job,            setJob]            = useState(null);
-  const [cartItemIdx,    setCartItemIdx]    = useState(0);
-  const [productId,      setProductId]      = useState("");
-  const [empId,          setEmpId]          = useState("");
-  const [issueNotes,     setIssueNotes]     = useState("");
-  const [issuedQty,      setIssuedQty]      = useState("");
-  const [buffer,         setBuffer]         = useState(20);
-  const [outsourceType,  setOutsourceType]  = useState("none");
-  const [outsourceVendor,setOutsourceVendor]= useState("");
+  // ── Job / cart ────────────────────────────────────────────────────────────
+  const [job,         setJob]         = useState(null);
+  const [cartItemIdx, setCartItemIdx] = useState(0);
 
+  // ── Calculation fields ────────────────────────────────────────────────────
   const [manualMode,  setManualMode]  = useState(false);
   const [width,       setWidth]       = useState("");
   const [height,      setHeight]      = useState("");
   const [marginTop,   setMarginTop]   = useState(4);
   const [marginBot,   setMarginBot]   = useState(3);
-
+  const [buffer,      setBuffer]      = useState(20);
   const [calc,        setCalc]        = useState(null);
+  const [issuedQty,   setIssuedQty]   = useState("");
   const [calcLoading, setCalcLoading] = useState(false);
-  const [submitLoad,  setSubmitLoad]  = useState(false);
 
-  const { toasts, show, dismiss } = useToast();
-  const calcTimer = useRef(null);
+  // ── Personnel / metadata ──────────────────────────────────────────────────
+  // These are managed in their own state and NEVER touched by calc effects.
+  const [productId,       setProductId]       = useState("");
+  const [empId,           setEmpId]           = useState("");
+  const [issueNotes,      setIssueNotes]      = useState("");
+  const [outsourceType,   setOutsourceType]   = useState("none");
+  const [outsourceVendor, setOutsourceVendor] = useState("");
 
+  const [submitLoad, setSubmitLoad] = useState(false);
+  const { toasts, show, dismiss }   = useToast();
+
+  // ── Stable refs ───────────────────────────────────────────────────────────
+  const calcTimer   = useRef(null);
+  const prevSqftKey = useRef(null);
+
+  // ── Pure derived values ───────────────────────────────────────────────────
   const cartItem = job?.cart_items?.[cartItemIdx];
 
   const cartSqFt = useMemo(() => {
@@ -565,28 +583,61 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
     return isNaN(v) ? 0 : v;
   }, [cartItem]);
 
+  const calcMode        = manualMode ? "server" : "sqft";
+  // FIX: derive isOutsourced from state directly — no stale closure issues
+  const isOutsourced    = outsourceType !== "none";
+  const outsourceLabel  = OUTSOURCE_TYPES.find(o => o.value === outsourceType)?.label || "";
+  const selectedProduct = products.find(p => p._id === productId);
+  const selectedEmp     = employees.find(e => e._id === empId);
+
+  // ── Dimension parser ──────────────────────────────────────────────────────
   const parseDimensions = (sizeStr) => {
     if (!sizeStr) return null;
     const m = sizeStr.match(/^(\d+(?:\.\d+)?)\s*[xX×]\s*(\d+(?:\.\d+)?)/);
     return m ? { w: parseFloat(m[1]), h: parseFloat(m[2]) } : null;
   };
 
+  // ── EFFECT 1: sqft auto-calc ──────────────────────────────────────────────
+  // Depends ONLY on cartSqFt, buffer, manualMode.
   useEffect(() => {
     if (manualMode) return;
-    if (!cartSqFt || cartSqFt <= 0) { setCalc(null); setIssuedQty(""); return; }
+
+    if (!cartSqFt || cartSqFt <= 0) {
+      setCalc(null);
+      setIssuedQty("");
+      prevSqftKey.current = null;
+      return;
+    }
+
+    const key = `${cartSqFt}|${buffer}`;
+    if (prevSqftKey.current === key) return;
+    prevSqftKey.current = key;
+
     const buf      = parseFloat(buffer) || 0;
     const wastage  = parseFloat((cartSqFt * buf / 100).toFixed(4));
     const required = parseFloat((cartSqFt + wastage).toFixed(4));
-    setCalc({ job_sqft: cartSqFt, wastage_sqft: wastage, required_sqft: required, wastage_buffer_pct: buf });
+
+    setCalc({
+      job_sqft:           cartSqFt,
+      wastage_sqft:       wastage,
+      required_sqft:      required,
+      wastage_buffer_pct: buf,
+    });
     setIssuedQty(required);
   }, [cartSqFt, buffer, manualMode]);
 
+  // ── EFFECT 2: manual W×H server calc ─────────────────────────────────────
   useEffect(() => {
     if (!manualMode) return;
     clearTimeout(calcTimer.current);
+
     const w = parseFloat(width);
     const h = parseFloat(height);
-    if (!w || !h || w <= 0 || h <= 0) { setCalc(null); return; }
+    if (!w || !h || w <= 0 || h <= 0) {
+      setCalc(null);
+      return;
+    }
+
     calcTimer.current = setTimeout(async () => {
       setCalcLoading(true);
       try {
@@ -608,61 +659,132 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
         setCalcLoading(false);
       }
     }, 600);
+
     return () => clearTimeout(calcTimer.current);
   }, [manualMode, width, height, marginTop, marginBot, buffer]);
 
-  const applyCartItem = useCallback((job, idx) => {
-    const item = job?.cart_items?.[idx];
-    setCalc(null); setIssuedQty(""); setManualMode(false);
+  // ── resetCalcForItem — resets ONLY calc-related fields ───────────────────
+  const resetCalcForItem = useCallback((selectedJob, idx) => {
+    const item = selectedJob?.cart_items?.[idx];
+    setCalc(null);
+    setIssuedQty("");
+    setManualMode(false);
+    prevSqftKey.current = null;
+
     if (item?.size) {
       const dims = parseDimensions(item.size);
       if (dims) { setWidth(dims.w); setHeight(dims.h); }
       else       { setWidth(""); setHeight(""); }
-    } else { setWidth(""); setHeight(""); }
+    } else {
+      setWidth(""); setHeight("");
+    }
   }, []);
 
-  const handleJobSelected = (selectedJob) => {
+  // ── handleJobSelected — resets ALL fields on new job ─────────────────────
+  const handleJobSelected = useCallback((selectedJob) => {
     setJob(selectedJob);
     setCartItemIdx(0);
-    setProductId(""); setEmpId(""); setIssueNotes("");
-    setOutsourceType("none"); setOutsourceVendor("");
-    if (selectedJob) applyCartItem(selectedJob, 0);
-    else { setCalc(null); setIssuedQty(""); setManualMode(false); }
-  };
 
-  const handleCartItemChange = (idxStr) => {
+    // Reset ALL fields including personnel when job changes
+    setProductId("");
+    setEmpId("");
+    setIssueNotes("");
+    setOutsourceType("none");
+    setOutsourceVendor("");
+    prevSqftKey.current = null;
+
+    if (selectedJob) {
+      resetCalcForItem(selectedJob, 0);
+    } else {
+      setCalc(null);
+      setIssuedQty("");
+      setManualMode(false);
+      setWidth(""); setHeight("");
+    }
+  }, [resetCalcForItem]);
+
+  // ── handleCartItemChange — resets ONLY calc, keeps personnel ─────────────
+  const handleCartItemChange = useCallback((idxStr) => {
     const idx = parseInt(idxStr, 10);
     setCartItemIdx(idx);
-    applyCartItem(job, idx);
-  };
+    resetCalcForItem(job, idx);
+    // Personnel fields (outsourceType, outsourceVendor, empId, productId, issueNotes) are preserved
+  }, [job, resetCalcForItem]);
 
-  const toggleManualMode = (toManual) => {
+  // ── toggleManualMode ──────────────────────────────────────────────────────
+  const toggleManualMode = useCallback((toManual) => {
     setManualMode(toManual);
     setCalc(null);
     setIssuedQty("");
-  };
+    prevSqftKey.current = null;
+  }, []);
 
-  const selectedProduct   = products.find(p => p._id === productId);
-  const selectedEmp       = employees.find(e => e._id === empId);
-  const calcMode          = manualMode ? "server" : "sqft";
-  const isOutsourced      = outsourceType && outsourceType !== "none";
-  const outsourceLabel    = OUTSOURCE_TYPES.find(o => o.value === outsourceType)?.label || "";
+  // ── handleOutsourceTypeChange ─────────────────────────────────────────────
+  // CRITICAL FIX: This ONLY updates outsource state. It never touches calc
+  // fields or any other unrelated state.
+  const handleOutsourceTypeChange = useCallback((v) => {
+    setOutsourceType(v);
+    setOutsourceVendor(""); // clear vendor on type change
+    if (v !== "none") {
+      setEmpId(""); // clear employee when switching to outsource
+    }
+    // calc fields are NEVER touched here
+  }, []);
 
+  // ── handleOutsourceVendorChange ───────────────────────────────────────────
+  // FIX: Isolated handler — only sets outsourceVendor, nothing else
+  const handleOutsourceVendorChange = useCallback((e) => {
+    setOutsourceVendor(e.target.value);
+  }, []);
+
+  // ── handleIssueNotesChange ────────────────────────────────────────────────
+  const handleIssueNotesChange = useCallback((e) => {
+    setIssueNotes(e.target.value);
+  }, []);
+
+  // ── handleProductChange ───────────────────────────────────────────────────
+  const handleProductChange = useCallback((v) => {
+    setProductId(v);
+  }, []);
+
+  // ── handleEmpChange ───────────────────────────────────────────────────────
+  const handleEmpChange = useCallback((v) => {
+    setEmpId(v);
+  }, []);
+
+  // ── Submit ────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
-    if (!job)        return show("Select a job first", "error");
-    if (!productId)  return show("Select a material product", "error");
-    if (!empId)      return show("Select an employee to issue to", "error");
+    if (!job)       return show("Select a job first", "error");
+    if (!productId) return show("Select a material product", "error");
+
+    if (!isOutsourced && !empId)
+      return show("Select an employee to issue to", "error");
+
+    if (isOutsourced && !outsourceVendor.trim())
+      return show("Please enter vendor / party name for outsourced work", "error");
+
     const qty = parseFloat(issuedQty);
-    if (!qty || qty <= 0) return show("Issued quantity must be greater than 0", "error");
+    if (!qty || qty <= 0)
+      return show("Issued quantity must be greater than 0", "error");
+
     if (manualMode && (!parseFloat(width) || !parseFloat(height)))
       return show("Width and Height are required in manual mode", "error");
+
     if (selectedProduct && selectedProduct.stock_count < qty)
       return show(`Insufficient stock — available: ${selectedProduct.stock_count} sqft`, "error");
 
     setSubmitLoad(true);
     try {
+      // FIX: Always send dimensions. In sqft mode, use cart item dimensions if
+      // available from parseDimensions, otherwise send 0,0 (backend accepts this for sqft mode).
+      const dimensionsPayload = {
+        width:  parseFloat(width) || 0,
+        height: parseFloat(height) || 0,
+        unit:   "ft",
+      };
+
       const payload = {
-        cart_item_index: cartItemIdx,
+        cart_item_index:    cartItemIdx,
         material: {
           product_id:   productId,
           product_name: selectedProduct?.name,
@@ -672,64 +794,82 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
         sq_ft:              cartSqFt || null,
         calc_mode:          calcMode,
         wastage_buffer_pct: parseFloat(buffer) || 0,
-        outsource_type:   outsourceType,
-        outsource_vendor: isOutsourced ? outsourceVendor : "",
+        outsource_type:     outsourceType,
+        outsource_vendor:   isOutsourced ? outsourceVendor.trim() : "",
+        // FIX: Always include dimensions object so backend validation passes
+        dimensions: dimensionsPayload,
+        // Only send margin params in server/manual mode
         ...(manualMode ? {
-          dimensions: {
-            width:  parseFloat(width),
-            height: parseFloat(height),
-            unit:   "ft",
-          },
           margin_top_in:    parseFloat(marginTop) || 0,
           margin_bottom_in: parseFloat(marginBot) || 0,
         } : {}),
-        issued_to: { user_id: empId, name: selectedEmp?.name || "", role: selectedEmp?.role || "" },
-        issued_by: { user_id: user?._id, name: user?.name || "Store Manager", role: user?.role || "store manager" },
+        // FIX: issued_to — for outsource send empty user_id string (not undefined)
+        // so backend isOutsourced branch handles it correctly
+        issued_to: isOutsourced
+          ? { user_id: null, name: outsourceVendor.trim(), role: "outsource" }
+          : { user_id: empId, name: selectedEmp?.name || "", role: selectedEmp?.role || "" },
+        issued_by: {
+          user_id: user?._id,
+          name:    user?.name || "Store Manager",
+          role:    user?.role || "store manager",
+        },
         issue_notes: issueNotes,
       };
 
       const res = await api(`/jobs/${job._id}/material/issue`, {
         method: "POST",
-        body: JSON.stringify(payload),
+        body:   JSON.stringify(payload),
       });
+
       show(res.message || "Material issued successfully", "success");
 
       const newIssue = {
-        _id:             res.data.issue_id,
-        issue_no:        res.data.issue_no,
+        _id:             res.data?.issue_id,
+        issue_no:        res.data?.issue_no,
         job_id:          job._id,
-        job_no:          res.data.job_no,
+        job_no:          res.data?.job_no || job.job_no,
         cart_item_index: cartItemIdx,
+        cart_item_name:  cartItem?.product_name || "",
         material: {
           product_id:   productId,
-          product_name: res.data.material_name || selectedProduct?.name,
+          product_name: selectedProduct?.name,
           unit:         "sqft",
         },
-        issued_qty:    res.data.issued_qty,
-        suggested_qty: res.data.suggested_qty ?? calc?.required_sqft,
-        ...(manualMode ? {
-          dimensions: { width: parseFloat(width), height: parseFloat(height), unit: "ft" },
-        } : {}),
-        wastage_buffer_pct: parseFloat(buffer) || 0,
-        calc_mode:        calcMode,
-        sq_ft:            cartSqFt || null,
+        issued_qty:       qty,
+        suggested_qty:    res.data?.suggested_qty || calc?.required_sqft || 0,
+        issued_to: isOutsourced
+          ? { user_id: null, name: outsourceVendor.trim(), role: "outsource" }
+          : { user_id: empId, name: selectedEmp?.name || "", role: selectedEmp?.role || "" },
+        issued_by:        { user_id: user?._id, name: user?.name || "", role: user?.role || "" },
+        dimensions:       dimensionsPayload,
+        calculation:      res.data?.calculation || calc || {},
         outsource_type:   outsourceType,
-        outsource_vendor: isOutsourced ? outsourceVendor : "",
-        issued_to: { user_id: empId, name: selectedEmp?.name || "", role: selectedEmp?.role || "" },
-        issued_by:  { user_id: user?._id, name: user?.name || "Store Manager", role: user?.role || "store manager" },
-        calculation:  calc,
-        issue_notes:  issueNotes,
-        status:       "issued",
-        issued_at:    new Date().toISOString(),
+        outsource_vendor: isOutsourced ? outsourceVendor.trim() : "",
+        wastage_buffer_pct: parseFloat(buffer) || 0,
+        issue_notes:      issueNotes,
+        status:           "issued",
+        return:           null,
+        createdAt:        new Date().toISOString(),
       };
 
       onIssued(newIssue, productId, qty, job._id);
-      setTimeout(() => generateSlipPDF(newIssue, user), 400);
+      generateSlipPDF(newIssue, user);
 
-      setJob(null); setProductId(""); setIssuedQty(""); setEmpId("");
-      setIssueNotes(""); setCalc(null); setManualMode(false);
-      setWidth(""); setHeight("");
-      setOutsourceType("none"); setOutsourceVendor("");
+      // Full reset after successful submit
+      setJob(null);
+      setCartItemIdx(0);
+      setProductId("");
+      setEmpId("");
+      setIssueNotes("");
+      setIssuedQty("");
+      setCalc(null);
+      setOutsourceType("none");
+      setOutsourceVendor("");
+      setManualMode(false);
+      setWidth("");
+      setHeight("");
+      prevSqftKey.current = null;
+
     } catch (err) {
       show(err.message, "error");
     } finally {
@@ -737,10 +877,12 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
     }
   };
 
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4">
       <ToastContainer toasts={toasts} dismiss={dismiss} />
 
+      {/* ── Job selection ──────────────────────────────────────────────────── */}
       <Card className="p-5">
         <SectionHeader icon="🏭" title="Production Jobs" subtitle="Select a job currently in production" />
         <JobLookup onJobSelected={handleJobSelected} issuedJobIds={issuedJobIds} />
@@ -774,10 +916,13 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
 
       {job && (
         <>
+          {/* ── Material & outsource ────────────────────────────────────────── */}
           <Card className="p-5">
             <SectionHeader icon="📦" title="Material Selection" subtitle="Choose the product and outsource type" />
             <div className="space-y-4">
-              <Select label="Product" required value={productId} onChange={setProductId}
+
+              {/* FIX: Use isolated handleProductChange — no calc side-effects */}
+              <Select label="Product" value={productId} onChange={handleProductChange}
                 placeholder="Select material…"
                 options={products.map(p => ({ value: p._id, label: `${p.name} (${p.stock_count || 0} sqft)` }))} />
 
@@ -791,11 +936,12 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
                 </div>
               )}
 
+              {/* FIX: Use isolated handleOutsourceTypeChange — never touches calc */}
               <div>
                 <Select
                   label="Out Source Type"
                   value={outsourceType}
-                  onChange={setOutsourceType}
+                  onChange={handleOutsourceTypeChange}
                   options={OUTSOURCE_TYPES}
                 />
                 {isOutsourced && (
@@ -809,20 +955,27 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
                 )}
               </div>
 
+              {/* FIX: Use isolated handleOutsourceVendorChange — pure text, zero calc side-effects */}
               {isOutsourced && (
                 <Input
-                  label="Vendor / Party Name"
+                  label="Vendor / Party Name *"
                   value={outsourceVendor}
-                  onChange={e => setOutsourceVendor(e.target.value)}
+                  onChange={handleOutsourceVendorChange}
                   placeholder="e.g. Sri Murugan Printers, Chennai…"
                 />
               )}
 
-              <Input label="Issue Notes" value={issueNotes} onChange={e => setIssueNotes(e.target.value)}
-                placeholder="e.g. Day 1 of 3-day job, special instructions…" />
+              {/* FIX: Use isolated handleIssueNotesChange — pure text */}
+              <Input
+                label="Issue Notes"
+                value={issueNotes}
+                onChange={handleIssueNotesChange}
+                placeholder="e.g. Day 1 of 3-day job, special instructions…"
+              />
             </div>
           </Card>
 
+          {/* ── Calculation ─────────────────────────────────────────────────── */}
           <Card className="p-5">
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center gap-3">
@@ -850,6 +1003,7 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
               </div>
             </div>
 
+            {/* sq.ft mode */}
             {!manualMode && (
               <div className="space-y-4">
                 {cartSqFt > 0 ? (
@@ -875,6 +1029,7 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
               </div>
             )}
 
+            {/* Manual W×H mode */}
             {manualMode && (
               <div className="space-y-4">
                 <div>
@@ -915,12 +1070,21 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
             </div>
           </Card>
 
+          {/* ── Personnel ───────────────────────────────────────────────────── */}
           <Card className="p-5">
-            <SectionHeader icon="👤" title="Personnel" subtitle="Who is receiving this material" />
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              <Select label="Issue To" required value={empId} onChange={setEmpId}
-                placeholder="Select employee…"
-                options={employees.map(e => ({ value: e._id, label: e.name }))} />
+            <SectionHeader
+              icon="👤"
+              title="Personnel"
+              subtitle={isOutsourced ? "Issued by (vendor details above)" : "Who is receiving this material"}
+            />
+            <div className={`grid gap-3 mb-4 ${!isOutsourced ? "grid-cols-2" : "grid-cols-1"}`}>
+              {/* FIX: Use isolated handleEmpChange — no calc side-effects */}
+              {!isOutsourced && (
+                <Select label="Issue To" required value={empId} onChange={handleEmpChange}
+                  placeholder="Select employee…"
+                  options={employees.map(e => ({ value: e._id, label: e.name }))} />
+              )}
+
               <div>
                 <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Issued By</label>
                 <div className="px-3 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl text-slate-500 font-medium">
@@ -928,12 +1092,25 @@ const IssuePanel = ({ products, employees, onIssued, issuedJobIds }) => {
                 </div>
               </div>
             </div>
-            {selectedEmp && (
+
+            {!isOutsourced && selectedEmp && (
               <div className="flex items-center gap-3 bg-slate-50 rounded-xl p-3 border border-slate-100">
                 <Avatar name={selectedEmp.name} size="lg" />
                 <div>
                   <p className="text-sm font-bold text-slate-800">{selectedEmp.name}</p>
                   <p className="text-xs text-slate-400">{selectedEmp.role}</p>
+                </div>
+              </div>
+            )}
+
+            {isOutsourced && outsourceVendor.trim() && (
+              <div className="flex items-center gap-3 bg-indigo-50 rounded-xl p-3 border border-indigo-100">
+                <div className="w-11 h-11 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                  <span className="text-lg">🏭</span>
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-indigo-800">{outsourceVendor.trim()}</p>
+                  <p className="text-xs text-indigo-500">{outsourceLabel} · External vendor</p>
                 </div>
               </div>
             )}
@@ -1011,8 +1188,8 @@ const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           {paginated.map(issue => {
-            const outsourceLabel = OUTSOURCE_TYPES.find(o => o.value === issue.outsource_type)?.label;
-            const isOutsourced   = issue.outsource_type && issue.outsource_type !== "none";
+            const outsourceLabelCard = OUTSOURCE_TYPES.find(o => o.value === issue.outsource_type)?.label;
+            const isOutsourcedCard   = issue.outsource_type && issue.outsource_type !== "none";
             return (
               <Card key={issue._id} hoverable className="p-4" onClick={() => onViewIssue(issue, "view")}>
                 <div className="flex items-start justify-between mb-3">
@@ -1020,7 +1197,7 @@ const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xs font-black text-sky-600 font-mono tracking-wide">{issue.issue_no}</span>
                       {issue.return?.is_flagged && !issue.return?.manager_reviewed && <Badge variant="red">🚩 Review</Badge>}
-                      {isOutsourced && <Badge variant="indigo">🔗 {outsourceLabel}</Badge>}
+                      {isOutsourcedCard && <Badge variant="indigo">🔗 {outsourceLabelCard}</Badge>}
                     </div>
                     <p className="text-sm font-bold text-slate-800 mt-0.5">{issue.job_no}</p>
                   </div>
@@ -1031,7 +1208,7 @@ const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
                   <Avatar name={issue.issued_to?.name || "?"} />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold text-slate-700 truncate">{issue.issued_to?.name}</p>
-                    <p className="text-xs text-slate-400">{issue.issued_to?.role}</p>
+                    <p className="text-xs text-slate-400">{isOutsourcedCard ? "External vendor" : issue.issued_to?.role}</p>
                   </div>
                   <div className="text-right flex-shrink-0">
                     <p className="text-xs font-semibold text-slate-700 truncate max-w-[100px]">{issue.material?.product_name}</p>
@@ -1166,6 +1343,29 @@ const ReportPanel = () => {
         </Card>
       )}
 
+      {report?.by_outsource_type?.length > 0 && (
+        <Card className="p-5">
+          <SectionHeader icon="🔗" title="Outsource Breakdown" subtitle="Issues by outsource type" />
+          <div className="space-y-3">
+            {report.by_outsource_type.map(r => {
+              const label = OUTSOURCE_TYPES.find(o => o.value === r._id)?.label || r._id || "Unknown";
+              const max   = Math.max(...report.by_outsource_type.map(x => x.count));
+              return (
+                <div key={r._id}>
+                  <div className="flex justify-between text-xs mb-1.5">
+                    <span className="text-slate-600 font-medium">{label}</span>
+                    <span className="text-slate-400 font-semibold">{r.count}× · {parseFloat((r.total_issued || 0).toFixed(1))} sqft</span>
+                  </div>
+                  <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-indigo-500 rounded-full transition-all duration-700" style={{ width: `${(r.count / max) * 100}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
       {report?.by_wastage_reason?.length > 0 && (
         <Card className="p-5 pb-6">
           <SectionHeader icon="📉" title="Wastage Reasons" />
@@ -1224,8 +1424,8 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
 
   const r    = issue.return;
   const calc = issue.calculation;
-  const isOutsourced   = issue.outsource_type && issue.outsource_type !== "none";
-  const outsourceLabel = OUTSOURCE_TYPES.find(o => o.value === issue.outsource_type)?.label;
+  const isOutsourcedModal   = issue.outsource_type && issue.outsource_type !== "none";
+  const outsourceLabelModal = OUTSOURCE_TYPES.find(o => o.value === issue.outsource_type)?.label;
 
   return (
     <Modal open title={`${issue.issue_no} · ${issue.job_no}`} onClose={onClose} size="md">
@@ -1235,7 +1435,6 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Issue Summary</p>
           <div className="space-y-1">
             {[
-              ["Employee",    issue.issued_to?.name],
               ["Material",    issue.material?.product_name],
               ["Issued Qty",  `${issue.issued_qty} sqft`],
               ["Recommended", `${issue.suggested_qty || calc?.required_sqft || "—"} sqft`],
@@ -1246,20 +1445,27 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
                 <span className="text-sm font-semibold text-slate-800">{v}</span>
               </div>
             ))}
+
+            <div className="flex justify-between items-center py-2 border-b border-slate-50">
+              <span className="text-xs text-slate-400">{isOutsourcedModal ? "Vendor" : "Employee"}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-slate-800">{issue.issued_to?.name || "—"}</span>
+                {isOutsourcedModal && <Badge variant="indigo">External</Badge>}
+              </div>
+            </div>
+
             <div className="flex justify-between items-center py-2 border-b border-slate-50">
               <span className="text-xs text-slate-400">Out Source</span>
-              {isOutsourced ? (
+              {isOutsourcedModal ? (
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-indigo-700">{outsourceLabel}</span>
-                  {issue.outsource_vendor && (
-                    <span className="text-xs text-slate-400">· {issue.outsource_vendor}</span>
-                  )}
+                  <span className="text-sm font-semibold text-indigo-700">{outsourceLabelModal}</span>
                   <Badge variant="indigo">External</Badge>
                 </div>
               ) : (
                 <span className="text-sm font-semibold text-slate-800">In-House</span>
               )}
             </div>
+
             <div className="flex justify-between items-center py-2">
               <span className="text-xs text-slate-400">Status</span>
               <StatusBadge status={issue.status} />
@@ -1343,15 +1549,15 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
 // ─── Root ─────────────────────────────────────────────────────────────────────
 export default function MaterialIssueManager() {
   const { user } = useSelector(s => s.authSlice);
-  const navigate = useNavigate(); // ← ADD PRODUCT navigation
+  const navigate = useNavigate();
 
-  const [tab,        setTab]        = useState("issue");
-  const [issues,     setIssues]     = useState([]);
-  const [products,   setProducts]   = useState([]);
-  const [employees,  setEmployees]  = useState([]);
-  const [issLoading, setIssLoading] = useState(false);
-  const [modalIssue, setModalIssue] = useState(null);
-  const [modalMode,  setModalMode]  = useState("view");
+  const [tab,          setTab]          = useState("issue");
+  const [issues,       setIssues]       = useState([]);
+  const [products,     setProducts]     = useState([]);
+  const [employees,    setEmployees]    = useState([]);
+  const [issLoading,   setIssLoading]   = useState(false);
+  const [modalIssue,   setModalIssue]   = useState(null);
+  const [modalMode,    setModalMode]    = useState("view");
   const [issuedJobIds, setIssuedJobIds] = useState(new Set());
   const { toasts, show, dismiss } = useToast();
 
@@ -1379,21 +1585,16 @@ export default function MaterialIssueManager() {
 
   useEffect(() => { fetchProducts(); fetchEmployees(); fetchIssues(); }, []);
 
-  const handleIssued = async (newIssue, productId, qty, jobId) => {
-    setIssues(prev => [newIssue, ...prev]);
-    setProducts(prev => prev.map(p => p._id === productId ? { ...p, stock_count: Math.max(0, (p.stock_count || 0) - qty) } : p));
-    setIssuedJobIds(prev => new Set([...prev, jobId]));
-    setTab("issues");
-    try {
-      await api(`/jobs/${jobId}/status`, { method: "PATCH", body: JSON.stringify({ job_status: "production" }) });
-    } catch (err) {
-      show(`Material issued but job status update failed: ${err.message}`, "warning");
-    }
-  };
-
-  const handleReturned = (issueId, data) => {
-    setIssues(prev => prev.map(i => i._id === issueId ? { ...i, status: data.status || "returned", return: data } : i));
-  };
+const handleIssued = async (newIssue, productId, qty, jobId) => {
+  setIssues(prev => [newIssue, ...prev]);
+  setProducts(prev => prev.map(p => p._id === productId 
+    ? { ...p, stock_count: Math.max(0, (p.stock_count || 0) - qty) } 
+    : p
+  ));
+  setIssuedJobIds(prev => new Set([...prev, jobId]));
+  setTab("issues");
+  // ← status update call removed; job is already in production
+};
 
   const handleReviewSaved = (issueId, data) => {
     setIssues(prev => prev.map(i =>
@@ -1429,12 +1630,10 @@ export default function MaterialIssueManager() {
       <div className="min-h-screen bg-slate-50 flex flex-col">
         <ToastContainer toasts={toasts} dismiss={dismiss} />
 
-        {/* ── Header ─────────────────────────────────────────────────────────── */}
+        {/* ── Header ───────────────────────────────────────────────────────── */}
         <header className="bg-white border-b border-slate-100 sticky top-0 z-30 shadow-sm">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between py-4">
-
-              {/* Left: logo + title */}
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-slate-900 flex items-center justify-center flex-shrink-0">
                   <span className="text-white text-xs font-black">DM</span>
@@ -1445,34 +1644,20 @@ export default function MaterialIssueManager() {
                 </div>
               </div>
 
-              {/* Right: flagged alert + Add Product button + user avatar */}
               <div className="flex items-center gap-2 sm:gap-3">
-
-                {/* Flagged alert pill */}
                 {stats.flagged > 0 && (
-                  <button
-                    onClick={() => setTab("issues")}
-                    className="flex items-center gap-1.5 bg-rose-50 border border-rose-100 rounded-full px-3 py-1.5 hover:bg-rose-100 transition-colors"
-                  >
+                  <button onClick={() => setTab("issues")}
+                    className="flex items-center gap-1.5 bg-rose-50 border border-rose-100 rounded-full px-3 py-1.5 hover:bg-rose-100 transition-colors">
                     <div className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
                     <span className="text-xs font-bold text-rose-600">{stats.flagged} to review</span>
                   </button>
                 )}
-
-              {/* ── ADD PRODUCT BUTTON ── */}
-              <button
-                onClick={() => {
-                  // Try direct navigation without permission check for testing
-                  navigate("/add-product");
-                }}
-                className="flex items-center gap-1.5 bg-slate-900 text-white rounded-xl px-3 py-2 hover:bg-slate-700 active:scale-95 transition-all duration-150 shadow-sm"
-              >
-                <span className="text-sm leading-none font-bold">+</span>
-                <span className="text-xs font-bold hidden sm:inline">Add Product</span>
-                <span className="text-xs font-bold sm:hidden">Add</span>
-              </button>
-
-                {/* User avatar */}
+                <button onClick={() => navigate("/add-product")}
+                  className="flex items-center gap-1.5 bg-slate-900 text-white rounded-xl px-3 py-2 hover:bg-slate-700 active:scale-95 transition-all duration-150 shadow-sm">
+                  <span className="text-sm leading-none font-bold">+</span>
+                  <span className="text-xs font-bold hidden sm:inline">Add Product</span>
+                  <span className="text-xs font-bold sm:hidden">Add</span>
+                </button>
                 {user?.name && (
                   <div className="hidden sm:flex items-center gap-2">
                     <Avatar name={user.name} size="sm" />
@@ -1518,7 +1703,6 @@ export default function MaterialIssueManager() {
                 </button>
               ))}
             </div>
-
           </div>
         </header>
 
@@ -1558,4 +1742,3 @@ export default function MaterialIssueManager() {
     </>
   );
 }
-
