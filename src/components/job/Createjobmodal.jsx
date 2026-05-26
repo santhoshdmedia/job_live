@@ -314,7 +314,8 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
 
   const sizeChange = (field, val) => {
     const updated = { ...item, [field]: val };
-    if (!updated.sq_ft_manual) {
+    // Only auto-calculate sq_ft when in sq.ft mode
+    if (item.quantity_type === "sq.ft" && !updated.sq_ft_manual) {
       updated.sq_ft = parseFloat(toSqFt(updated.width, updated.height, updated.size_unit).toFixed(4));
     }
     onChange(idx, updated);
@@ -326,7 +327,9 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
     onChange(idx, {
       ...item,
       quantity_type: val,
-      ...(val === "quantity" ? { width: "", height: "", sq_ft: 0, sq_ft_manual: false } : {}),
+      // ✅ FIX: Don't clear width/height when switching modes
+      // Only reset sq_ft related fields when switching to quantity mode
+      ...(val === "quantity" ? { sq_ft: 0, sq_ft_manual: false } : {}),
     });
   };
 
@@ -334,7 +337,11 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
   const { base, gstAmt, total: lineTotal } = computeLineTotal(item);
 
   const productCols = isMobile ? "1fr" : isTablet ? "1fr 1fr" : "1fr 1fr 1fr";
-  const sizeCols    = isMobile ? "1fr 1fr" : "1fr 1fr 90px 1fr";
+  // ✅ FIX: Size grid always shows 4 cols (W, H, Unit, Sq.Ft) in sq.ft mode
+  //         In quantity mode, shows 3 cols (W, H, Unit) only
+  const sizeCols    = isSqFtMode
+    ? (isMobile ? "1fr 1fr" : "1fr 1fr 90px 1fr")
+    : (isMobile ? "1fr 1fr" : "1fr 1fr 90px");
   const priceCols   = isMobile ? "1fr 1fr" : "repeat(3,1fr)";
 
   return (
@@ -404,49 +411,63 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
         </FormField>
       </div>
 
-      {/* Size fields (sq.ft mode only) */}
-      {isSqFtMode && (
-        <div style={{ display: "grid", gridTemplateColumns: sizeCols, gap: 8, marginBottom: 10, alignItems: "end" }}>
-          <FormField label="Width" required>
-            <Input size="small" placeholder="0" type="number" min={0} value={item.width}
-              prefix={<span style={{ fontSize: 10, color: "#6b7280", fontWeight: 700 }}>W</span>}
-              style={{ borderRadius: 6 }} onChange={(e) => sizeChange("width", e.target.value)} />
-          </FormField>
+      {/* ✅ FIX: Size fields always visible for BOTH modes */}
+      {/* In sq.ft mode → W + H + Unit + Sq.Ft (auto-calc)   */}
+      {/* In quantity mode → W + H + Unit only (for reference) */}
+      <div style={{ display: "grid", gridTemplateColumns: sizeCols, gap: 8, marginBottom: 10, alignItems: "end" }}>
+        <FormField label="Width" required={isSqFtMode}>
+          <Input size="small" placeholder="0" type="number" min={0} value={item.width}
+            prefix={<span style={{ fontSize: 10, color: "#6b7280", fontWeight: 700 }}>W</span>}
+            style={{ borderRadius: 6 }}
+            onChange={(e) => sizeChange("width", e.target.value)} />
+        </FormField>
 
-          <FormField label="Height" required>
-            <Input size="small" placeholder="0" type="number" min={0} value={item.height}
-              prefix={<span style={{ fontSize: 10, color: "#6b7280", fontWeight: 700 }}>H</span>}
-              style={{ borderRadius: 6 }} onChange={(e) => sizeChange("height", e.target.value)} />
-          </FormField>
+        <FormField label="Height" required={isSqFtMode}>
+          <Input size="small" placeholder="0" type="number" min={0} value={item.height}
+            prefix={<span style={{ fontSize: 10, color: "#6b7280", fontWeight: 700 }}>H</span>}
+            style={{ borderRadius: 6 }}
+            onChange={(e) => sizeChange("height", e.target.value)} />
+        </FormField>
 
-          <FormField label="Unit">
-            <Select value={item.size_unit} size="small" style={{ width: "100%" }} onChange={(v) => sizeChange("size_unit", v)}>
-              {UNIT_OPTIONS.map(u => <Option key={u.value} value={u.value}>{u.label}</Option>)}
-            </Select>
-          </FormField>
+        <FormField label="Unit">
+          <Select value={item.size_unit} size="small" style={{ width: "100%" }} onChange={(v) => sizeChange("size_unit", v)}>
+            {UNIT_OPTIONS.map(u => <Option key={u.value} value={u.value}>{u.label}</Option>)}
+          </Select>
+        </FormField>
 
+        {/* Sq.Ft column — only in sq.ft mode */}
+        {isSqFtMode && (
           <FormField label={
             <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
               Sq. Ft
               {item.sq_ft_manual && (item.width || item.height) && (
                 <span
-                  onClick={() => { const sq = toSqFt(item.width, item.height, item.size_unit); onChange(idx, { ...item, sq_ft: parseFloat(sq.toFixed(4)), sq_ft_manual: false }); }}
+                  onClick={() => {
+                    const sq = toSqFt(item.width, item.height, item.size_unit);
+                    onChange(idx, { ...item, sq_ft: parseFloat(sq.toFixed(4)), sq_ft_manual: false });
+                  }}
                   style={{ fontSize: 9, color: "#2563eb", cursor: "pointer", textTransform: "none", letterSpacing: 0, fontWeight: 600, background: "#eff6ff", padding: "1px 5px", borderRadius: 4, marginLeft: 2 }}
                 >
                   ↺ auto
                 </span>
               )}
-              {!item.sq_ft_manual && <span style={{ fontSize: 9, color: "#6b7280", textTransform: "none", letterSpacing: 0 }}>(auto)</span>}
+              {!item.sq_ft_manual && (
+                <span style={{ fontSize: 9, color: "#6b7280", textTransform: "none", letterSpacing: 0 }}>(auto)</span>
+              )}
             </span>
           }>
             <InputNumber
               size="small" min={0} step={0.01} value={item.sq_ft || undefined} placeholder="0.0000"
-              style={{ width: "100%", borderRadius: 6, borderColor: item.sq_ft_manual ? "#2563eb" : undefined, background: item.sq_ft > 0 ? (item.sq_ft_manual ? "#eff6ff" : "#ecfdf5") : undefined }}
+              style={{
+                width: "100%", borderRadius: 6,
+                borderColor: item.sq_ft_manual ? "#2563eb" : undefined,
+                background: item.sq_ft > 0 ? (item.sq_ft_manual ? "#eff6ff" : "#ecfdf5") : undefined,
+              }}
               onChange={(val) => onChange(idx, { ...item, sq_ft: parseFloat(val) || 0, sq_ft_manual: true })}
             />
           </FormField>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Notes */}
       <div style={{ marginBottom: 10 }}>
@@ -495,6 +516,12 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
         <div style={{ fontSize: 14, fontWeight: 700, color: "#065f46" }}>Item Total: ₹{lineTotal.toFixed(2)}</div>
         {isSqFtMode && item.sq_ft > 0 && (
           <div style={{ fontSize: 10, color: "#059669" }}>{item.quantity} × {item.sq_ft} ft² × ₹{item.price}</div>
+        )}
+        {/* ✅ Show size reference in quantity mode if dimensions were entered */}
+        {!isSqFtMode && (item.width || item.height) && (
+          <div style={{ fontSize: 10, color: "#6b7280" }}>
+            Size ref: {item.width || "—"} × {item.height || "—"} {item.size_unit}
+          </div>
         )}
       </div>
     </div>

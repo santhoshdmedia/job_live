@@ -10,7 +10,7 @@ import {
   FileTextOutlined, TagOutlined, ShoppingCartOutlined,
   BranchesOutlined, PlayCircleOutlined, PauseCircleOutlined,
   PlusOutlined, DeleteOutlined, SaveOutlined, PhoneOutlined,
-  PercentageOutlined, WalletOutlined,
+  PercentageOutlined, WalletOutlined, BankOutlined,
 } from "@ant-design/icons";
 import CustomTable from "../components/CustomTable";
 import UploadHelper from "../helper/UploadHelper";
@@ -106,12 +106,10 @@ const toSqFt = (w, h, unit) => {
 };
 
 // ─── Per-item calculation helper ──────────────────────────────────────────────
-// sq.ft  mode: base = qty * sq_ft * price  (then + gst on base)
-// qty    mode: base = qty * price           (then + gst on base)
 const calcItemTotals = (it) => {
-  const qty    = parseFloat(it.quantity)  || 0;
-  const sqFt   = parseFloat(it.sq_ft)    || 0;
-  const price  = parseFloat(it.price)    || 0;
+  const qty    = parseFloat(it.quantity)       || 0;
+  const sqFt   = parseFloat(it.sq_ft)          || 0;
+  const price  = parseFloat(it.price)          || 0;
   const gstPct = parseFloat(it.gst_percentage) || 0;
   const isSqFt = it.quantity_type === "sq.ft";
 
@@ -123,12 +121,8 @@ const calcItemTotals = (it) => {
 };
 
 // ─── Job-level totals for VIEW modal ──────────────────────────────────────────
-// Grand total = taxableAmount + totalGST + designCharges + deliveryCharges
-// where taxableAmount = subtotal - discountAmt
-// subtotal = sum of all item bases (without GST)
 const calcJobTotals = (job) => {
   const cartItems = job.cart_items || [];
-
   let subtotal  = 0;
   let taxAmount = 0;
 
@@ -146,14 +140,8 @@ const calcJobTotals = (job) => {
   const grandTotal      = taxableAmount + taxAmount + designCharges + deliveryCharges;
 
   return {
-    subtotal,
-    discountPct,
-    discountAmt,
-    taxableAmount,
-    taxAmount,
-    designCharges,
-    deliveryCharges,
-    grandTotal,
+    subtotal, discountPct, discountAmt, taxableAmount,
+    taxAmount, designCharges, deliveryCharges, grandTotal,
     freeDelivery: !!job.free_delivery,
   };
 };
@@ -167,7 +155,7 @@ const EMPTY_ITEM = {
   height:         "",
   size_unit:      "ft",
   sq_ft:          0,
-  quantity_type:  "sq.ft",  // always persisted
+  quantity_type:  "sq.ft",
   quantity:       1,
   price:          0,
   gst_percentage: 0,
@@ -178,6 +166,7 @@ const EMPTY_ITEM = {
 const DEFAULT_EDIT_FORM = {
   customer_name:           "",
   customer_phone:          "",
+  company_name:            "",   // ✅ added
   estimated_delivery_date: "",
   address_line1:           "",
   address_line2:           "",
@@ -285,26 +274,33 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
     return () => document.removeEventListener("mousedown", fn);
   }, []);
 
+  // ✅ FIX: sizeChange only auto-recalcs sq_ft in sq.ft mode
   const sizeChange = (field, val) => {
     const updated = { ...item, [field]: val };
-    const sq = toSqFt(updated.width, updated.height, updated.size_unit);
-    onChange(idx, { ...updated, sq_ft: parseFloat(sq.toFixed(4)) });
+    if (item.quantity_type === "sq.ft") {
+      const sq = toSqFt(updated.width, updated.height, updated.size_unit);
+      updated.sq_ft = parseFloat(sq.toFixed(4));
+    }
+    onChange(idx, updated);
   };
 
   const set = (f, v) => onChange(idx, { ...item, [f]: v });
 
-  // When switching quantity_type, reset irrelevant fields but ALWAYS store quantity_type
+  // ✅ FIX: Don't clear width/height when switching to quantity mode
   const handleQtyTypeChange = (val) => {
     onChange(idx, {
       ...item,
-      quantity_type: val,  // always stored
-      ...(val === "quantity" ? { width: "", height: "", sq_ft: 0 } : {}),
+      quantity_type: val,
+      ...(val === "quantity" ? { sq_ft: 0 } : {}),
     });
   };
 
   const { base, gstAmt, lineTotal, isSqFt } = calcItemTotals(item);
   const productCols = isMobile ? "1fr" : isTablet ? "1fr 1fr" : "1fr 1fr 1fr";
-  const sizeCols    = isMobile ? "1fr 1fr" : "1fr 1fr 90px 1fr";
+  // ✅ FIX: sizeCols adjusts based on mode — 4 cols (sq.ft) or 3 cols (quantity)
+  const sizeCols    = isSqFt
+    ? (isMobile ? "1fr 1fr" : "1fr 1fr 90px 1fr")
+    : (isMobile ? "1fr 1fr" : "1fr 1fr 90px");
   const priceCols   = isMobile ? "1fr 1fr" : "repeat(3,1fr)";
 
   return (
@@ -431,43 +427,49 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
         </FormField>
       </div>
 
-      {/* Size Fields — sq.ft mode only */}
-      {isSqFt && (
-        <div style={{ display: "grid", gridTemplateColumns: sizeCols, gap: 8, marginBottom: 10, alignItems: "end" }}>
-          <FormField label="Width">
-            <Input
-              size="small"
-              placeholder="0"
-              type="number"
-              min={0}
-              value={item.width}
-              prefix={<span style={{ fontSize: 10, color: "#6b7280", fontWeight: 700 }}>W</span>}
-              style={{ borderRadius: 6 }}
-              onChange={(e) => sizeChange("width", e.target.value)}
-            />
-          </FormField>
-          <FormField label="Height">
-            <Input
-              size="small"
-              placeholder="0"
-              type="number"
-              min={0}
-              value={item.height}
-              prefix={<span style={{ fontSize: 10, color: "#6b7280", fontWeight: 700 }}>H</span>}
-              style={{ borderRadius: 6 }}
-              onChange={(e) => sizeChange("height", e.target.value)}
-            />
-          </FormField>
-          <FormField label="Unit">
-            <Select
-              value={item.size_unit}
-              size="small"
-              style={{ width: "100%" }}
-              onChange={(v) => sizeChange("size_unit", v)}
-            >
-              {UNIT_OPTIONS.map(u => <Option key={u.value} value={u.value}>{u.label}</Option>)}
-            </Select>
-          </FormField>
+      {/* ✅ FIX: Size fields always visible for BOTH modes
+          sq.ft  mode → W + H + Unit + Sq.Ft (4 cols, sq_ft auto-calcs)
+          qty    mode → W + H + Unit only   (3 cols, for reference/storage) */}
+      <div style={{ display: "grid", gridTemplateColumns: sizeCols, gap: 8, marginBottom: 10, alignItems: "end" }}>
+        <FormField label="Width" required={isSqFt}>
+          <Input
+            size="small"
+            placeholder="0"
+            type="number"
+            min={0}
+            value={item.width}
+            prefix={<span style={{ fontSize: 10, color: "#6b7280", fontWeight: 700 }}>W</span>}
+            style={{ borderRadius: 6 }}
+            onChange={(e) => sizeChange("width", e.target.value)}
+          />
+        </FormField>
+
+        <FormField label="Height" required={isSqFt}>
+          <Input
+            size="small"
+            placeholder="0"
+            type="number"
+            min={0}
+            value={item.height}
+            prefix={<span style={{ fontSize: 10, color: "#6b7280", fontWeight: 700 }}>H</span>}
+            style={{ borderRadius: 6 }}
+            onChange={(e) => sizeChange("height", e.target.value)}
+          />
+        </FormField>
+
+        <FormField label="Unit">
+          <Select
+            value={item.size_unit}
+            size="small"
+            style={{ width: "100%" }}
+            onChange={(v) => sizeChange("size_unit", v)}
+          >
+            {UNIT_OPTIONS.map(u => <Option key={u.value} value={u.value}>{u.label}</Option>)}
+          </Select>
+        </FormField>
+
+        {/* Sq.Ft field — only in sq.ft mode */}
+        {isSqFt && (
           <FormField label="Sq. Ft (editable)">
             <InputNumber
               size="small"
@@ -482,8 +484,8 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
               onChange={(v) => set("sq_ft", parseFloat((v || 0).toFixed(4)))}
             />
           </FormField>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Notes */}
       <div style={{ marginBottom: 10 }}>
@@ -544,10 +546,17 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
       </div>
       {item.design_file && (
         <div style={{ marginBottom: 10 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+          <div style={{
+            fontSize: 10, fontWeight: 700, color: "#6b7280",
+            marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em",
+          }}>
             Design Preview
           </div>
-          <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, background: "#f9fafb", padding: 4, display: "flex", justifyContent: "center" }}>
+          <div style={{
+            border: "1px solid #e5e7eb", borderRadius: 8,
+            background: "#f9fafb", padding: 4,
+            display: "flex", justifyContent: "center",
+          }}>
             <img
               src={item.design_file}
               alt="Design Preview"
@@ -558,7 +567,7 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
         </div>
       )}
 
-      {/* Item Total — shows formula clearly */}
+      {/* Item Total */}
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
         <div style={{
           background: "#fff", border: "1px solid #d1fae5",
@@ -587,6 +596,12 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
           <div style={{ fontSize: 14, fontWeight: 700, color: "#065f46" }}>
             Item Total: ₹{lineTotal.toFixed(2)}
           </div>
+          {/* ✅ Show size reference in quantity mode if dimensions entered */}
+          {!isSqFt && (item.width || item.height) && (
+            <div style={{ fontSize: 10, color: "#6b7280", marginTop: 2 }}>
+              Size ref: {item.width || "—"} × {item.height || "—"} {item.size_unit}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -775,8 +790,9 @@ const AdminJobManagement = () => {
     const address_line2 = streetParts.slice(1).join(", ") || "";
 
     setEditForm({
-      customer_name:           record.customer_name || "",
+      customer_name:           record.customer_name  || "",
       customer_phone:          record.customer_phone || "",
+      company_name:            record.company_name   || "",   // ✅ populate from record
       estimated_delivery_date: record.estimated_delivery_date
         ? dayjs(record.estimated_delivery_date).format("YYYY-MM-DDTHH:mm")
         : "",
@@ -786,12 +802,12 @@ const AdminJobManagement = () => {
       state:   addr.state   || "",
       pincode: addr.pincode || "",
       country: addr.country || "India",
-      gst_no:              record.gst_no || "",
-      delivery_charges:    record.delivery_charges ?? 0,
-      free_delivery:       record.free_delivery ?? false,
-      design_charges:      record.design_charges ?? 0,
+      gst_no:              record.gst_no              || "",
+      delivery_charges:    record.delivery_charges    ?? 0,
+      free_delivery:       record.free_delivery       ?? false,
+      design_charges:      record.design_charges      ?? 0,
       discount_percentage: record.discount_percentage ?? 0,
-      notes:               record.notes || "",
+      notes:               record.notes               || "",
       terms_and_conditions: record.terms_and_conditions ||
         "Payment due within 30 days.\nPrices subject to change without notice.\nDelivery: 7-10 business days after confirmation.",
     });
@@ -806,7 +822,6 @@ const AdminJobManagement = () => {
         if (m) { width = m[1]; height = m[2]; size_unit = m[3] || "ft"; }
       }
 
-      // Restore quantity_type from DB; fall back to inferring from dimensions
       const quantity_type = it.quantity_type ||
         (parseFloat(width) > 0 && parseFloat(height) > 0 ? "sq.ft" : "quantity");
 
@@ -823,7 +838,7 @@ const AdminJobManagement = () => {
         height,
         size_unit,
         sq_ft,
-        quantity_type,     // explicitly set so it's always present
+        quantity_type,
         gst_percentage: it.gst_percentage ?? 0,
       };
     });
@@ -847,14 +862,6 @@ const AdminJobManagement = () => {
   const removeEditItem  = (i) => setEditItems(p => p.filter((_, j) => j !== i));
 
   // ── Edit totals (computed live) ───────────────────────────────────────────
-  // Formula:
-  //   sq.ft  item base = qty * sq_ft * price
-  //   qty    item base = qty * price
-  //   subtotal         = Σ item bases
-  //   discount         = subtotal * discountPct / 100
-  //   taxableAmount    = subtotal - discount
-  //   totalGST         = Σ (item base * item gstPct / 100)
-  //   grandTotal       = taxableAmount + totalGST + designCharges + deliveryCharges
   const editTotals = useMemo(() => {
     let subtotal  = 0;
     let taxAmount = 0;
@@ -883,8 +890,8 @@ const AdminJobManagement = () => {
     setEditLoading(true);
     setEditError("");
     try {
-      if (!editForm.customer_name.trim()) throw new Error("Customer name is required");
-      if (!editForm.customer_phone.trim()) throw new Error("Phone number is required");
+      if (!editForm.customer_name.trim())    throw new Error("Customer name is required");
+      if (!editForm.customer_phone.trim())   throw new Error("Phone number is required");
       if (!editForm.estimated_delivery_date) throw new Error("Estimated delivery date is required");
 
       const valid = editItems.filter(it => {
@@ -898,6 +905,7 @@ const AdminJobManagement = () => {
       const payload = {
         customer_name:  editForm.customer_name.trim(),
         customer_phone: editForm.customer_phone.trim(),
+        company_name:   (editForm.company_name || "").trim(),   // ✅ included in payload
         estimated_delivery_date: dayjs(editForm.estimated_delivery_date).toISOString(),
         delivery_address: {
           street:  [editForm.address_line1, editForm.address_line2].filter(Boolean).join(", "),
@@ -907,7 +915,6 @@ const AdminJobManagement = () => {
           country: editForm.country,
         },
 
-        // ── Cart items — quantity_type always stored alongside all fields ──
         cart_items: valid.map(it => {
           const isSqFt = it.quantity_type === "sq.ft";
           return {
@@ -916,16 +923,16 @@ const AdminJobManagement = () => {
             variation:      it.variation     || "",
             printing_type:  it.printing_type || "",
             quantity:       it.quantity,
-            quantity_type:  it.quantity_type,   // ← always persisted
+            quantity_type:  it.quantity_type,
             price:          it.price,
             gst_percentage: it.gst_percentage || 0,
             design_file:    it.design_file   || "",
             notes:          it.notes         || "",
-            // Size fields — only meaningful in sq.ft mode
-            width:     isSqFt ? it.width     : "",
-            height:    isSqFt ? it.height    : "",
-            size_unit: isSqFt ? it.size_unit : "pcs",
-            sq_ft:     isSqFt ? it.sq_ft     : 0,
+            // ✅ Always save width/height/size_unit for both modes
+            width:     it.width     || "",
+            height:    it.height    || "",
+            size_unit: it.size_unit || (isSqFt ? "ft" : "pcs"),
+            sq_ft:     isSqFt ? it.sq_ft : 0,
             size:      isSqFt && it.width && it.height
               ? `${it.width}×${it.height} ${it.size_unit} (${it.sq_ft} sq.ft)`
               : "",
@@ -1018,6 +1025,12 @@ const AdminJobManagement = () => {
       render: (_, r) => (
         <div>
           <div style={{ fontWeight: 600, fontSize: 13, color: "#1a1a2e" }}>{r.customer_name || "—"}</div>
+          {/* ✅ Show company_name in table if present */}
+          {r.company_name && (
+            <div style={{ fontSize: 11, color: "#6b7280", display: "flex", alignItems: "center", gap: 3 }}>
+              <BankOutlined style={{ fontSize: 10 }} /> {r.company_name}
+            </div>
+          )}
           <div style={{ fontSize: 11, color: "#6b7280" }}>{r.customer_phone || ""}</div>
           {isMobile && (() => {
             const cfg = STATUS_CONFIG[r.job_status] || STATUS_CONFIG.draft;
@@ -1208,9 +1221,7 @@ const AdminJobManagement = () => {
         open={viewModal}
         onCancel={closeViewModal}
         footer={
-          <Button onClick={closeViewModal} style={{ borderRadius: 8 }}>
-            Close
-          </Button>
+          <Button onClick={closeViewModal} style={{ borderRadius: 8 }}>Close</Button>
         }
         title={
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1235,9 +1246,9 @@ const AdminJobManagement = () => {
         destroyOnClose
       >
         {viewJob && (() => {
-          const cfg     = STATUS_CONFIG[viewJob.job_status] || STATUS_CONFIG.draft;
-          const addr    = viewJob.delivery_address || {};
-          const totals  = calcJobTotals(viewJob);
+          const cfg       = STATUS_CONFIG[viewJob.job_status] || STATUS_CONFIG.draft;
+          const addr      = viewJob.delivery_address || {};
+          const totals    = calcJobTotals(viewJob);
           const cartItems = viewJob.cart_items || [];
 
           const fullAddress = [
@@ -1255,11 +1266,7 @@ const AdminJobManagement = () => {
                 gap: 8, justifyContent: "space-between",
               }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  <Tag
-                    color={cfg.color}
-                    icon={cfg.icon}
-                    style={{ fontWeight: 600, fontSize: 13, padding: "3px 10px" }}
-                  >
+                  <Tag color={cfg.color} icon={cfg.icon} style={{ fontWeight: 600, fontSize: 13, padding: "3px 10px" }}>
                     {cfg.label}
                   </Tag>
                   {stageCfg?.stage && (
@@ -1276,22 +1283,27 @@ const AdminJobManagement = () => {
               </div>
 
               {/* ── Customer Info ── */}
-              <div style={{
-                background: "#f9fafb", borderRadius: 10,
-                padding: "12px 14px", border: "1px solid #e5e7eb",
-              }}>
+              <div style={{ background: "#f9fafb", borderRadius: 10, padding: "12px 14px", border: "1px solid #e5e7eb" }}>
                 <SectionHeader icon={<UserOutlined />} title="Customer Info" />
                 <div style={{ display: "grid", gridTemplateColumns: c2, gap: 10 }}>
-                  <InfoRow label="Name"          value={viewJob.customer_name} />
-                  <InfoRow label="Phone"         value={viewJob.customer_phone} />
+                  <InfoRow label="Name"  value={viewJob.customer_name} />
+                  <InfoRow label="Phone" value={viewJob.customer_phone} />
+                  {/* ✅ Company Name displayed in View modal */}
+                  {viewJob.company_name && (
+                    <InfoRow
+                      label="Company / Business"
+                      value={viewJob.company_name}
+                      valueStyle={{ color: "#1e3a8a", display: "flex", alignItems: "center", gap: 4 }}
+                    />
+                  )}
                   <InfoRow
                     label="Estimated Delivery"
                     value={viewJob.estimated_delivery_date
                       ? dayjs(viewJob.estimated_delivery_date).format("DD MMM YYYY, HH:mm")
                       : "—"}
                   />
-                  <InfoRow label="GST Number"    value={viewJob.gst_no || "—"} />
-                  <InfoRow label="Created By"    value={viewJob.created_by || "—"} />
+                  <InfoRow label="GST Number" value={viewJob.gst_no || "—"} />
+                  <InfoRow label="Created By"  value={viewJob.created_by || "—"} />
                   <InfoRow
                     label="Valid Until"
                     value={viewJob.valid_until
@@ -1330,14 +1342,9 @@ const AdminJobManagement = () => {
 
               {/* ── Delivery Address ── */}
               {fullAddress && (
-                <div style={{
-                  background: "#f9fafb", borderRadius: 10,
-                  padding: "12px 14px", border: "1px solid #e5e7eb",
-                }}>
+                <div style={{ background: "#f9fafb", borderRadius: 10, padding: "12px 14px", border: "1px solid #e5e7eb" }}>
                   <SectionHeader icon={<EnvironmentOutlined />} title="Delivery Address" />
-                  <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.8 }}>
-                    {fullAddress}
-                  </div>
+                  <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.8 }}>{fullAddress}</div>
                 </div>
               )}
 
@@ -1347,90 +1354,55 @@ const AdminJobManagement = () => {
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   {cartItems.map((it, i) => {
                     const { base, gstAmt, lineTotal, isSqFt, qty, sqFt, price, gstPct } = calcItemTotals(it);
-
                     return (
-                      <div
-                        key={i}
-                        style={{
-                          background: "#fff", border: "1px solid #e5e7eb",
-                          borderRadius: 10, padding: "12px 14px",
-                        }}
-                      >
-                        {/* Item header */}
-                        <div style={{
-                          display: "flex", justifyContent: "space-between",
-                          alignItems: "flex-start", flexWrap: "wrap", gap: 6,
-                          marginBottom: 8,
-                        }}>
+                      <div key={i} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: "12px 14px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                            <span style={{
-                              fontSize: 11, fontWeight: 700, color: "#374151",
-                              background: "#e0e7ff", padding: "2px 8px", borderRadius: 20,
-                            }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: "#374151", background: "#e0e7ff", padding: "2px 8px", borderRadius: 20 }}>
                               #{i + 1}
                             </span>
                             <span style={{ fontWeight: 700, fontSize: 14, color: "#1a1a2e", textTransform: "capitalize" }}>
                               {it.product_name || "—"}
                             </span>
-                            {it.variation && (
-                              <Tag style={{ fontSize: 10, margin: 0 }}>{it.variation}</Tag>
-                            )}
-                            {it.printing_type && (
-                              <Tag color="blue" style={{ fontSize: 10, margin: 0 }}>{it.printing_type}</Tag>
-                            )}
-                            {/* Show quantity_type badge */}
-                            <Tag
-                              color={isSqFt ? "cyan" : "orange"}
-                              style={{ fontSize: 10, margin: 0 }}
-                            >
+                            {it.variation && <Tag style={{ fontSize: 10, margin: 0 }}>{it.variation}</Tag>}
+                            {it.printing_type && <Tag color="blue" style={{ fontSize: 10, margin: 0 }}>{it.printing_type}</Tag>}
+                            <Tag color={isSqFt ? "cyan" : "orange"} style={{ fontSize: 10, margin: 0 }}>
                               {isSqFt ? "Sq. Ft" : "Qty"}
                             </Tag>
                           </div>
-                          <div style={{
-                            fontWeight: 700, color: "#065f46", fontSize: 15,
-                            background: "#d1fae5", padding: "2px 10px", borderRadius: 8,
-                          }}>
+                          <div style={{ fontWeight: 700, color: "#065f46", fontSize: 15, background: "#d1fae5", padding: "2px 10px", borderRadius: 8 }}>
                             ₹{lineTotal.toFixed(2)}
                           </div>
                         </div>
 
-                        {/* Item details grid */}
-                        <div style={{
-                          display: "grid",
-                          gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)",
-                          gap: 8, marginBottom: 8,
-                        }}>
+                        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 8, marginBottom: 8 }}>
                           <InfoRow label="Quantity" value={`${qty}`} />
                           {isSqFt ? (
                             <>
-                              <InfoRow label="Sq. Ft"  value={`${sqFt} ft²`} />
-                              <InfoRow label="Size"    value={it.size || `${it.width}×${it.height} ${it.size_unit}`} />
-                              <InfoRow label="Rate"    value={`₹${price} / ft²`} />
+                              <InfoRow label="Sq. Ft" value={`${sqFt} ft²`} />
+                              <InfoRow label="Size"   value={it.size || `${it.width}×${it.height} ${it.size_unit}`} />
+                              <InfoRow label="Rate"   value={`₹${price} / ft²`} />
                             </>
                           ) : (
-                            <InfoRow label="Unit Price" value={`₹${price}`} />
+                            <>
+                              <InfoRow label="Unit Price" value={`₹${price}`} />
+                              {/* ✅ Show size reference in view if entered in quantity mode */}
+                              {(it.width || it.height) && (
+                                <InfoRow
+                                  label="Size (ref)"
+                                  value={`${it.width || "—"} × ${it.height || "—"} ${it.size_unit}`}
+                                />
+                              )}
+                            </>
                           )}
                         </div>
 
-                        {/* Pricing breakdown */}
-                        <div style={{
-                          background: "#f9fafb", borderRadius: 8,
-                          padding: "8px 12px", border: "1px solid #e5e7eb",
-                          fontSize: 12,
-                        }}>
+                        <div style={{ background: "#f9fafb", borderRadius: 8, padding: "8px 12px", border: "1px solid #e5e7eb", fontSize: 12 }}>
                           <div style={{ display: "flex", justifyContent: "space-between", color: "#4b5563", marginBottom: 2 }}>
                             <span>
                               Base Amount
-                              {isSqFt && (
-                                <span style={{ color: "#9ca3af", marginLeft: 4 }}>
-                                  ({qty} qty × {sqFt} ft² × ₹{price}/ft²)
-                                </span>
-                              )}
-                              {!isSqFt && (
-                                <span style={{ color: "#9ca3af", marginLeft: 4 }}>
-                                  ({qty} qty × ₹{price})
-                                </span>
-                              )}
+                              {isSqFt && <span style={{ color: "#9ca3af", marginLeft: 4 }}>({qty} qty × {sqFt} ft² × ₹{price}/ft²)</span>}
+                              {!isSqFt && <span style={{ color: "#9ca3af", marginLeft: 4 }}>({qty} qty × ₹{price})</span>}
                             </span>
                             <span style={{ fontWeight: 600, color: "#374151" }}>₹{base.toFixed(2)}</span>
                           </div>
@@ -1440,41 +1412,25 @@ const AdminJobManagement = () => {
                               <span style={{ fontWeight: 600 }}>+ ₹{gstAmt.toFixed(2)}</span>
                             </div>
                           )}
-                          <div style={{
-                            display: "flex", justifyContent: "space-between",
-                            fontWeight: 700, color: "#065f46",
-                            borderTop: "1px solid #d1fae5", paddingTop: 4, marginTop: 4,
-                          }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, color: "#065f46", borderTop: "1px solid #d1fae5", paddingTop: 4, marginTop: 4 }}>
                             <span>Item Total</span>
                             <span>₹{lineTotal.toFixed(2)}</span>
                           </div>
                         </div>
 
-                        {/* Notes */}
                         {it.notes && (
-                          <div style={{
-                            marginTop: 8, fontSize: 12, color: "#6b7280",
-                            fontStyle: "italic", background: "#fffbeb",
-                            border: "1px solid #fde68a", borderRadius: 6, padding: "4px 8px",
-                          }}>
+                          <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280", fontStyle: "italic", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 6, padding: "4px 8px" }}>
                             Note: "{it.notes}"
                           </div>
                         )}
 
-                        {/* Design file preview */}
                         {it.design_file && (
                           <div style={{ marginTop: 8 }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", marginBottom: 4, textTransform: "uppercase" }}>
-                              Design File
-                            </div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", marginBottom: 4, textTransform: "uppercase" }}>Design File</div>
                             <img
                               src={it.design_file}
                               alt="Design"
-                              style={{
-                                maxHeight: 80, maxWidth: "100%",
-                                borderRadius: 6, objectFit: "contain",
-                                border: "1px solid #e5e7eb",
-                              }}
+                              style={{ maxHeight: 80, maxWidth: "100%", borderRadius: 6, objectFit: "contain", border: "1px solid #e5e7eb" }}
                               onError={(e) => { e.currentTarget.style.display = "none"; }}
                             />
                           </div>
@@ -1486,74 +1442,30 @@ const AdminJobManagement = () => {
               </div>
 
               {/* ── Order Summary ── */}
-              <div style={{
-                background: "linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%)",
-                border: "1px solid #bfdbfe", borderRadius: 10,
-                padding: isMobile ? 12 : "14px 16px",
-              }}>
-                <div style={{
-                  fontWeight: 700, color: "#1e40af", marginBottom: 12,
-                  fontSize: 14, display: "flex", alignItems: "center", gap: 6,
-                }}>
+              <div style={{ background: "linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%)", border: "1px solid #bfdbfe", borderRadius: 10, padding: isMobile ? 12 : "14px 16px" }}>
+                <div style={{ fontWeight: 700, color: "#1e40af", marginBottom: 12, fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
                   <WalletOutlined /> Order Summary
                 </div>
-
-                <SummaryRow
-                  label="Subtotal (items base)"
-                  value={`₹${totals.subtotal.toFixed(2)}`}
-                />
-
+                <SummaryRow label="Subtotal (items base)" value={`₹${totals.subtotal.toFixed(2)}`} />
                 {totals.discountAmt > 0 && (
-                  <SummaryRow
-                    label={`Discount (${totals.discountPct}%)`}
-                    value={`− ₹${totals.discountAmt.toFixed(2)}`}
-                    color="#059669"
-                  />
+                  <SummaryRow label={`Discount (${totals.discountPct}%)`} value={`− ₹${totals.discountAmt.toFixed(2)}`} color="#059669" />
                 )}
-
                 {totals.discountAmt > 0 && (
-                  <SummaryRow
-                    label="Taxable Amount"
-                    value={`₹${totals.taxableAmount.toFixed(2)}`}
-                    color="#374151"
-                  />
+                  <SummaryRow label="Taxable Amount" value={`₹${totals.taxableAmount.toFixed(2)}`} color="#374151" />
                 )}
-
-                <SummaryRow
-                  label="Total GST (all items)"
-                  value={`₹${totals.taxAmount.toFixed(2)}`}
-                  color="#d97706"
-                />
-
+                <SummaryRow label="Total GST (all items)" value={`₹${totals.taxAmount.toFixed(2)}`} color="#d97706" />
                 {totals.designCharges > 0 && (
-                  <SummaryRow
-                    label="Design Charges"
-                    value={`₹${totals.designCharges.toFixed(2)}`}
-                    color="#7c3aed"
-                  />
+                  <SummaryRow label="Design Charges" value={`₹${totals.designCharges.toFixed(2)}`} color="#7c3aed" />
                 )}
-
                 <SummaryRow
                   label="Delivery Charges"
                   value={totals.freeDelivery ? "Free" : `₹${totals.deliveryCharges.toFixed(2)}`}
                   color={totals.freeDelivery ? "#059669" : undefined}
                 />
-
                 <Divider style={{ margin: "10px 0" }} />
-
-                <SummaryRow
-                  label="Grand Total"
-                  value={`₹${totals.grandTotal.toFixed(2)}`}
-                  bold
-                />
-
-                {/* Stored vs computed note if mismatch */}
+                <SummaryRow label="Grand Total" value={`₹${totals.grandTotal.toFixed(2)}`} bold />
                 {Math.abs(totals.grandTotal - parseFloat(viewJob.total_amount || 0)) > 0.5 && (
-                  <div style={{
-                    marginTop: 8, fontSize: 11, color: "#92400e",
-                    background: "#fffbeb", border: "1px solid #fde68a",
-                    borderRadius: 6, padding: "4px 8px",
-                  }}>
+                  <div style={{ marginTop: 8, fontSize: 11, color: "#92400e", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 6, padding: "4px 8px" }}>
                     Stored total: ₹{parseFloat(viewJob.total_amount || 0).toFixed(2)} · Computed: ₹{totals.grandTotal.toFixed(2)}
                   </div>
                 )}
@@ -1561,13 +1473,10 @@ const AdminJobManagement = () => {
 
               {/* ── Payment Info ── */}
               {(viewJob.payment_mode || parseFloat(viewJob.payment_amount || 0) > 0) && (
-                <div style={{
-                  background: "#f0fdf4", borderRadius: 10,
-                  padding: "12px 14px", border: "1px solid #bbf7d0",
-                }}>
+                <div style={{ background: "#f0fdf4", borderRadius: 10, padding: "12px 14px", border: "1px solid #bbf7d0" }}>
                   <SectionHeader icon={<WalletOutlined />} title="Payment" />
                   <div style={{ display: "grid", gridTemplateColumns: c2, gap: 10 }}>
-                    <InfoRow label="Payment Mode"   value={viewJob.payment_mode || "—"} />
+                    <InfoRow label="Payment Mode" value={viewJob.payment_mode || "—"} />
                     <InfoRow
                       label="Amount Paid"
                       value={parseFloat(viewJob.payment_amount || 0) > 0
@@ -1581,31 +1490,17 @@ const AdminJobManagement = () => {
 
               {/* ── Notes ── */}
               {viewJob.notes && (
-                <div style={{
-                  fontSize: 13, color: "#374151",
-                  background: "#fffbeb", border: "1px solid #fde68a",
-                  borderRadius: 8, padding: "10px 12px",
-                }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: "#92400e", textTransform: "uppercase", marginBottom: 4 }}>
-                    Notes
-                  </div>
+                <div style={{ fontSize: 13, color: "#374151", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "10px 12px" }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#92400e", textTransform: "uppercase", marginBottom: 4 }}>Notes</div>
                   {viewJob.notes}
                 </div>
               )}
 
               {/* ── Terms ── */}
               {viewJob.terms_and_conditions && (
-                <div style={{
-                  fontSize: 12, color: "#6b7280",
-                  background: "#f9fafb", border: "1px solid #e5e7eb",
-                  borderRadius: 8, padding: "10px 12px",
-                }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: "#374151", textTransform: "uppercase", marginBottom: 4 }}>
-                    Terms & Conditions
-                  </div>
-                  <div style={{ whiteSpace: "pre-line", lineHeight: 1.7 }}>
-                    {viewJob.terms_and_conditions}
-                  </div>
+                <div style={{ fontSize: 12, color: "#6b7280", background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 8, padding: "10px 12px" }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#374151", textTransform: "uppercase", marginBottom: 4 }}>Terms & Conditions</div>
+                  <div style={{ whiteSpace: "pre-line", lineHeight: 1.7 }}>{viewJob.terms_and_conditions}</div>
                 </div>
               )}
             </div>
@@ -1642,18 +1537,14 @@ const AdminJobManagement = () => {
       >
         <Spin spinning={editLoading}>
           {editError && (
-            <div style={{
-              marginBottom: 12, padding: "10px 14px",
-              background: "#fef2f2", border: "1px solid #fca5a5",
-              borderRadius: 8, color: "#b91c1c", fontSize: 13,
-            }}>
+            <div style={{ marginBottom: 12, padding: "10px 14px", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 8, color: "#b91c1c", fontSize: 13 }}>
               ⚠ {editError}
             </div>
           )}
 
           {/* ── Customer Info ── */}
           <SectionHeader icon={<UserOutlined />} title="Customer Info" />
-          <div style={{ display: "grid", gridTemplateColumns: c3, gap: g, marginBottom: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: c3, gap: g, marginBottom: g }}>
             <FormField label="Customer Name" required>
               <Input
                 prefix={<UserOutlined style={{ color: "#9ca3af" }} />}
@@ -1678,6 +1569,28 @@ const AdminJobManagement = () => {
                 type="datetime-local"
                 value={editForm.estimated_delivery_date}
                 onChange={(e) => handleEditInput("estimated_delivery_date", e.target.value)}
+                style={{ borderRadius: 8 }}
+              />
+            </FormField>
+          </div>
+
+          {/* ✅ Company Name + GST Number row in edit form */}
+          <div style={{ display: "grid", gridTemplateColumns: c2, gap: g, marginBottom: 14 }}>
+            <FormField label="Company Name">
+              <Input
+                prefix={<BankOutlined style={{ color: "#9ca3af" }} />}
+                placeholder="Company / Business name"
+                value={editForm.company_name}
+                onChange={(e) => handleEditInput("company_name", e.target.value)}
+                style={{ borderRadius: 8 }}
+              />
+            </FormField>
+            <FormField label="GST Number">
+              <Input
+                placeholder="GSTIN (15 chars)"
+                maxLength={15}
+                value={editForm.gst_no}
+                onChange={(e) => handleEditInput("gst_no", e.target.value.toUpperCase())}
                 style={{ borderRadius: 8 }}
               />
             </FormField>
@@ -1750,16 +1663,6 @@ const AdminJobManagement = () => {
           {/* ── Pricing & Tax ── */}
           <SectionHeader icon={<TagOutlined />} title="Pricing & Tax" />
           <div style={{ display: "grid", gridTemplateColumns: c5, gap: g, marginBottom: 14 }}>
-            <FormField label="GST Number">
-              <Input
-                placeholder="GSTIN"
-                maxLength={15}
-                value={editForm.gst_no}
-                onChange={(e) => handleEditInput("gst_no", e.target.value)}
-                style={{ borderRadius: 8 }}
-              />
-            </FormField>
-
             <FormField label="Discount (%)">
               <InputNumber
                 min={0} max={100}
@@ -1849,53 +1752,28 @@ const AdminJobManagement = () => {
           </div>
 
           {/* ── Order Summary (live preview) ── */}
-          <div style={{
-            background: "linear-gradient(135deg,#eff6ff 0%,#f8fafc 100%)",
-            border: "1px solid #bfdbfe", borderRadius: 10,
-            padding: isMobile ? 12 : "14px 16px", marginBottom: 14,
-          }}>
-            <div style={{
-              fontWeight: 700, color: "#1e40af", marginBottom: 10,
-              fontSize: 14, display: "flex", alignItems: "center", gap: 6,
-            }}>
+          <div style={{ background: "linear-gradient(135deg,#eff6ff 0%,#f8fafc 100%)", border: "1px solid #bfdbfe", borderRadius: 10, padding: isMobile ? 12 : "14px 16px", marginBottom: 14 }}>
+            <div style={{ fontWeight: 700, color: "#1e40af", marginBottom: 10, fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
               <FileTextOutlined /> Order Summary
             </div>
-
             <SummaryRow label="Subtotal (items base)" value={`₹${editTotals.subtotal.toFixed(2)}`} />
-
             {editTotals.discountAmt > 0 && (
-              <SummaryRow
-                label={`Discount (${editTotals.discountPct}%)`}
-                value={`− ₹${editTotals.discountAmt.toFixed(2)}`}
-                color="#059669"
-              />
+              <SummaryRow label={`Discount (${editTotals.discountPct}%)`} value={`− ₹${editTotals.discountAmt.toFixed(2)}`} color="#059669" />
             )}
-
             {editTotals.discountAmt > 0 && (
-              <SummaryRow
-                label="Taxable Amount"
-                value={`₹${editTotals.taxableAmount.toFixed(2)}`}
-                color="#374151"
-              />
+              <SummaryRow label="Taxable Amount" value={`₹${editTotals.taxableAmount.toFixed(2)}`} color="#374151" />
             )}
-
             <SummaryRow label="Total GST" value={`₹${editTotals.taxAmount.toFixed(2)}`} color="#d97706" />
-
             {editTotals.designCharges > 0 && (
               <SummaryRow label="Design Charges" value={`₹${editTotals.designCharges.toFixed(2)}`} color="#7c3aed" />
             )}
-
             <SummaryRow
               label="Delivery"
               value={editForm.free_delivery ? "Free" : `₹${editTotals.deliveryCharges.toFixed(2)}`}
               color={editForm.free_delivery ? "#059669" : undefined}
             />
-
             <Divider style={{ margin: "8px 0" }} />
-
             <SummaryRow label="Grand Total" value={`₹${editTotals.grandTotal.toFixed(2)}`} bold />
-
-            {/* Formula hint */}
             <div style={{ marginTop: 8, fontSize: 10, color: "#6b7280" }}>
               Formula: Sq.Ft items = qty × sq.ft × rate &nbsp;|&nbsp; Qty items = qty × rate
             </div>
@@ -1903,10 +1781,7 @@ const AdminJobManagement = () => {
 
           {/* ── Actions ── */}
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-            <Button
-              onClick={resetEditModal}
-              style={{ borderRadius: 8, height: 40, flex: isMobile ? 1 : undefined }}
-            >
+            <Button onClick={resetEditModal} style={{ borderRadius: 8, height: 40, flex: isMobile ? 1 : undefined }}>
               Cancel
             </Button>
             <Button
@@ -1914,11 +1789,7 @@ const AdminJobManagement = () => {
               icon={<SaveOutlined />}
               onClick={handleEditSubmit}
               loading={editLoading}
-              style={{
-                background: "#2563eb", border: "none",
-                borderRadius: 8, height: 40, fontWeight: 600,
-                flex: isMobile ? 1 : undefined,
-              }}
+              style={{ background: "#2563eb", border: "none", borderRadius: 8, height: 40, fontWeight: 600, flex: isMobile ? 1 : undefined }}
             >
               Save Changes
             </Button>
@@ -1939,9 +1810,7 @@ const AdminJobManagement = () => {
         maskClosable={!approving}
         closable={!approving}
         footer={[
-          <Button key="cancel" onClick={closeApproveModal} disabled={approving}>
-            Cancel
-          </Button>,
+          <Button key="cancel" onClick={closeApproveModal} disabled={approving}>Cancel</Button>,
           <Button
             key="submit"
             type="primary"
@@ -1960,29 +1829,17 @@ const AdminJobManagement = () => {
       >
         {approvingJob && (
           <div>
-            <div style={{
-              background: "#f8fafc", borderRadius: 8,
-              padding: "10px 12px", marginBottom: 16,
-              border: "1px solid #e5e7eb",
-            }}>
+            <div style={{ background: "#f8fafc", borderRadius: 8, padding: "10px 12px", marginBottom: 16, border: "1px solid #e5e7eb" }}>
               <div style={{ fontFamily: "monospace", fontWeight: 700, color: "#2563eb", fontSize: 14 }}>
                 {approvingJob.job_no}
               </div>
-              <div style={{ fontSize: 13, color: "#374151", marginTop: 2 }}>
-                {approvingJob.customer_name || "—"}
-              </div>
-              <div style={{ fontSize: 11, color: "#6b7280" }}>
-                {approvingJob.customer_phone || ""}
-              </div>
+              <div style={{ fontSize: 13, color: "#374151", marginTop: 2 }}>{approvingJob.customer_name || "—"}</div>
+              <div style={{ fontSize: 11, color: "#6b7280" }}>{approvingJob.customer_phone || ""}</div>
               <div style={{ marginTop: 6, fontSize: 11 }}>
                 Current status:{" "}
                 {(() => {
                   const cfg = STATUS_CONFIG[approvingJob.job_status] || STATUS_CONFIG.draft;
-                  return (
-                    <Tag color={cfg.color} icon={cfg.icon} style={{ fontWeight: 500 }}>
-                      {cfg.label}
-                    </Tag>
-                  );
+                  return <Tag color={cfg.color} icon={cfg.icon} style={{ fontWeight: 500 }}>{cfg.label}</Tag>;
                 })()}
               </div>
             </div>
@@ -1997,9 +1854,7 @@ const AdminJobManagement = () => {
                 value={selectedDesigner?._id || undefined}
                 loading={designersLoading}
                 disabled={designersLoading}
-                onChange={(id) => {
-                  setSelectedDesigner(designers.find(d => d._id === id) || null);
-                }}
+                onChange={(id) => setSelectedDesigner(designers.find(d => d._id === id) || null)}
                 notFoundContent={designersLoading ? "Loading…" : "No designers found"}
               >
                 {designers.map(d => (
@@ -2011,23 +1866,14 @@ const AdminJobManagement = () => {
                   </Option>
                 ))}
               </Select>
-
               {!designersLoading && designers.length === 0 && (
-                <div style={{
-                  marginTop: 8, color: "#b45309", fontSize: 12,
-                  background: "#fffbeb", border: "1px solid #fde68a",
-                  borderRadius: 6, padding: "6px 10px",
-                }}>
+                <div style={{ marginTop: 8, color: "#b45309", fontSize: 12, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 6, padding: "6px 10px" }}>
                   No designers found. Add a user with role "designing team" first.
                 </div>
               )}
             </div>
 
-            <div style={{
-              fontSize: 12, color: "#6b7280",
-              background: "#fefce8", padding: "8px 10px",
-              borderRadius: 6, border: "1px solid #fef08a",
-            }}>
+            <div style={{ fontSize: 12, color: "#6b7280", background: "#fefce8", padding: "8px 10px", borderRadius: 6, border: "1px solid #fef08a" }}>
               The job will be approved and assigned to the selected designer with stage set to <strong>Design</strong>.
             </div>
           </div>
