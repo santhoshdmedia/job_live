@@ -94,6 +94,9 @@ const QTY_TYPE_OPTIONS = [
 
 const GST_OPTIONS = [0, 5, 12, 18, 28];
 
+// ✅ Payment modes — same as CreateJobModal
+const PAYMENT_MODES = ["Cash", "UPI", "Bank Transfer", "Cheque", "Card", "Cash on Delivery"];
+
 // ─── sq.ft auto-calculator ────────────────────────────────────────────────────
 const toSqFt = (w, h, unit) => {
   const wn = parseFloat(w) || 0;
@@ -163,10 +166,11 @@ const EMPTY_ITEM = {
   notes:          "",
 };
 
+// ✅ Added payment_mode and payment_amount to DEFAULT_EDIT_FORM
 const DEFAULT_EDIT_FORM = {
   customer_name:           "",
   customer_phone:          "",
-  company_name:            "",   // ✅ added
+  company_name:            "",
   estimated_delivery_date: "",
   address_line1:           "",
   address_line2:           "",
@@ -179,6 +183,8 @@ const DEFAULT_EDIT_FORM = {
   free_delivery:           false,
   design_charges:          0,
   discount_percentage:     0,
+  payment_mode:            "",
+  payment_amount:          "",
   notes:                   "",
   terms_and_conditions:
     "Payment due within 30 days.\nPrices subject to change without notice.\nDelivery: 7-10 business days after confirmation.",
@@ -274,7 +280,6 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
     return () => document.removeEventListener("mousedown", fn);
   }, []);
 
-  // ✅ FIX: sizeChange only auto-recalcs sq_ft in sq.ft mode
   const sizeChange = (field, val) => {
     const updated = { ...item, [field]: val };
     if (item.quantity_type === "sq.ft") {
@@ -286,7 +291,6 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
 
   const set = (f, v) => onChange(idx, { ...item, [f]: v });
 
-  // ✅ FIX: Don't clear width/height when switching to quantity mode
   const handleQtyTypeChange = (val) => {
     onChange(idx, {
       ...item,
@@ -297,7 +301,6 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
 
   const { base, gstAmt, lineTotal, isSqFt } = calcItemTotals(item);
   const productCols = isMobile ? "1fr" : isTablet ? "1fr 1fr" : "1fr 1fr 1fr";
-  // ✅ FIX: sizeCols adjusts based on mode — 4 cols (sq.ft) or 3 cols (quantity)
   const sizeCols    = isSqFt
     ? (isMobile ? "1fr 1fr" : "1fr 1fr 90px 1fr")
     : (isMobile ? "1fr 1fr" : "1fr 1fr 90px");
@@ -427,9 +430,7 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
         </FormField>
       </div>
 
-      {/* ✅ FIX: Size fields always visible for BOTH modes
-          sq.ft  mode → W + H + Unit + Sq.Ft (4 cols, sq_ft auto-calcs)
-          qty    mode → W + H + Unit only   (3 cols, for reference/storage) */}
+      {/* Size fields */}
       <div style={{ display: "grid", gridTemplateColumns: sizeCols, gap: 8, marginBottom: 10, alignItems: "end" }}>
         <FormField label="Width" required={isSqFt}>
           <Input
@@ -468,7 +469,6 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
           </Select>
         </FormField>
 
-        {/* Sq.Ft field — only in sq.ft mode */}
         {isSqFt && (
           <FormField label="Sq. Ft (editable)">
             <InputNumber
@@ -596,7 +596,6 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
           <div style={{ fontSize: 14, fontWeight: 700, color: "#065f46" }}>
             Item Total: ₹{lineTotal.toFixed(2)}
           </div>
-          {/* ✅ Show size reference in quantity mode if dimensions entered */}
           {!isSqFt && (item.width || item.height) && (
             <div style={{ fontSize: 10, color: "#6b7280", marginTop: 2 }}>
               Size ref: {item.width || "—"} × {item.height || "—"} {item.size_unit}
@@ -792,7 +791,7 @@ const AdminJobManagement = () => {
     setEditForm({
       customer_name:           record.customer_name  || "",
       customer_phone:          record.customer_phone || "",
-      company_name:            record.company_name   || "",   // ✅ populate from record
+      company_name:            record.company_name   || "",
       estimated_delivery_date: record.estimated_delivery_date
         ? dayjs(record.estimated_delivery_date).format("YYYY-MM-DDTHH:mm")
         : "",
@@ -807,6 +806,9 @@ const AdminJobManagement = () => {
       free_delivery:       record.free_delivery       ?? false,
       design_charges:      record.design_charges      ?? 0,
       discount_percentage: record.discount_percentage ?? 0,
+      // ✅ Populate payment fields from record
+      payment_mode:        record.payment_mode        || "",
+      payment_amount:      record.payment_amount      || "",
       notes:               record.notes               || "",
       terms_and_conditions: record.terms_and_conditions ||
         "Payment due within 30 days.\nPrices subject to change without notice.\nDelivery: 7-10 business days after confirmation.",
@@ -878,10 +880,14 @@ const AdminJobManagement = () => {
     const designCharges   = parseFloat(editForm.design_charges)   || 0;
     const deliveryCharges = editForm.free_delivery ? 0 : (parseFloat(editForm.delivery_charges) || 0);
     const grandTotal      = taxableAmount + taxAmount + designCharges + deliveryCharges;
+    // ✅ Payment balance calculation
+    const paid            = parseFloat(editForm.payment_amount) || 0;
+    const balance         = grandTotal - paid;
 
     return {
       subtotal, taxAmount, discountPct, discountAmt,
       taxableAmount, designCharges, deliveryCharges, grandTotal,
+      paid, balance,
     };
   }, [editItems, editForm]);
 
@@ -905,7 +911,7 @@ const AdminJobManagement = () => {
       const payload = {
         customer_name:  editForm.customer_name.trim(),
         customer_phone: editForm.customer_phone.trim(),
-        company_name:   (editForm.company_name || "").trim(),   // ✅ included in payload
+        company_name:   (editForm.company_name || "").trim(),
         estimated_delivery_date: dayjs(editForm.estimated_delivery_date).toISOString(),
         delivery_address: {
           street:  [editForm.address_line1, editForm.address_line2].filter(Boolean).join(", "),
@@ -928,7 +934,6 @@ const AdminJobManagement = () => {
             gst_percentage: it.gst_percentage || 0,
             design_file:    it.design_file   || "",
             notes:          it.notes         || "",
-            // ✅ Always save width/height/size_unit for both modes
             width:     it.width     || "",
             height:    it.height    || "",
             size_unit: it.size_unit || (isSqFt ? "ft" : "pcs"),
@@ -949,6 +954,10 @@ const AdminJobManagement = () => {
         taxable_amount:      editTotals.taxableAmount,
         tax_amount:          editTotals.taxAmount,
         total_amount:        editTotals.grandTotal,
+        // ✅ Payment fields in payload
+        payment_mode:        editForm.payment_mode   || "",
+        payment_amount:      parseFloat(editForm.payment_amount) || 0,
+        balance_amount:      parseFloat(editTotals.balance.toFixed(2)),
         notes:               editForm.notes,
         terms_and_conditions: editForm.terms_and_conditions,
       };
@@ -1025,7 +1034,6 @@ const AdminJobManagement = () => {
       render: (_, r) => (
         <div>
           <div style={{ fontWeight: 600, fontSize: 13, color: "#1a1a2e" }}>{r.customer_name || "—"}</div>
-          {/* ✅ Show company_name in table if present */}
           {r.company_name && (
             <div style={{ fontSize: 11, color: "#6b7280", display: "flex", alignItems: "center", gap: 3 }}>
               <BankOutlined style={{ fontSize: 10 }} /> {r.company_name}
@@ -1288,7 +1296,6 @@ const AdminJobManagement = () => {
                 <div style={{ display: "grid", gridTemplateColumns: c2, gap: 10 }}>
                   <InfoRow label="Name"  value={viewJob.customer_name} />
                   <InfoRow label="Phone" value={viewJob.customer_phone} />
-                  {/* ✅ Company Name displayed in View modal */}
                   {viewJob.company_name && (
                     <InfoRow
                       label="Company / Business"
@@ -1386,7 +1393,6 @@ const AdminJobManagement = () => {
                           ) : (
                             <>
                               <InfoRow label="Unit Price" value={`₹${price}`} />
-                              {/* ✅ Show size reference in view if entered in quantity mode */}
                               {(it.width || it.height) && (
                                 <InfoRow
                                   label="Size (ref)"
@@ -1574,7 +1580,7 @@ const AdminJobManagement = () => {
             </FormField>
           </div>
 
-          {/* ✅ Company Name + GST Number row in edit form */}
+          {/* Company Name + GST Number */}
           <div style={{ display: "grid", gridTemplateColumns: c2, gap: g, marginBottom: 14 }}>
             <FormField label="Company Name">
               <Input
@@ -1729,6 +1735,34 @@ const AdminJobManagement = () => {
             </FormField>
           </div>
 
+          {/* ✅ Payment Section — NEW in Edit modal */}
+          <SectionHeader icon={<WalletOutlined />} title="Payment" />
+          <div style={{ display: "grid", gridTemplateColumns: c2, gap: g, marginBottom: 14 }}>
+            <FormField label="Payment Mode">
+              <Select
+                placeholder="Select payment mode"
+                value={editForm.payment_mode || undefined}
+                style={{ width: "100%" }}
+                allowClear
+                onChange={(v) => handleEditInput("payment_mode", v ?? "")}
+              >
+                {PAYMENT_MODES.map(m => (
+                  <Option key={m} value={m}>{m}</Option>
+                ))}
+              </Select>
+            </FormField>
+            <FormField label="Amount Paid (₹)">
+              <InputNumber
+                min={0}
+                placeholder="0.00"
+                value={editForm.payment_amount || undefined}
+                style={{ width: "100%", borderRadius: 8 }}
+                prefix="₹"
+                onChange={(v) => handleEditInput("payment_amount", v ?? "")}
+              />
+            </FormField>
+          </div>
+
           {/* ── Notes & Terms ── */}
           <SectionHeader icon={<FileTextOutlined />} title="Notes & Terms" />
           <div style={{ display: "grid", gridTemplateColumns: c2, gap: g, marginBottom: 14 }}>
@@ -1774,6 +1808,30 @@ const AdminJobManagement = () => {
             />
             <Divider style={{ margin: "8px 0" }} />
             <SummaryRow label="Grand Total" value={`₹${editTotals.grandTotal.toFixed(2)}`} bold />
+            {/* ✅ Show paid / balance in summary when payment fields are filled */}
+            {(editTotals.paid > 0 || editForm.payment_mode) && (
+              <>
+                <div style={{ height: 6 }} />
+                <SummaryRow
+                  label={`Amount Paid${editForm.payment_mode ? ` (${editForm.payment_mode})` : ""}`}
+                  value={`− ₹${editTotals.paid.toFixed(2)}`}
+                  color="#059669"
+                />
+                <Divider style={{ margin: "6px 0" }} />
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 800 }}>
+                  <span style={{ color: "#1a1a2e" }}>Balance Due</span>
+                  <span style={{
+                    color: editTotals.balance <= 0 ? "#059669" : "#dc2626",
+                    background: editTotals.balance <= 0 ? "#f0fdf4" : "#fef2f2",
+                    padding: "2px 10px", borderRadius: 6,
+                  }}>
+                    {editTotals.balance <= 0
+                      ? `✓ Paid (Advance ₹${Math.abs(editTotals.balance).toFixed(2)})`
+                      : `₹${editTotals.balance.toFixed(2)}`}
+                  </span>
+                </div>
+              </>
+            )}
             <div style={{ marginTop: 8, fontSize: 10, color: "#6b7280" }}>
               Formula: Sq.Ft items = qty × sq.ft × rate &nbsp;|&nbsp; Qty items = qty × rate
             </div>

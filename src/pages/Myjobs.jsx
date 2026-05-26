@@ -1,4 +1,4 @@
-  // Myjobs.jsx
+// Myjobs.jsx
   // ─────────────────────────────────────────────────────────────────────────────
   // Integrated My Jobs portal with Customer Info Requests tab.
   // Drop this inside your admin dashboard/layout.
@@ -50,6 +50,7 @@
     ShareAltOutlined,
     CopyOutlined,
     MessageOutlined,
+    ShopOutlined,
   } from "@ant-design/icons";
   import dayjs from "dayjs";
   import relativeTime from "dayjs/plugin/relativeTime";
@@ -500,9 +501,6 @@
   };
 
   // ── Generate Job Sheet PDF ─────────────────────────────────────────────────────
-  // Returns { blob, filename } instead of saving directly, so the caller can
-  // show a share / download dialog.
-  // ─────────────────────────────────────────────────────────────────────────────
   const buildJobSheetPDF = async (job) => {
     const doc    = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
     const PW     = 210;
@@ -574,9 +572,12 @@
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8.5);
     doc.setTextColor(...DARK);
-    const custDetail = [job.customer_name, job.customer_phone].filter(Boolean).join("   |   ");
+    // ✅ Show company_name if available, else fall back to customer_name
+    const displayName = (job.company_name && job.company_name.trim())
+      ? job.company_name.trim()
+      : (job.customer_name || "—");
+    const custDetail = [displayName, job.customer_phone].filter(Boolean).join("   |   ");
     txt(custDetail, MARGIN + doc.getTextWidth("Customer Details :") + 2, y);
-
     y += 7;
     hr(y, LGRAY);
     y += 5;
@@ -849,13 +850,11 @@
         `Please download your job sheet PDF attached.\n\nThank you!\nD-Media Team\nwww.dmedia.in`
       );
 
-      // If we have a phone number, open direct chat; otherwise open share picker
       const waUrl = phone
         ? `https://wa.me/91${phone}?text=${text}`
         : `https://wa.me/?text=${text}`;
       window.open(waUrl, "_blank");
 
-      // Also trigger download so user can manually attach
       if (pdfReady) {
         setTimeout(handleDownload, 500);
       }
@@ -883,7 +882,6 @@
 
       window.open(`mailto:?subject=${subject}&body=${body}`, "_self");
 
-      // Trigger download so user can attach the PDF
       if (pdfReady) {
         setTimeout(handleDownload, 500);
       }
@@ -896,7 +894,6 @@
         if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
           await navigator.share({ title: `Job Sheet – ${job?.job_no || ""}`, files: [file] });
         } else {
-          // Fallback: just download
           handleDownload();
           message.info("Direct sharing not supported on this browser — PDF downloaded instead.");
         }
@@ -923,7 +920,6 @@
       });
     };
 
-    // ── Share option cards ──────────────────────────────────────────────────────
     const shareOptions = [
       {
         key:     "whatsapp",
@@ -989,7 +985,6 @@
           </div>
         }
       >
-        {/* PDF preview / status */}
         <div style={{ background: generating ? "#f8fafc" : "#f0fdfa", border: `1px solid ${generating ? "#e5e7eb" : "#99f6e4"}`, borderRadius: 12, padding: "14px 16px", marginBottom: 18, display: "flex", alignItems: "center", gap: 12 }}>
           {generating ? (
             <>
@@ -1020,7 +1015,6 @@
           )}
         </div>
 
-        {/* Job summary strip */}
         {job && (
           <div style={{ background: THEME.primaryLight, border: `1px solid ${THEME.border}`, borderRadius: 10, padding: "10px 14px", marginBottom: 18, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
             <div>
@@ -1040,7 +1034,6 @@
           </div>
         )}
 
-        {/* Share options grid */}
         <div style={{ marginBottom: 6 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: THEME.textMuted, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>
             Share or Download
@@ -1076,7 +1069,6 @@
           </div>
         </div>
 
-        {/* Hint */}
         <div style={{ marginTop: 14, fontSize: 11, color: THEME.textMuted, background: "#f8fafc", borderRadius: 8, padding: "8px 12px", border: "1px solid #e5e7eb" }}>
           💡 <strong>Tip:</strong> For WhatsApp & Email, the PDF is downloaded automatically so you can attach it manually.
         </div>
@@ -1091,6 +1083,9 @@
     const fullAddress = [addr.street, addr.city, addr.state, addr.pincode, addr.country]
       .filter(Boolean).join(", ");
 
+    // ── CHANGE: updated grid to accommodate the extra Company Name field ──────
+    // Customer Info now shows: Name, Company Name, Phone, Est. Delivery (4 fields)
+    // Using a 2-col grid on mobile, 4-col on desktop so they sit neatly
     const grid2 = { display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3,1fr)", gap: "4px 16px", marginBottom: 12 };
     const grid4 = { display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4,1fr)", gap: "4px 16px", marginBottom: 12 };
 
@@ -1117,19 +1112,46 @@
           </Button>
         </div>
 
+        {/* ── Customer Info ──────────────────────────────────────────────────── */}
         <SectionDivider icon={<UserOutlined />} title="Customer Info" />
         <div style={grid2}>
+          {/* Name */}
           <div style={{ marginBottom: 8 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: THEME.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>Name</div>
             <div style={{ fontSize: 13, color: THEME.textPrimary }}>{job.customer_name ?? "—"}</div>
           </div>
+
+          {/* ── NEW: Company Name field ── */}
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: THEME.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>
+              Company Name
+            </div>
+            <div style={{ fontSize: 13, color: THEME.textPrimary, display: "flex", alignItems: "center", gap: 5 }}>
+              {job.company_name ? (
+                <>
+                  <ShopOutlined style={{ color: THEME.primary, fontSize: 12, flexShrink: 0 }} />
+                  {job.company_name}
+                </>
+              ) : (
+                "—"
+              )}
+            </div>
+          </div>
+
+          {/* Phone */}
           <div style={{ marginBottom: 8 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: THEME.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>Phone</div>
             <div style={{ fontSize: 13, color: THEME.textPrimary }}>{job.customer_phone ?? "—"}</div>
           </div>
+
+          {/* Est. Delivery */}
           <div style={{ marginBottom: 8 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: THEME.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>Est. Delivery</div>
-            <div style={{ fontSize: 13, color: THEME.textPrimary }}>{job.estimated_delivery_date ? dayjs(job.estimated_delivery_date).format("DD MMM YYYY, hh:mm A") : "—"}</div>
+            <div style={{ fontSize: 13, color: THEME.textPrimary }}>
+              {job.estimated_delivery_date
+                ? dayjs(job.estimated_delivery_date).format("DD MMM YYYY, hh:mm A")
+                : "—"}
+            </div>
           </div>
         </div>
 
@@ -1222,6 +1244,7 @@
           {[
             { label: "Job No",            value: job.job_no,        mono: true },
             { label: "Status",            value: <StatusTag status={job.job_status} /> },
+            { label: "Company Name",      value: job.company_name },   // ← also shown here for completeness
             { label: "Created By",        value: job.created_by },
             { label: "Approved By",       value: job.approved_by },
             { label: "GST No",            value: job.gst_no },
@@ -1596,14 +1619,11 @@
 
     const [pendingInfoCount, setPendingInfoCount] = useState(0);
 
-    // Job Sheet share modal (from table row button)
     const [shareJob,           setShareJob]           = useState(null);
     const [shareModalOpen,     setShareModalOpen]     = useState(false);
 
-    // Job Sheet share modal (from View Detail modal)
     const [viewShareModalOpen, setViewShareModalOpen] = useState(false);
 
-    // Track which job sheet is generating from the table row (legacy direct download)
     const [generatingJobSheet, setGeneratingJobSheet] = useState(null);
 
     const autoRefreshRef = useRef(null);
@@ -1786,7 +1806,6 @@
       setViewShareModalOpen(true);
     };
 
-    // ── Helpers ──────────────────────────────────────────────────────────────────
     const fmtCountdown = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
     const p         = isMobile ? 8  : 16;
     const g         = isMobile ? 8  : 12;
@@ -1851,7 +1870,6 @@
                 </Tooltip>
               )}
 
-              {/* Job Sheet button — opens share modal */}
               <Tooltip title="Job Sheet PDF & Share">
                 <Button
                   icon={<PrinterOutlined />}
@@ -2014,7 +2032,6 @@
           open={!!viewJob}
           onCancel={() => setViewJob(null)}
           footer={[
-            // Job Sheet button in footer
             <Button
               key="jobsheet"
               icon={<PrinterOutlined />}
