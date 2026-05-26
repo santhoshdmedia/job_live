@@ -1084,6 +1084,31 @@ const AdminJobManagement = () => {
           : <span style={{ color: "#9ca3af", fontSize: 12 }}>—</span>;
       },
     }] : []),
+    // ✅ NEW: Approved By column - appears after Stage
+    {
+      title: "Approved By", 
+      key: "approved_by",
+      width: isMobile ? 100 : 130,
+      render: (_, r) => {
+        const approvedByName = r.approved_by;
+        const approvedById = r.approved_by_admin_id;
+        
+        if (!approvedByName && !approvedById) {
+          return <span style={{ color: "#9ca3af", fontSize: 12 }}>—</span>;
+        }
+        
+        return (
+          <Tooltip title={approvedById ? `Admin ID: ${approvedById}` : ""}>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <UserOutlined style={{ color: "#6b7280", fontSize: 11 }} />
+              <span style={{ fontSize: 12, fontWeight: 500, color: "#374151" }}>
+                {approvedByName || "Unknown"}
+              </span>
+            </div>
+          </Tooltip>
+        );
+      },
+    },
     {
       title: "", width: isMobile ? 90 : 150,
       render: (_, record) => (

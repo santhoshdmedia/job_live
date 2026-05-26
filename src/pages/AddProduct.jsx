@@ -12,6 +12,7 @@ import {
   LockOutlined, ArrowUpOutlined, ArrowDownOutlined, PlusOutlined,
   DeleteFilled, EyeOutlined, SwapOutlined, CameraOutlined, UploadOutlined,
   ExperimentOutlined, RollbackOutlined, BarChartOutlined, WarningOutlined,
+  ExclamationCircleOutlined,
 } from "@ant-design/icons";
 import _ from "lodash";
 import { v4 as uuidv4 } from "uuid";
@@ -23,6 +24,7 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   addproduct, editProduct, getAllCategoryProducts, getAllVendor,
   getMainCategory, getProduct, getSubCategory, getSingleVendor, uploadImage,
+  deleteProduct,                                          // ← ADD THIS IMPORT
 } from "../api";
 import { ERROR_NOTIFICATION, SUCCESS_NOTIFICATION } from "../helper/notification_helper";
 import CustomTable from "../components/CustomTable";
@@ -31,6 +33,7 @@ import { canEditPage, canDeletePage, isSuperAdmin } from "../helper/permissionHe
 import { formValidation } from "../helper/formvalidation";
 
 const { Title, Text } = Typography;
+const { confirm } = Modal;
 
 // ─── Unit configuration ────────────────────────────────────────────────────────
 
@@ -727,7 +730,6 @@ const NewProductStockModal = ({ open, onClose, onSuccess, categoryData, subcateg
         net_stock: u === unitQty.unit ? unitQty.qty : 0,
       }));
 
-      // Normalise size — only include if at least one dimension is set
       const sizePayload =
         (productSize.width !== "" || productSize.height !== "")
           ? {
@@ -739,10 +741,8 @@ const NewProductStockModal = ({ open, onClose, onSuccess, categoryData, subcateg
 
       const payload = {
         name:                   values.name,
-        // ── Material Brand & Size ────────────────────────────────────────────
         material_brand:         values.material_brand || "",
         size:                   sizePayload,
-        // ────────────────────────────────────────────────────────────────────
         HSNcode_time:           values.HSNcode_time || "",
         type:                   values.type || "Stand Alone Product",
         MRP_price:              values.MRP_price || "",
@@ -800,7 +800,6 @@ const NewProductStockModal = ({ open, onClose, onSuccess, categoryData, subcateg
     >
       <Form form={form} layout="vertical" onFinish={handleSubmit} className="mt-4">
 
-        {/* ── Product Details ── */}
         <div className="mb-4">
           <div className="flex items-center gap-2 mb-3">
             <div className="w-1 h-5 bg-teal-500 rounded-full" />
@@ -847,7 +846,6 @@ const NewProductStockModal = ({ open, onClose, onSuccess, categoryData, subcateg
           </div>
         </div>
 
-        {/* ── Size Configuration ── */}
         <div className="rounded-2xl p-4 mb-4" style={{ background: "#fefce8", border: "1.5px solid #fde68a" }}>
           <div className="flex items-center gap-2 mb-3">
             <div className="w-1 h-5 bg-yellow-400 rounded-full" />
@@ -858,9 +856,7 @@ const NewProductStockModal = ({ open, onClose, onSuccess, categoryData, subcateg
             <span className="ml-auto text-xs text-gray-400 font-medium">Optional</span>
           </div>
 
-          <Text className="text-sm font-semibold text-gray-700 mb-1 block">
-            Width × Height
-          </Text>
+          <Text className="text-sm font-semibold text-gray-700 mb-1 block">Width × Height</Text>
           <Text className="text-xs text-gray-400 mb-2 block">
             Enter the physical size of the product and choose the measurement unit
           </Text>
@@ -875,12 +871,11 @@ const NewProductStockModal = ({ open, onClose, onSuccess, categoryData, subcateg
           )}
         </div>
 
-        {/* ── Unit Configuration ── */}
         <div className="rounded-2xl p-4 mb-4" style={{ background: "#f0fdf4", border: "1.5px solid #bbf7d0" }}>
           <div className="flex items-center gap-2 mb-3">
             <div className="w-1 h-5 bg-teal-600 rounded-full" />
             <span className="font-bold text-gray-800 text-sm uppercase tracking-wide">Unit Configuration</span>
-            <Tooltip title="Set how this product's stock is measured. You can enable multiple units if the product is tracked in more than one way (e.g. rolls AND sqft).">
+            <Tooltip title="Set how this product's stock is measured.">
               <span className="text-gray-400 cursor-help text-xs border border-gray-300 rounded-full w-4 h-4 flex items-center justify-center">?</span>
             </Tooltip>
           </div>
@@ -921,7 +916,6 @@ const NewProductStockModal = ({ open, onClose, onSuccess, categoryData, subcateg
 
         <div className="border-t border-dashed border-gray-200 my-5" />
 
-        {/* ── Initial Stock Info ── */}
         <div className="mb-4">
           <div className="flex items-center gap-2 mb-3">
             <div className="w-1 h-5 bg-green-500 rounded-full" />
@@ -1290,74 +1284,70 @@ const StockHistoryModal = ({ open, onClose, product }) => {
   const outTotals = groupByUnit(stockOut.map((r) => r.unit_qty));
   const allUnits  = [...new Set([...Object.keys(inTotals), ...Object.keys(outTotals)])];
 
-const inColumns = [
-  {
-    title: "Date & Time", dataIndex: "date", key: "date", width: 145,
-    render: (t) => <span className="text-xs text-gray-600">{t}</span>
-  },
-  {
-    title: "Qty", dataIndex: "unit_qty", key: "qty", width: 110, align: "center",
-    render: (uq) => <span className="font-bold text-green-600 text-sm">+{formatQty(uq.qty, uq.unit)}</span>
-  },
-
-  // ── ADD THESE TWO ────────────────────────────────────────────────────────────
-  {
-    title: "Material Brand", key: "material_brand", width: 130,
-    render: (_, record) => {
-      const brand = product?.material_brand;
-      return brand
-        ? <span className="inline-flex items-center gap-1 text-xs text-indigo-700 font-medium">🏷️ {brand}</span>
-        : <span className="text-xs text-gray-400">—</span>;
+  const inColumns = [
+    {
+      title: "Date & Time", dataIndex: "date", key: "date", width: 145,
+      render: (t) => <span className="text-xs text-gray-600">{t}</span>
     },
-  },
-  {
-    title: "Size", key: "size", width: 140,
-    render: () => {
-      const size = product?.size;
-      if (!size) return <span className="text-xs text-gray-400">—</span>;
-      return (
-        <span className="inline-flex items-center gap-1 text-xs text-amber-700 font-medium">
-          📐 {size.width ?? "—"} × {size.height ?? "—"} {size.unit}
-        </span>
-      );
+    {
+      title: "Qty", dataIndex: "unit_qty", key: "qty", width: 110, align: "center",
+      render: (uq) => <span className="font-bold text-green-600 text-sm">+{formatQty(uq.qty, uq.unit)}</span>
     },
-  },
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  {
-    title: "Buy Price", dataIndex: "buy_price", key: "buy_price", width: 90,
-    render: (t) => <span className="text-xs">{t !== "—" ? `₹${t}` : "—"}</span>
-  },
-  {
-    title: "Handler", dataIndex: "handler_name", key: "handler_name",
-    render: (t) => <span className="text-xs">{t}</span>
-  },
-  {
-    title: "Location", dataIndex: "location", key: "location",
-    render: (t) => <span className="text-xs">{t}</span>
-  },
-  {
-    title: "Invoice", dataIndex: "invoice", key: "invoice",
-    render: (t) => <span className="text-xs">{t}</span>
-  },
-  {
-    title: "Notes", dataIndex: "notes", key: "notes",
-    render: (t) => <span className="text-xs">{t}</span>
-  },
-  {
-    title: "Images", dataIndex: "images", key: "images", width: 100,
-    render: (imgs) =>
-      imgs?.length > 0 ? (
-        <div className="flex gap-1 flex-wrap">
-          {imgs.slice(0, 3).map((img, i) => (
-            <Image key={i} src={img.url || img.path || img} width={32} height={32}
-              className="object-cover rounded" preview />
-          ))}
-          {imgs.length > 3 && <span className="text-xs text-gray-400 self-center">+{imgs.length - 3}</span>}
-        </div>
-      ) : <span className="text-xs text-gray-400">—</span>,
-  },
-];
+    {
+      title: "Material Brand", key: "material_brand", width: 130,
+      render: () => {
+        const brand = product?.material_brand;
+        return brand
+          ? <span className="inline-flex items-center gap-1 text-xs text-indigo-700 font-medium">🏷️ {brand}</span>
+          : <span className="text-xs text-gray-400">—</span>;
+      },
+    },
+    {
+      title: "Size", key: "size", width: 140,
+      render: () => {
+        const size = product?.size;
+        if (!size) return <span className="text-xs text-gray-400">—</span>;
+        return (
+          <span className="inline-flex items-center gap-1 text-xs text-amber-700 font-medium">
+            📐 {size.width ?? "—"} × {size.height ?? "—"} {size.unit}
+          </span>
+        );
+      },
+    },
+    {
+      title: "Buy Price", dataIndex: "buy_price", key: "buy_price", width: 90,
+      render: (t) => <span className="text-xs">{t !== "—" ? `₹${t}` : "—"}</span>
+    },
+    {
+      title: "Handler", dataIndex: "handler_name", key: "handler_name",
+      render: (t) => <span className="text-xs">{t}</span>
+    },
+    {
+      title: "Location", dataIndex: "location", key: "location",
+      render: (t) => <span className="text-xs">{t}</span>
+    },
+    {
+      title: "Invoice", dataIndex: "invoice", key: "invoice",
+      render: (t) => <span className="text-xs">{t}</span>
+    },
+    {
+      title: "Notes", dataIndex: "notes", key: "notes",
+      render: (t) => <span className="text-xs">{t}</span>
+    },
+    {
+      title: "Images", dataIndex: "images", key: "images", width: 100,
+      render: (imgs) =>
+        imgs?.length > 0 ? (
+          <div className="flex gap-1 flex-wrap">
+            {imgs.slice(0, 3).map((img, i) => (
+              <Image key={i} src={img.url || img.path || img} width={32} height={32}
+                className="object-cover rounded" preview />
+            ))}
+            {imgs.length > 3 && <span className="text-xs text-gray-400 self-center">+{imgs.length - 3}</span>}
+          </div>
+        ) : <span className="text-xs text-gray-400">—</span>,
+    },
+  ];
 
   const outColumns = [
     { title: "Date & Time", dataIndex: "date", key: "date", width: 145,
@@ -1514,16 +1504,14 @@ const AddProduct = () => {
   const [visibilityFilter, setVisibilityFilter] = useState("");
   const [activeTabKey, setActiveTabKey] = useState("1");
   const [updatingProductId, setUpdatingProductId] = useState(null);
+  const [deletingProductId, setDeletingProductId] = useState(null); // ← NEW
 
   const [stockMin, setStockMin] = useState("");
   const [stockMax, setStockMax] = useState("");
   const [priceMin, setPriceMin] = useState("");
   const [priceMax, setPriceMax] = useState("");
 
-  // ── FIX: Modal states — product modals only open when product is set ────────
-  // newProductModal: simple boolean
   const [newProductModal, setNewProductModal] = useState(false);
-  // For product-specific modals: null means closed, object means open with that product
   const [stockInProduct, setStockInProduct] = useState(null);
   const [stockOutProduct, setStockOutProduct] = useState(null);
   const [stockHistoryProduct, setStockHistoryProduct] = useState(null);
@@ -1663,6 +1651,46 @@ const AddProduct = () => {
     } catch (err) { ERROR_NOTIFICATION(err); }
     finally { setLoading(false); }
   };
+
+  // ─── NEW: Delete handler ──────────────────────────────────────────────────
+  const handleDeleteProduct = (record) => {
+    confirm({
+      title: "Delete Product",
+      icon: <ExclamationCircleOutlined style={{ color: "#dc2626" }} />,
+      content: (
+        <div>
+          <p className="text-gray-700 mb-1">
+            Are you sure you want to delete <strong>{record.name}</strong>?
+          </p>
+          <p className="text-xs text-red-500">
+            This action cannot be undone. All stock history will be permanently removed.
+          </p>
+        </div>
+      ),
+      okText: "Yes, Delete",
+      okType: "danger",
+      cancelText: "Cancel",
+      okButtonProps: {
+        style: { background: "#dc2626", borderColor: "#dc2626" },
+      },
+      onOk: async () => {
+        try {
+          setDeletingProductId(record._id);
+          // ✅ Pass the object the controller expects: { product_id, is_cloned }
+          const result = await deleteProduct(
+            JSON.stringify({ product_id: record._id, is_cloned: record.is_cloned || false })
+          );
+          SUCCESS_NOTIFICATION(result);
+          await fetchData();
+        } catch (err) {
+          ERROR_NOTIFICATION(err);
+        } finally {
+          setDeletingProductId(null);
+        }
+      },
+    });
+  };
+  // ─────────────────────────────────────────────────────────────────────────
 
   const getVariantImages = (product) => {
     if (!product.variants || !Array.isArray(product.variants)) return [];
@@ -1876,20 +1904,23 @@ const AddProduct = () => {
   // ── Table columns ────────────────────────────────────────────────────────────
 
   const columns = [
+    // ── S.No ──────────────────────────────────────────────────────────────────
     {
       title: "S.No", dataIndex: "serialNumber", key: "serialNumber",
       align: "center", width: 60, fixed: "left",
       render: (n) => <span className="text-gray-700 font-semibold">{n}</span>,
     },
+
+    // ── Image ─────────────────────────────────────────────────────────────────
     {
-      title: "Image", dataIndex: "images", width: 120,
+      title: "Image", dataIndex: "images", width: 100,
       render: (_, record) => {
         const img   = getProductImage(record);
         const isVar = record.type === "Variable Product" || record.type === "Variant Product";
         return (
           <div className="flex justify-center">
             {img ? (
-              <div className="relative w-20 h-20 rounded-xl overflow-hidden border border-gray-200 bg-white shadow hover:shadow-lg transition-all">
+              <div className="relative w-16 h-16 rounded-xl overflow-hidden border border-gray-200 bg-white shadow hover:shadow-lg transition-all">
                 <Image src={img} alt="Product" width="100%" height="100%"
                   className="object-cover w-full h-full" preview />
                 {isVar && (
@@ -1897,7 +1928,7 @@ const AddProduct = () => {
                 )}
               </div>
             ) : (
-              <div className="w-16 h-16 bg-gray-50 rounded-xl flex items-center justify-center border border-dashed border-gray-300">
+              <div className="w-14 h-14 bg-gray-50 rounded-xl flex items-center justify-center border border-dashed border-gray-300">
                 <span className="text-xs text-gray-400">No Image</span>
               </div>
             )}
@@ -1905,53 +1936,82 @@ const AddProduct = () => {
         );
       },
     },
-    {
-      title: "Name", dataIndex: "name", width: 210,
-      render: (data, record) => {
-        const brand = record.material_brand;
-        const size  = record.size;
-        const sizeStr = size
-          ? `${size.width ?? "—"} × ${size.height ?? "—"} ${size.unit}`
-          : null;
 
-        return (
-          <div className="flex flex-col space-y-1">
-            <Tooltip title={data}>
-              <span className="font-semibold text-gray-900 text-sm line-clamp-2">{data}</span>
-            </Tooltip>
-            {brand && (
-              <span className="inline-flex items-center gap-1 text-xs text-indigo-700 font-medium">
-                🏷️ {brand}
-              </span>
-            )}
-            {sizeStr && (
-              <span className="inline-flex items-center gap-1 text-xs text-amber-700 font-medium">
-                📐 {sizeStr}
-              </span>
-            )}
-            <span className="text-xs text-gray-500">Code: {record.product_code || "N/A"}</span>
-            <span className="inline-flex items-center gap-1">
-              <span className="text-xs px-1.5 py-0.5 rounded font-semibold"
-                style={{ background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe" }}>
-                {UNIT_MAP[record.primary_unit || "pcs"]?.icon} {unitLabel(record.primary_unit || "pcs")}
-              </span>
-              {record.supported_units?.length > 1 && (
-                <Tooltip title={`Also tracked in: ${record.supported_units.filter((u) => u !== record.primary_unit).map(unitLabel).join(", ")}`}>
-                  <span className="text-xs text-gray-400 cursor-help">+{record.supported_units.length - 1}</span>
-                </Tooltip>
-              )}
-            </span>
-            {record.variants?.length > 0 && (
-              <span className="text-xs text-blue-600 font-medium">
-                {record.variants.reduce((c, v) => c + (v.options?.length || 0), 0)} variant(s)
-              </span>
-            )}
-          </div>
-        );
-      },
-    },
+    // ── Name ──────────────────────────────────────────────────────────────────
     {
-      title: "Stock", dataIndex: "totalStock", width: 160, align: "center",
+      title: "Name", dataIndex: "name", width: 180,
+      render: (data, record) => (
+        <div className="flex flex-col space-y-1">
+          <Tooltip title={data}>
+            <span className="font-semibold text-gray-900 text-sm line-clamp-2">{data}</span>
+          </Tooltip>
+          <span className="text-xs text-gray-500">Code: {record.product_code || "N/A"}</span>
+          <span className="inline-flex items-center gap-1">
+            <span className="text-xs px-1.5 py-0.5 rounded font-semibold"
+              style={{ background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe" }}>
+              {UNIT_MAP[record.primary_unit || "pcs"]?.icon} {unitLabel(record.primary_unit || "pcs")}
+            </span>
+            {record.supported_units?.length > 1 && (
+              <Tooltip title={`Also tracked in: ${record.supported_units.filter((u) => u !== record.primary_unit).map(unitLabel).join(", ")}`}>
+                <span className="text-xs text-gray-400 cursor-help">+{record.supported_units.length - 1}</span>
+              </Tooltip>
+            )}
+          </span>
+          {record.variants?.length > 0 && (
+            <span className="text-xs text-blue-600 font-medium">
+              {record.variants.reduce((c, v) => c + (v.options?.length || 0), 0)} variant(s)
+            </span>
+          )}
+        </div>
+      ),
+    },
+
+    // ── ✅ NEW: Material Brand (separate column) ───────────────────────────────
+    {
+      title: "Material Brand",
+      key: "material_brand",
+      dataIndex: "material_brand",
+      width: 140,
+      render: (brand) =>
+        brand ? (
+          <div className="flex flex-col gap-1">
+            <span
+              className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-semibold"
+              style={{ background: "#eef2ff", color: "#4338ca", border: "1px solid #c7d2fe" }}
+            >
+              🏷️ {brand}
+            </span>
+          </div>
+        ) : (
+          <span className="text-xs text-gray-400 italic">—</span>
+        ),
+    },
+
+    // ── ✅ NEW: Size (separate column) ────────────────────────────────────────
+    {
+      title: "Size",
+      key: "size",
+      dataIndex: "size",
+      width: 140,
+      render: (size) =>
+        size && (size.width != null || size.height != null) ? (
+          <div className="flex flex-col gap-1">
+            <span
+              className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-semibold"
+              style={{ background: "#fefce8", color: "#92400e", border: "1px solid #fde68a" }}
+            >
+              📐 {size.width ?? "—"} × {size.height ?? "—"}
+            </span>
+            <span className="text-xs text-gray-400 pl-1">{size.unit}</span>
+          </div>
+        ) : (
+          <span className="text-xs text-gray-400 italic">—</span>
+        ),
+    },
+
+    // ── Stock ─────────────────────────────────────────────────────────────────
+    {
+      title: "Stock", dataIndex: "totalStock", width: 150, align: "center",
       render: (stock, record) => {
         const primaryUnit = record.primary_unit || "pcs";
         const status      = record.stocks_status || "In Stock";
@@ -1969,35 +2029,61 @@ const AddProduct = () => {
         );
       },
     },
+
+    // ── ✅ UPDATED: Actions — now includes Delete button ───────────────────────
     {
-      title: "Actions", width: 230, align: "center", fixed: "right",
+      title: "Actions", width: 260, align: "center", fixed: "right",
       render: (_, record) => (
-        <div className="flex items-center justify-center gap-2 flex-wrap">
+        <div className="flex items-center justify-center gap-1.5 flex-wrap">
           {hasEditPermission && (
             <Tooltip title={`Stock IN — ${formatQty(record.stock_count || 0, record.primary_unit || "pcs")}`}>
-              <Button size="small" icon={<ArrowUpOutlined />}
+              <Button
+                size="small"
+                icon={<ArrowUpOutlined />}
                 onClick={() => setStockInProduct(record)}
-                style={{ background: "#f0fdf4", borderColor: "#16a34a", color: "#16a34a", fontWeight: 600, fontSize: 11, borderRadius: 8 }}>
+                style={{ background: "#f0fdf4", borderColor: "#16a34a", color: "#16a34a", fontWeight: 600, fontSize: 11, borderRadius: 8 }}
+              >
                 IN
               </Button>
             </Tooltip>
           )}
           {hasEditPermission && (
             <Tooltip title={`Stock OUT — ${formatQty(record.stock_count || 0, record.primary_unit || "pcs")}`}>
-              <Button size="small" icon={<ArrowDownOutlined />}
+              <Button
+                size="small"
+                icon={<ArrowDownOutlined />}
                 onClick={() => setStockOutProduct(record)}
-                style={{ background: "#fff1f2", borderColor: "#dc2626", color: "#dc2626", fontWeight: 600, fontSize: 11, borderRadius: 8 }}>
+                style={{ background: "#fff1f2", borderColor: "#dc2626", color: "#dc2626", fontWeight: 600, fontSize: 11, borderRadius: 8 }}
+              >
                 OUT
               </Button>
             </Tooltip>
           )}
           <Tooltip title="View stock movement history">
-            <Button size="small" icon={<EyeOutlined />}
+            <Button
+              size="small"
+              icon={<EyeOutlined />}
               onClick={() => setStockHistoryProduct(record)}
-              style={{ background: "#eff6ff", borderColor: "#2563eb", color: "#2563eb", fontWeight: 600, fontSize: 11, borderRadius: 8 }}>
+              style={{ background: "#eff6ff", borderColor: "#2563eb", color: "#2563eb", fontWeight: 600, fontSize: 11, borderRadius: 8 }}
+            >
               History
             </Button>
           </Tooltip>
+          {/* ✅ NEW Delete Button */}
+          {hasDeletePermission && (
+            <Tooltip title="Delete product permanently">
+              <Button
+                size="small"
+                icon={<DeleteFilled />}
+                loading={deletingProductId === record._id}
+                onClick={() => handleDeleteProduct(record)}
+                style={{ background: "#fff1f2", borderColor: "#ef4444", color: "#ef4444", fontWeight: 600, fontSize: 11, borderRadius: 8 }}
+                danger
+              >
+                Delete
+              </Button>
+            </Tooltip>
+          )}
         </div>
       ),
     },
@@ -2198,13 +2284,7 @@ const AddProduct = () => {
         />
       </Card>
 
-      {/* ── Modals ─────────────────────────────────────────────────────────────
-          FIX: Product-specific modals are conditionally rendered only when their
-          product state is non-null. This prevents Ant Design from mounting ghost
-          close buttons into the portal on page load / refresh.
-          NewProductStockModal uses a simple boolean and is always safe to render
-          because it has no product dependency.
-      ── */}
+      {/* ── Modals ── */}
 
       <NewProductStockModal
         open={newProductModal}
@@ -2215,7 +2295,6 @@ const AddProduct = () => {
         allVendors={allVendors}
       />
 
-      {/* Stock IN — only mount when a product is selected */}
       {stockInProduct && (
         <StockInModal
           open={true}
@@ -2225,7 +2304,6 @@ const AddProduct = () => {
         />
       )}
 
-      {/* Stock OUT — only mount when a product is selected */}
       {stockOutProduct && (
         <StockOutModal
           open={true}
@@ -2235,7 +2313,6 @@ const AddProduct = () => {
         />
       )}
 
-      {/* Stock History — only mount when a product is selected */}
       {stockHistoryProduct && (
         <StockHistoryModal
           open={true}
@@ -2244,7 +2321,6 @@ const AddProduct = () => {
         />
       )}
 
-      {/* Material Issue History — only mount when a product is selected */}
       {materialIssueProduct && (
         <MaterialIssueHistoryModal
           open={true}

@@ -565,19 +565,21 @@
     hr(y, LGRAY);
     y += 5;
 
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5);
-    doc.setTextColor(...MID);
-    txt("Customer Details :", MARGIN, y);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(8.5);
-    doc.setTextColor(...DARK);
-    // ✅ Show company_name if available, else fall back to customer_name
-    const displayName = (job.company_name && job.company_name.trim())
-      ? job.company_name.trim()
-      : (job.customer_name || "—");
-    const custDetail = [displayName, job.customer_phone].filter(Boolean).join("   |   ");
-    txt(custDetail, MARGIN + doc.getTextWidth("Customer Details :") + 2, y);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...MID);
+  txt("Customer Details :", MARGIN, y);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...DARK);
+  // ✅ Show company_name if available, else fall back to customer_name
+  const displayName = (job.company_name && job.company_name.trim())
+    ? job.company_name.trim()
+    : (job.customer_name || "—");
+  const custDetail = [displayName, job.customer_phone].filter(Boolean).join("   |   ");
+  txt(custDetail, MARGIN + doc.getTextWidth("Customer Details :") + 2, y);
+
+
     y += 7;
     hr(y, LGRAY);
     y += 5;
