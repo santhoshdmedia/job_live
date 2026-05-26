@@ -1290,35 +1290,74 @@ const StockHistoryModal = ({ open, onClose, product }) => {
   const outTotals = groupByUnit(stockOut.map((r) => r.unit_qty));
   const allUnits  = [...new Set([...Object.keys(inTotals), ...Object.keys(outTotals)])];
 
-  const inColumns = [
-    { title: "Date & Time", dataIndex: "date", key: "date", width: 145,
-      render: (t) => <span className="text-xs text-gray-600">{t}</span> },
-    { title: "Qty", dataIndex: "unit_qty", key: "qty", width: 110, align: "center",
-      render: (uq) => <span className="font-bold text-green-600 text-sm">+{formatQty(uq.qty, uq.unit)}</span> },
-    { title: "Buy Price", dataIndex: "buy_price", key: "buy_price", width: 90,
-      render: (t) => <span className="text-xs">{t !== "—" ? `₹${t}` : "—"}</span> },
-    { title: "Handler", dataIndex: "handler_name", key: "handler_name",
-      render: (t) => <span className="text-xs">{t}</span> },
-    { title: "Location", dataIndex: "location", key: "location",
-      render: (t) => <span className="text-xs">{t}</span> },
-    { title: "Invoice", dataIndex: "invoice", key: "invoice",
-      render: (t) => <span className="text-xs">{t}</span> },
-    { title: "Notes", dataIndex: "notes", key: "notes",
-      render: (t) => <span className="text-xs">{t}</span> },
-    {
-      title: "Images", dataIndex: "images", key: "images", width: 100,
-      render: (imgs) =>
-        imgs?.length > 0 ? (
-          <div className="flex gap-1 flex-wrap">
-            {imgs.slice(0, 3).map((img, i) => (
-              <Image key={i} src={img.url || img.path || img} width={32} height={32}
-                className="object-cover rounded" preview />
-            ))}
-            {imgs.length > 3 && <span className="text-xs text-gray-400 self-center">+{imgs.length - 3}</span>}
-          </div>
-        ) : <span className="text-xs text-gray-400">—</span>,
+const inColumns = [
+  {
+    title: "Date & Time", dataIndex: "date", key: "date", width: 145,
+    render: (t) => <span className="text-xs text-gray-600">{t}</span>
+  },
+  {
+    title: "Qty", dataIndex: "unit_qty", key: "qty", width: 110, align: "center",
+    render: (uq) => <span className="font-bold text-green-600 text-sm">+{formatQty(uq.qty, uq.unit)}</span>
+  },
+
+  // ── ADD THESE TWO ────────────────────────────────────────────────────────────
+  {
+    title: "Material Brand", key: "material_brand", width: 130,
+    render: (_, record) => {
+      const brand = product?.material_brand;
+      return brand
+        ? <span className="inline-flex items-center gap-1 text-xs text-indigo-700 font-medium">🏷️ {brand}</span>
+        : <span className="text-xs text-gray-400">—</span>;
     },
-  ];
+  },
+  {
+    title: "Size", key: "size", width: 140,
+    render: () => {
+      const size = product?.size;
+      if (!size) return <span className="text-xs text-gray-400">—</span>;
+      return (
+        <span className="inline-flex items-center gap-1 text-xs text-amber-700 font-medium">
+          📐 {size.width ?? "—"} × {size.height ?? "—"} {size.unit}
+        </span>
+      );
+    },
+  },
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  {
+    title: "Buy Price", dataIndex: "buy_price", key: "buy_price", width: 90,
+    render: (t) => <span className="text-xs">{t !== "—" ? `₹${t}` : "—"}</span>
+  },
+  {
+    title: "Handler", dataIndex: "handler_name", key: "handler_name",
+    render: (t) => <span className="text-xs">{t}</span>
+  },
+  {
+    title: "Location", dataIndex: "location", key: "location",
+    render: (t) => <span className="text-xs">{t}</span>
+  },
+  {
+    title: "Invoice", dataIndex: "invoice", key: "invoice",
+    render: (t) => <span className="text-xs">{t}</span>
+  },
+  {
+    title: "Notes", dataIndex: "notes", key: "notes",
+    render: (t) => <span className="text-xs">{t}</span>
+  },
+  {
+    title: "Images", dataIndex: "images", key: "images", width: 100,
+    render: (imgs) =>
+      imgs?.length > 0 ? (
+        <div className="flex gap-1 flex-wrap">
+          {imgs.slice(0, 3).map((img, i) => (
+            <Image key={i} src={img.url || img.path || img} width={32} height={32}
+              className="object-cover rounded" preview />
+          ))}
+          {imgs.length > 3 && <span className="text-xs text-gray-400 self-center">+{imgs.length - 3}</span>}
+        </div>
+      ) : <span className="text-xs text-gray-400">—</span>,
+  },
+];
 
   const outColumns = [
     { title: "Date & Time", dataIndex: "date", key: "date", width: 145,
