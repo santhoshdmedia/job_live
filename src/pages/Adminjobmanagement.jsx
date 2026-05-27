@@ -1789,8 +1789,8 @@ const AdminJobManagement = () => {
           </div>
 
           {/* ── Notes & Terms ── */}
-          <SectionHeader icon={<FileTextOutlined />} title="Notes & Terms" />
-          <div style={{ display: "grid", gridTemplateColumns: c2, gap: g, marginBottom: 14 }}>
+          <SectionHeader icon={<FileTextOutlined />} title="Notes " />
+          <div style={{ display: "grid",  marginBottom: 14 }}>
             <FormField label="Notes">
               <TextArea
                 rows={3}
@@ -1800,14 +1800,7 @@ const AdminJobManagement = () => {
                 style={{ borderRadius: 8 }}
               />
             </FormField>
-            <FormField label="Terms & Conditions">
-              <TextArea
-                rows={3}
-                value={editForm.terms_and_conditions}
-                onChange={(e) => handleEditInput("terms_and_conditions", e.target.value)}
-                style={{ borderRadius: 8 }}
-              />
-            </FormField>
+
           </div>
 
           {/* ── Order Summary (live preview) ── */}

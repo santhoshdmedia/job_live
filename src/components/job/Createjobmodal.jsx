@@ -860,7 +860,7 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
         </div>
 
         {/* ── Notes & Terms ── */}
-        <SectionHeader icon={<FileTextOutlined />} title="Notes & Terms" />
+        <SectionHeader icon={<FileTextOutlined />} title="Notes " />
         <div style={{ display: "grid",  marginBottom: 14 }}>
           <FormField label="Notes">
             <TextArea
