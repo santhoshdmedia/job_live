@@ -24,7 +24,7 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   addproduct, editProduct, getAllCategoryProducts, getAllVendor,
   getMainCategory, getProduct, getSubCategory, getSingleVendor, uploadImage,
-  deleteProduct,                                          // ← ADD THIS IMPORT
+  deleteProduct,
 } from "../api";
 import { ERROR_NOTIFICATION, SUCCESS_NOTIFICATION } from "../helper/notification_helper";
 import CustomTable from "../components/CustomTable";
@@ -687,7 +687,10 @@ const NewProductStockModal = ({ open, onClose, onSuccess, categoryData, subcateg
   const [productSize, setProductSize] = useState({ width: "", height: "", unit: "feet" });
 
   useEffect(() => {
-    if (!open) {
+    if (open) {
+      // ── Auto-fill Date & Time with current datetime ──
+      form.setFieldsValue({ date: moment() });
+    } else {
       form.resetFields();
       setProductImages([]);
       setStockImages([]);
@@ -714,10 +717,10 @@ const NewProductStockModal = ({ open, onClose, onSuccess, categoryData, subcateg
         _id: uuidv4(),
         add_stock:    Number(values.initial_stock) || unitQty.qty || 0,
         unit_qty:     unitQty,
-        buy_price:    values.buy_price || "",
         handler_name: values.handler_name || "",
         location:     values.location || "",
         invoice:      values.invoice || "",
+        invoice_date: values.invoice_date ? values.invoice_date.toISOString() : null,
         notes:        values.notes || "",
         stock_images: stockImages.map((img) => ({ _id: img._id, path: img.path, url: img.url })),
         date:         values.date ? values.date.toISOString() : new Date().toISOString(),
@@ -938,21 +941,35 @@ const NewProductStockModal = ({ open, onClose, onSuccess, categoryData, subcateg
               </Text>
             </div>
 
-            <Form.Item label="Buy Price (₹)" name="buy_price" rules={[formValidation("Enter buy price")]}>
-              <Input type="number" placeholder="e.g. 250.00" className="h-10" prefix="₹" />
-            </Form.Item>
+            {/* ── REMOVED: Buy Price (₹) field ── */}
+
             <Form.Item label="Handler Name" name="handler_name" rules={[formValidation("Enter handler name")]}>
               <Input placeholder="Who handled this?" className="h-10" />
             </Form.Item>
+
             <Form.Item label="Location / Rack" name="location">
               <Input placeholder="e.g. Warehouse Rack A-3" className="h-10" />
             </Form.Item>
+
+            {/* ── Date & Time — pre-filled with current datetime ── */}
             <Form.Item label="Date & Time" name="date" rules={[formValidation("Select a date")]}>
               <DatePicker showTime className="h-10 w-full" format="DD/MM/YYYY h:mm A" />
             </Form.Item>
+
             <Form.Item label="Invoice No." name="invoice">
               <Input placeholder="e.g. INV-001" className="h-10" />
             </Form.Item>
+
+            {/* ── NEW: Invoice Date & Time ── */}
+            <Form.Item label="Invoice Date & Time" name="invoice_date">
+              <DatePicker
+                showTime
+                className="h-10 w-full"
+                format="DD/MM/YYYY h:mm A"
+                placeholder="Select invoice date & time"
+              />
+            </Form.Item>
+
             <Form.Item label="Notes" name="notes" className="md:col-span-2">
               <Input.TextArea placeholder="Any additional notes about this stock entry..." rows={2} />
             </Form.Item>
@@ -977,20 +994,26 @@ const NewProductStockModal = ({ open, onClose, onSuccess, categoryData, subcateg
 };
 
 // ─── StockInModal ─────────────────────────────────────────────────────────────
-
 const StockInModal = ({ open, onClose, product, onSuccess }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [images, setImages] = useState([]);
 
-  const primaryUnit   = _.get(product, "primary_unit", "pcs");
+  const primaryUnit    = _.get(product, "primary_unit", "pcs");
   const supportedUnits = _.get(product, "supported_units", [primaryUnit]);
 
   const [unitQty, setUnitQty] = useState({ qty: 0, unit: primaryUnit });
 
   useEffect(() => {
-    if (!open) { form.resetFields(); setImages([]); setUnitQty({ qty: 0, unit: primaryUnit }); }
-    else { setUnitQty({ qty: 0, unit: primaryUnit }); }
+    if (!open) {
+      form.resetFields();
+      setImages([]);
+      setUnitQty({ qty: 0, unit: primaryUnit });
+    } else {
+      setUnitQty({ qty: 0, unit: primaryUnit });
+      // ── Auto-fill Date & Time with current datetime ──
+      form.setFieldsValue({ date: moment() });
+    }
   }, [open, primaryUnit]);
 
   const handleSubmit = async (values) => {
@@ -1004,10 +1027,10 @@ const StockInModal = ({ open, onClose, product, onSuccess }) => {
         _id:          uuidv4(),
         add_stock:    unitQty.qty,
         unit_qty:     unitQty,
-        buy_price:    values.buy_price,
         handler_name: values.handler_name,
         location:     values.location,
         invoice:      values.invoice,
+        invoice_date: values.invoice_date ? values.invoice_date.toISOString() : null,
         notes:        values.notes,
         stock_images: images.map((img) => ({ _id: img._id, path: img.path, url: img.url })),
         date:         values.date ? values.date.toISOString() : new Date().toISOString(),
@@ -1079,21 +1102,35 @@ const StockInModal = ({ open, onClose, product, onSuccess }) => {
             )}
           </div>
 
-          <Form.Item label="Buy Price" name="buy_price" rules={[formValidation("Enter buy price")]}>
-            <Input type="number" placeholder="e.g. 250.00" className="h-10" prefix="₹" />
-          </Form.Item>
+          {/* ── REMOVED: Buy Price field ── */}
+
           <Form.Item label="Handler Name" name="handler_name" rules={[formValidation("Enter handler name")]}>
             <Input placeholder="Who handled this?" className="h-10" />
           </Form.Item>
+
           <Form.Item label="Location" name="location">
             <Input placeholder="Warehouse Rack no" className="h-10" />
           </Form.Item>
+
+          {/* ── Date & Time — pre-filled with current datetime ── */}
           <Form.Item label="Date & Time" name="date" rules={[formValidation("Select a date")]}>
             <DatePicker showTime className="h-10 w-full" format="DD/MM/YYYY h:mm A" />
           </Form.Item>
+
           <Form.Item label="Invoice No." name="invoice">
             <Input placeholder="INV-001" className="h-10" />
           </Form.Item>
+
+          {/* ── NEW: Invoice Date & Time ── */}
+          <Form.Item label="Invoice Date & Time" name="invoice_date">
+            <DatePicker
+              showTime
+              className="h-10 w-full"
+              format="DD/MM/YYYY h:mm A"
+              placeholder="Select invoice date & time"
+            />
+          </Form.Item>
+
           <Form.Item label="Notes" name="notes" className="md:col-span-2">
             <Input.TextArea placeholder="Any additional notes..." rows={2} />
           </Form.Item>
@@ -1115,8 +1152,8 @@ const StockInModal = ({ open, onClose, product, onSuccess }) => {
   );
 };
 
-// ─── StockOutModal ────────────────────────────────────────────────────────────
 
+// ─── StockOutModal ────────────────────────────────────────────────────────────
 const StockOutModal = ({ open, onClose, product, onSuccess }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
@@ -1252,7 +1289,6 @@ const StockOutModal = ({ open, onClose, product, onSuccess }) => {
 };
 
 // ─── StockHistoryModal ────────────────────────────────────────────────────────
-
 const StockHistoryModal = ({ open, onClose, product }) => {
   const primaryUnit = _.get(product, "primary_unit", "pcs");
 
@@ -1260,10 +1296,10 @@ const StockHistoryModal = ({ open, onClose, product }) => {
     key:         `in-${i}`,
     quantity:    item.add_stock,
     unit_qty:    item.unit_qty || { qty: item.add_stock, unit: primaryUnit },
-    buy_price:   item.buy_price || "—",
     handler_name:item.handler_name || "—",
     location:    item.location || "—",
     invoice:     item.invoice || "—",
+    invoice_date:item.invoice_date ? moment(item.invoice_date).format("DD/MM/YYYY h:mm A") : "—",
     notes:       item.notes || "—",
     date:        item.date ? moment(item.date).format("DD/MM/YYYY h:mm A") : "—",
     images:      item.stock_images || [],
@@ -1315,10 +1351,6 @@ const StockHistoryModal = ({ open, onClose, product }) => {
       },
     },
     {
-      title: "Buy Price", dataIndex: "buy_price", key: "buy_price", width: 90,
-      render: (t) => <span className="text-xs">{t !== "—" ? `₹${t}` : "—"}</span>
-    },
-    {
       title: "Handler", dataIndex: "handler_name", key: "handler_name",
       render: (t) => <span className="text-xs">{t}</span>
     },
@@ -1329,6 +1361,10 @@ const StockHistoryModal = ({ open, onClose, product }) => {
     {
       title: "Invoice", dataIndex: "invoice", key: "invoice",
       render: (t) => <span className="text-xs">{t}</span>
+    },
+    {
+      title: "Invoice Date", dataIndex: "invoice_date", key: "invoice_date", width: 145,
+      render: (t) => <span className="text-xs text-gray-600">{t}</span>
     },
     {
       title: "Notes", dataIndex: "notes", key: "notes",
@@ -1419,7 +1455,7 @@ const StockHistoryModal = ({ open, onClose, product }) => {
             <span className="font-bold text-green-700 text-sm">Stock IN</span>
             <Tag color="success" className="ml-1 text-xs font-semibold">{stockIn.length} entries</Tag>
           </div>
-          <Table dataSource={stockIn} columns={inColumns} size="small" scroll={{ x: 600 }}
+          <Table dataSource={stockIn} columns={inColumns} size="small" scroll={{ x: 700 }}
             pagination={{ pageSize: 8, showSizeChanger: false, size: "small" }}
             rowClassName={() => "bg-green-50 hover:bg-green-100"}
             locale={{ emptyText: (
@@ -1453,7 +1489,6 @@ const StockHistoryModal = ({ open, onClose, product }) => {
 };
 
 // ─── Utility: build unit_stock_summary ───────────────────────────────────────
-
 function buildUnitSummary(stockInfo = [], stockOffline = [], fallbackUnit = "pcs") {
   const map = {};
   stockInfo.forEach((e) => {
@@ -1478,7 +1513,6 @@ function groupByUnit(unitQtyArray = []) {
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-
 const AddProduct = () => {
   const { user } = useSelector((state) => state.authSlice);
 
@@ -1504,7 +1538,7 @@ const AddProduct = () => {
   const [visibilityFilter, setVisibilityFilter] = useState("");
   const [activeTabKey, setActiveTabKey] = useState("1");
   const [updatingProductId, setUpdatingProductId] = useState(null);
-  const [deletingProductId, setDeletingProductId] = useState(null); // ← NEW
+  const [deletingProductId, setDeletingProductId] = useState(null);
 
   const [stockMin, setStockMin] = useState("");
   const [stockMax, setStockMax] = useState("");
@@ -1652,7 +1686,7 @@ const AddProduct = () => {
     finally { setLoading(false); }
   };
 
-  // ─── NEW: Delete handler ──────────────────────────────────────────────────
+  // ─── Delete handler ───────────────────────────────────────────────────────
   const handleDeleteProduct = (record) => {
     confirm({
       title: "Delete Product",
@@ -1676,7 +1710,6 @@ const AddProduct = () => {
       onOk: async () => {
         try {
           setDeletingProductId(record._id);
-          // ✅ Pass the object the controller expects: { product_id, is_cloned }
           const result = await deleteProduct(
             JSON.stringify({ product_id: record._id, is_cloned: record.is_cloned || false })
           );
@@ -1690,7 +1723,6 @@ const AddProduct = () => {
       },
     });
   };
-  // ─────────────────────────────────────────────────────────────────────────
 
   const getVariantImages = (product) => {
     if (!product.variants || !Array.isArray(product.variants)) return [];
@@ -1904,14 +1936,11 @@ const AddProduct = () => {
   // ── Table columns ────────────────────────────────────────────────────────────
 
   const columns = [
-    // ── S.No ──────────────────────────────────────────────────────────────────
     {
       title: "S.No", dataIndex: "serialNumber", key: "serialNumber",
       align: "center", width: 60, fixed: "left",
       render: (n) => <span className="text-gray-700 font-semibold">{n}</span>,
     },
-
-    // ── Image ─────────────────────────────────────────────────────────────────
     {
       title: "Image", dataIndex: "images", width: 100,
       render: (_, record) => {
@@ -1936,8 +1965,6 @@ const AddProduct = () => {
         );
       },
     },
-
-    // ── Name ──────────────────────────────────────────────────────────────────
     {
       title: "Name", dataIndex: "name", width: 180,
       render: (data, record) => (
@@ -1965,8 +1992,6 @@ const AddProduct = () => {
         </div>
       ),
     },
-
-    // ── ✅ NEW: Material Brand (separate column) ───────────────────────────────
     {
       title: "Material Brand",
       key: "material_brand",
@@ -1986,8 +2011,6 @@ const AddProduct = () => {
           <span className="text-xs text-gray-400 italic">—</span>
         ),
     },
-
-    // ── ✅ NEW: Size (separate column) ────────────────────────────────────────
     {
       title: "Size",
       key: "size",
@@ -2008,8 +2031,6 @@ const AddProduct = () => {
           <span className="text-xs text-gray-400 italic">—</span>
         ),
     },
-
-    // ── Stock ─────────────────────────────────────────────────────────────────
     {
       title: "Stock", dataIndex: "totalStock", width: 150, align: "center",
       render: (stock, record) => {
@@ -2029,8 +2050,6 @@ const AddProduct = () => {
         );
       },
     },
-
-    // ── ✅ UPDATED: Actions — now includes Delete button ───────────────────────
     {
       title: "Actions", width: 260, align: "center", fixed: "right",
       render: (_, record) => (
@@ -2069,7 +2088,6 @@ const AddProduct = () => {
               History
             </Button>
           </Tooltip>
-          {/* ✅ NEW Delete Button */}
           {hasDeletePermission && (
             <Tooltip title="Delete product permanently">
               <Button

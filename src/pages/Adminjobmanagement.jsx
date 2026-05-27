@@ -1547,7 +1547,7 @@ const AdminJobManagement = () => {
         title={
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <EditOutlined style={{ color: "#2563eb" }} />
-            <span style={{ fontWeight: 700, fontSize: isMobile ? 14 : 15 }}>Edit Job</span>
+            <span style={{ fontWeight: 700, fontSize: isMobile ? 14 : 15 }}>Edit Job </span>
             {editJob && (
               <Tag color="blue" style={{ fontFamily: "monospace", fontWeight: 600, fontSize: 11 }}>
                 {editJob.job_no}
@@ -1974,3 +1974,4 @@ const AdminJobManagement = () => {
 };
 
 export default AdminJobManagement;
+

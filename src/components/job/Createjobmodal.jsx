@@ -13,6 +13,7 @@ import { SUCCESS_NOTIFICATION } from "../../helper/notification_helper";
 import dayjs from "dayjs";
 
 const { Option } = Select;
+const { TextArea } = Input;
 
 // ─── Breakpoint Hook ──────────────────────────────────────────────────────────
 const useBreakpoint = () => {
@@ -260,6 +261,9 @@ const DEFAULT_FORM = {
   delivery_charges: 0, free_delivery: false,
   discount_percentage: 0,
   payment_mode: "", payment_amount: "",
+  // ── New fields ──
+  notes: "",
+  terms_and_conditions: "",
 };
 
 // ─── Reusable UI atoms ────────────────────────────────────────────────────────
@@ -314,7 +318,6 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
 
   const sizeChange = (field, val) => {
     const updated = { ...item, [field]: val };
-    // Only auto-calculate sq_ft when in sq.ft mode
     if (item.quantity_type === "sq.ft" && !updated.sq_ft_manual) {
       updated.sq_ft = parseFloat(toSqFt(updated.width, updated.height, updated.size_unit).toFixed(4));
     }
@@ -327,8 +330,6 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
     onChange(idx, {
       ...item,
       quantity_type: val,
-      // ✅ FIX: Don't clear width/height when switching modes
-      // Only reset sq_ft related fields when switching to quantity mode
       ...(val === "quantity" ? { sq_ft: 0, sq_ft_manual: false } : {}),
     });
   };
@@ -337,8 +338,6 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
   const { base, gstAmt, total: lineTotal } = computeLineTotal(item);
 
   const productCols = isMobile ? "1fr" : isTablet ? "1fr 1fr" : "1fr 1fr 1fr";
-  // ✅ FIX: Size grid always shows 4 cols (W, H, Unit, Sq.Ft) in sq.ft mode
-  //         In quantity mode, shows 3 cols (W, H, Unit) only
   const sizeCols    = isSqFtMode
     ? (isMobile ? "1fr 1fr" : "1fr 1fr 90px 1fr")
     : (isMobile ? "1fr 1fr" : "1fr 1fr 90px");
@@ -411,9 +410,7 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
         </FormField>
       </div>
 
-      {/* ✅ FIX: Size fields always visible for BOTH modes */}
-      {/* In sq.ft mode → W + H + Unit + Sq.Ft (auto-calc)   */}
-      {/* In quantity mode → W + H + Unit only (for reference) */}
+      {/* Size fields */}
       <div style={{ display: "grid", gridTemplateColumns: sizeCols, gap: 8, marginBottom: 10, alignItems: "end" }}>
         <FormField label="Width" required={isSqFtMode}>
           <Input size="small" placeholder="0" type="number" min={0} value={item.width}
@@ -435,7 +432,6 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
           </Select>
         </FormField>
 
-        {/* Sq.Ft column — only in sq.ft mode */}
         {isSqFtMode && (
           <FormField label={
             <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
@@ -517,7 +513,6 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
         {isSqFtMode && item.sq_ft > 0 && (
           <div style={{ fontSize: 10, color: "#059669" }}>{item.quantity} × {item.sq_ft} ft² × ₹{item.price}</div>
         )}
-        {/* ✅ Show size reference in quantity mode if dimensions were entered */}
         {!isSqFtMode && (item.width || item.height) && (
           <div style={{ fontSize: 10, color: "#6b7280" }}>
             Size ref: {item.width || "—"} × {item.height || "—"} {item.size_unit}
@@ -595,10 +590,8 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
         valid_until:             validUntil.toISOString(),
         estimated_delivery_date: dayjs(formData.estimated_delivery_date).toISOString(),
 
-        // ── Customer Info ──────────────────────────────────────────────
         customer_name:  formData.customer_name.trim(),
         customer_phone: formData.customer_phone.trim(),
-        // ✅ FIX: explicitly trimmed and always sent — was missing in some edge cases
         company_name:   (formData.company_name || "").trim(),
 
         delivery_address: {
@@ -651,6 +644,10 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
         payment_amount: parseFloat(formData.payment_amount) || 0,
         balance_amount: parseFloat(t.balance.toFixed(2)),
 
+        // ── New fields sent to API ──
+        notes:                formData.notes.trim(),
+        terms_and_conditions: formData.terms_and_conditions.trim(),
+
         created_by:          adminUser?.name || "Admin",
         created_by_admin_id: adminUser?._id ?? null,
         job_status:          "draft",
@@ -665,12 +662,9 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
         body: JSON.stringify(payload),
       });
 
-      // ✅ FIX: parse response once and handle both data shapes
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.message || "Failed to create job");
 
-      // ✅ FIX: controller returns { success, message, job, data }
-      // Support both shapes: data.job (new) and data.data (fallback)
       const createdJob = data.job || data.data;
       SUCCESS_NOTIFICATION({
         message: createdJob?.job_no
@@ -863,6 +857,29 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
               </Button>
             </div>
           </FormField>
+        </div>
+
+        {/* ── Notes & Terms ── */}
+        <SectionHeader icon={<FileTextOutlined />} title="Notes & Terms" />
+        <div style={{ display: "grid",  marginBottom: 14 }}>
+          <FormField label="Notes">
+            <TextArea
+              rows={3}
+              placeholder="Additional notes, special instructions…"
+              value={formData.notes}
+              onChange={(e) => handleInput("notes", e.target.value)}
+              style={{ borderRadius: 8, resize: "vertical" }}
+            />
+          </FormField>
+          {/* <FormField label="Terms & Conditions">
+            <TextArea
+              rows={3}
+              placeholder="Payment terms, delivery conditions…"
+              value={formData.terms_and_conditions}
+              onChange={(e) => handleInput("terms_and_conditions", e.target.value)}
+              style={{ borderRadius: 8, resize: "vertical" }}
+            />
+          </FormField> */}
         </div>
 
         {/* ── Order Summary ── */}
