@@ -1,7 +1,7 @@
 const API_BASE = "https://api.dmedia.in/api/jobs";
 
 const authHeader = () => ({
-  Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+  Authorization: `Bearer ${localStorage.getItem("authToken")}`, 
 });
 
 const handleResponse = async (res) => {

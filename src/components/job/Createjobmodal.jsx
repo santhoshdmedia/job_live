@@ -2,12 +2,13 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useSelector } from "react-redux";
 import {
   Button, Input, Modal, Select, Tag, Divider, Spin,
-  InputNumber, Popconfirm, Radio,
+  InputNumber, Popconfirm, Radio, DatePicker,
 } from "antd";
 import {
   PlusOutlined, DeleteOutlined, UserOutlined, PhoneOutlined,
   EnvironmentOutlined, FileTextOutlined, ShoppingCartOutlined,
   SaveOutlined, WalletOutlined, BankOutlined, UploadOutlined, CloseCircleOutlined,
+  CameraOutlined,
 } from "@ant-design/icons";
 import { SUCCESS_NOTIFICATION } from "../../helper/notification_helper";
 import dayjs from "dayjs";
@@ -88,15 +89,11 @@ const compressImageFile = (file, maxKB = 500) =>
       resolve(file);
       return;
     }
-
     const blobUrl = URL.createObjectURL(file);
     const img     = new Image();
-
     img.onerror = () => { URL.revokeObjectURL(blobUrl); resolve(file); };
-
     img.onload = () => {
       URL.revokeObjectURL(blobUrl);
-
       let { naturalWidth: w, naturalHeight: h } = img;
       const ratio = (maxKB * 1024) / file.size;
       if (ratio < 0.9) {
@@ -104,14 +101,11 @@ const compressImageFile = (file, maxKB = 500) =>
         w = Math.max(1, Math.round(w * s));
         h = Math.max(1, Math.round(h * s));
       }
-
       const canvas = document.createElement("canvas");
       canvas.width  = w;
       canvas.height = h;
       canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-
       const outType = file.type === "image/png" ? "image/jpeg" : file.type;
-
       const tryQuality = (q) => {
         canvas.toBlob(
           (blob) => {
@@ -130,15 +124,15 @@ const compressImageFile = (file, maxKB = 500) =>
       };
       tryQuality(0.85);
     };
-
     img.src = blobUrl;
   });
 
 // ─── DesignFileUpload ─────────────────────────────────────────────────────────
 const DesignFileUpload = ({ value, setImagePath }) => {
-  const inputRef          = useRef(null);
-  const [busy, setBusy]   = useState(false);
-  const [error, setError] = useState("");
+  const fileInputRef   = useRef(null);
+  const cameraInputRef = useRef(null);
+  const [busy, setBusy]         = useState(false);
+  const [error, setError]       = useState("");
   const [origSize, setOrigSize] = useState(null);
   const [compSize, setCompSize] = useState(null);
 
@@ -150,7 +144,6 @@ const DesignFileUpload = ({ value, setImagePath }) => {
     try {
       const compressed = await compressImageFile(file, 500);
       setCompSize((compressed.size / 1024).toFixed(0));
-
       const reader = new FileReader();
       reader.onload  = (e) => { setImagePath(e.target.result); setBusy(false); };
       reader.onerror = ()  => { setError("Failed to read file."); setBusy(false); };
@@ -166,32 +159,58 @@ const DesignFileUpload = ({ value, setImagePath }) => {
     setOrigSize(null);
     setCompSize(null);
     setError("");
-    if (inputRef.current) inputRef.current.value = "";
+    if (fileInputRef.current)   fileInputRef.current.value = "";
+    if (cameraInputRef.current) cameraInputRef.current.value = "";
   };
 
   const formatKB = (kb) => kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`;
 
   return (
     <div>
+      {/* Hidden file input — gallery/files */}
       <input
-        ref={inputRef}
+        ref={fileInputRef}
         type="file"
         accept="image/*,application/pdf"
         style={{ display: "none" }}
         onChange={(e) => handleFile(e.target.files?.[0])}
       />
 
+      {/* Hidden file input — camera capture only */}
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        style={{ display: "none" }}
+        onChange={(e) => handleFile(e.target.files?.[0])}
+      />
+
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        {/* Upload from gallery / files */}
         <Button
           size="small"
           icon={<UploadOutlined />}
           loading={busy}
-          onClick={() => inputRef.current?.click()}
+          onClick={() => fileInputRef.current?.click()}
           style={{ borderRadius: 6, fontSize: 12 }}
         >
           {busy ? "Compressing…" : value ? "Change File" : "Upload Design"}
         </Button>
 
+        {/* Open camera */}
+        {!busy && (
+          <Button
+            size="small"
+            icon={<CameraOutlined />}
+            onClick={() => cameraInputRef.current?.click()}
+            style={{ borderRadius: 6, fontSize: 12 }}
+          >
+            Camera
+          </Button>
+        )}
+
+        {/* Remove */}
         {value && !busy && (
           <Button
             size="small"
@@ -212,17 +231,14 @@ const DesignFileUpload = ({ value, setImagePath }) => {
           {compSize <= 500 ? " (≤ 500 KB ✓)" : " ⚠ Still large, uploading anyway"}
         </div>
       )}
-
       {busy && (
         <div style={{ marginTop: 4, fontSize: 10, color: "#2563eb", fontWeight: 600 }}>
           ⏳ Compressing image, please wait…
         </div>
       )}
-
       {error && (
         <div style={{ marginTop: 4, fontSize: 10, color: "#dc2626" }}>⚠ {error}</div>
       )}
-
       {value && !busy && (
         <div style={{
           marginTop: 8, border: "1px solid #e5e7eb", borderRadius: 8,
@@ -254,14 +270,13 @@ const EMPTY_ITEM = {
 const DEFAULT_FORM = {
   customer_name: "", customer_phone: "",
   company_name: "",
-  estimated_delivery_date: "",
+  estimated_delivery_date: null,
   address_line1: "", address_line2: "",
   city: "", state: "", pincode: "", country: "India",
   gst_no: "",
   delivery_charges: 0, free_delivery: false,
   discount_percentage: 0,
   payment_mode: "", payment_amount: "",
-  // ── New fields ──
   notes: "",
   terms_and_conditions: "",
 };
@@ -318,7 +333,7 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
 
   const sizeChange = (field, val) => {
     const updated = { ...item, [field]: val };
-    if (item.quantity_type === "sq.ft" && !updated.sq_ft_manual) {
+    if (!updated.sq_ft_manual) {
       updated.sq_ft = parseFloat(toSqFt(updated.width, updated.height, updated.size_unit).toFixed(4));
     }
     onChange(idx, updated);
@@ -330,7 +345,7 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
     onChange(idx, {
       ...item,
       quantity_type: val,
-      ...(val === "quantity" ? { sq_ft: 0, sq_ft_manual: false } : {}),
+      ...(val === "quantity" ? { sq_ft: 0, sq_ft_manual: false, width: "", height: "" } : {}),
     });
   };
 
@@ -338,9 +353,7 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
   const { base, gstAmt, total: lineTotal } = computeLineTotal(item);
 
   const productCols = isMobile ? "1fr" : isTablet ? "1fr 1fr" : "1fr 1fr 1fr";
-  const sizeCols    = isSqFtMode
-    ? (isMobile ? "1fr 1fr" : "1fr 1fr 90px 1fr")
-    : (isMobile ? "1fr 1fr" : "1fr 1fr 90px");
+  const sqFtCols    = isMobile ? "1fr 1fr" : "1fr 1fr 90px 1fr";
   const priceCols   = isMobile ? "1fr 1fr" : "repeat(3,1fr)";
 
   return (
@@ -352,9 +365,18 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
           <span style={{ fontSize: 11, fontWeight: 700, color: "#374151", background: "#e0e7ff", padding: "2px 10px", borderRadius: 20 }}>
             Item {idx + 1}
           </span>
-          <Radio.Group size="small" value={item.quantity_type} onChange={(e) => handleQtyTypeChange(e.target.value)} buttonStyle="solid">
+          <Radio.Group
+            size="small"
+            value={item.quantity_type}
+            onChange={(e) => handleQtyTypeChange(e.target.value)}
+            buttonStyle="solid"
+          >
             {QTY_TYPE_OPTIONS.map(o => (
-              <Radio.Button key={o.value} value={o.value} style={{ fontSize: 11, fontWeight: 600, height: 24, lineHeight: "22px", padding: "0 10px" }}>
+              <Radio.Button
+                key={o.value}
+                value={o.value}
+                style={{ fontSize: 11, fontWeight: 600, height: 24, lineHeight: "22px", padding: "0 10px" }}
+              >
                 {o.label}
               </Radio.Button>
             ))}
@@ -410,29 +432,33 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
         </FormField>
       </div>
 
-      {/* Size fields */}
-      <div style={{ display: "grid", gridTemplateColumns: sizeCols, gap: 8, marginBottom: 10, alignItems: "end" }}>
-        <FormField label="Width" required={isSqFtMode}>
-          <Input size="small" placeholder="0" type="number" min={0} value={item.width}
-            prefix={<span style={{ fontSize: 10, color: "#6b7280", fontWeight: 700 }}>W</span>}
-            style={{ borderRadius: 6 }}
-            onChange={(e) => sizeChange("width", e.target.value)} />
-        </FormField>
+      {/* Size fields: only shown in Sq. Ft mode */}
+      {isSqFtMode && (
+        <div style={{ display: "grid", gridTemplateColumns: sqFtCols, gap: 8, marginBottom: 10, alignItems: "end" }}>
+          <FormField label="Width" required>
+            <Input
+              size="small" placeholder="0" type="number" min={0} value={item.width}
+              prefix={<span style={{ fontSize: 10, color: "#6b7280", fontWeight: 700 }}>W</span>}
+              style={{ borderRadius: 6 }}
+              onChange={(e) => sizeChange("width", e.target.value)}
+            />
+          </FormField>
 
-        <FormField label="Height" required={isSqFtMode}>
-          <Input size="small" placeholder="0" type="number" min={0} value={item.height}
-            prefix={<span style={{ fontSize: 10, color: "#6b7280", fontWeight: 700 }}>H</span>}
-            style={{ borderRadius: 6 }}
-            onChange={(e) => sizeChange("height", e.target.value)} />
-        </FormField>
+          <FormField label="Height" required>
+            <Input
+              size="small" placeholder="0" type="number" min={0} value={item.height}
+              prefix={<span style={{ fontSize: 10, color: "#6b7280", fontWeight: 700 }}>H</span>}
+              style={{ borderRadius: 6 }}
+              onChange={(e) => sizeChange("height", e.target.value)}
+            />
+          </FormField>
 
-        <FormField label="Unit">
-          <Select value={item.size_unit} size="small" style={{ width: "100%" }} onChange={(v) => sizeChange("size_unit", v)}>
-            {UNIT_OPTIONS.map(u => <Option key={u.value} value={u.value}>{u.label}</Option>)}
-          </Select>
-        </FormField>
+          <FormField label="Unit">
+            <Select value={item.size_unit} size="small" style={{ width: "100%" }} onChange={(v) => sizeChange("size_unit", v)}>
+              {UNIT_OPTIONS.map(u => <Option key={u.value} value={u.value}>{u.label}</Option>)}
+            </Select>
+          </FormField>
 
-        {isSqFtMode && (
           <FormField label={
             <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
               Sq. Ft
@@ -462,13 +488,19 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
               onChange={(val) => onChange(idx, { ...item, sq_ft: parseFloat(val) || 0, sq_ft_manual: true })}
             />
           </FormField>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Notes */}
       <div style={{ marginBottom: 10 }}>
         <FormField label="Notes / Specs">
-          <Input placeholder="Custom text, specs…" value={item.notes} size="small" style={{ borderRadius: 6 }} onChange={(e) => set("notes", e.target.value)} />
+          <Input
+            placeholder="Custom text, specs…"
+            value={item.notes}
+            size="small"
+            style={{ borderRadius: 6 }}
+            onChange={(e) => set("notes", e.target.value)}
+          />
         </FormField>
       </div>
 
@@ -513,10 +545,8 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
         {isSqFtMode && item.sq_ft > 0 && (
           <div style={{ fontSize: 10, color: "#059669" }}>{item.quantity} × {item.sq_ft} ft² × ₹{item.price}</div>
         )}
-        {!isSqFtMode && (item.width || item.height) && (
-          <div style={{ fontSize: 10, color: "#6b7280" }}>
-            Size ref: {item.width || "—"} × {item.height || "—"} {item.size_unit}
-          </div>
+        {!isSqFtMode && (
+          <div style={{ fontSize: 10, color: "#6b7280" }}>{item.quantity} × ₹{item.price}</div>
         )}
       </div>
     </div>
@@ -551,6 +581,19 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
   const addItem     = () => setCartItems(p => [...p, { ...EMPTY_ITEM }]);
   const removeItem  = (i) => setCartItems(p => p.filter((_, j) => j !== i));
 
+  const disabledDate = (current) => current && current < dayjs().startOf("day");
+
+  const disabledTime = (current) => {
+    if (!current || !current.isSame(dayjs(), "day")) return {};
+    const now = dayjs();
+    return {
+      disabledHours:   () => Array.from({ length: now.hour() }, (_, i) => i),
+      disabledMinutes: (h) => h === now.hour()
+        ? Array.from({ length: now.minute() }, (_, i) => i)
+        : [],
+    };
+  };
+
   const calcTotals = useCallback(() => {
     let subTotal = 0, totalGst = 0;
     cartItems.forEach(it => {
@@ -572,9 +615,10 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
     setFormLoading(true);
     setFormError("");
     try {
-      if (!formData.customer_name.trim())    throw new Error("Customer name is required");
+      if (!formData.customer_name.trim())   throw new Error("Customer name is required");
       if (!formData.customer_phone.trim())   throw new Error("Phone number is required");
       if (!formData.estimated_delivery_date) throw new Error("Estimated delivery date is required");
+      if (!formData.notes.trim())            throw new Error("Notes is required");
 
       const valid = cartItems.filter(it => {
         if (!it.product_name || !it.quantity_type) return false;
@@ -588,7 +632,7 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
       const payload = {
         order_date:              orderDate.toISOString(),
         valid_until:             validUntil.toISOString(),
-        estimated_delivery_date: dayjs(formData.estimated_delivery_date).toISOString(),
+        estimated_delivery_date: formData.estimated_delivery_date.toISOString(),
 
         customer_name:  formData.customer_name.trim(),
         customer_phone: formData.customer_phone.trim(),
@@ -644,7 +688,6 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
         payment_amount: parseFloat(formData.payment_amount) || 0,
         balance_amount: parseFloat(t.balance.toFixed(2)),
 
-        // ── New fields sent to API ──
         notes:                formData.notes.trim(),
         terms_and_conditions: formData.terms_and_conditions.trim(),
 
@@ -689,10 +732,6 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
 
   const modalWidth      = isMobile ? "100vw" : isTablet ? "94vw" : "min(96vw,900px)";
   const mobileFullStyle = isMobile ? { top: 0, margin: 0, maxWidth: "100vw", padding: 0 } : {};
-
-  const now = new Date();
-  const pad = (n) => String(n).padStart(2, "0");
-  const minDateVal = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
 
   return (
     <Modal
@@ -755,19 +794,18 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
           </FormField>
 
           <FormField label="Est. Delivery Date" required>
-            <input
-              type="datetime-local"
-              min={minDateVal}
+            <DatePicker
+              showTime={{ format: "hh:mm A", use12Hours: true }}
+              format="DD MMM YYYY  hh:mm A"
+              placeholder="Select date & time"
               value={formData.estimated_delivery_date}
-              onChange={(e) => handleInput("estimated_delivery_date", e.target.value)}
-              style={{
-                width: "100%", height: 32, padding: "0 11px",
-                border: "1px solid #d9d9d9", borderRadius: 8,
-                fontSize: 14, color: "#374151", background: "#fff",
-                outline: "none", boxSizing: "border-box", cursor: "pointer",
-              }}
-              onFocus={e  => { e.target.style.borderColor = "#2563eb"; e.target.style.boxShadow = "0 0 0 2px rgba(37,99,235,0.1)"; }}
-              onBlur={e   => { e.target.style.borderColor = "#d9d9d9"; e.target.style.boxShadow = "none"; }}
+              disabledDate={disabledDate}
+              disabledTime={disabledTime}
+              onChange={(dayjsVal) => handleInput("estimated_delivery_date", dayjsVal)}
+              style={{ width: "100%", borderRadius: 8 }}
+              size="middle"
+              needConfirm
+              getPopupContainer={(trigger) => trigger.parentElement}
             />
           </FormField>
         </div>
@@ -859,10 +897,10 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
           </FormField>
         </div>
 
-        {/* ── Notes & Terms ── */}
-        <SectionHeader icon={<FileTextOutlined />} title="Notes " />
-        <div style={{ display: "grid",  marginBottom: 14 }}>
-          <FormField label="Notes">
+        {/* ── Notes ── */}
+        <SectionHeader icon={<FileTextOutlined />} title="Notes" />
+        <div style={{ display: "grid", marginBottom: 14 }}>
+          <FormField label="Notes" required>
             <TextArea
               rows={3}
               placeholder="Additional notes, special instructions…"
@@ -871,15 +909,6 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
               style={{ borderRadius: 8, resize: "vertical" }}
             />
           </FormField>
-          {/* <FormField label="Terms & Conditions">
-            <TextArea
-              rows={3}
-              placeholder="Payment terms, delivery conditions…"
-              value={formData.terms_and_conditions}
-              onChange={(e) => handleInput("terms_and_conditions", e.target.value)}
-              style={{ borderRadius: 8, resize: "vertical" }}
-            />
-          </FormField> */}
         </div>
 
         {/* ── Order Summary ── */}

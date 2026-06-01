@@ -94,7 +94,6 @@ const QTY_TYPE_OPTIONS = [
 
 const GST_OPTIONS = [0, 5, 12, 18, 28];
 
-// ✅ Payment modes — same as CreateJobModal
 const PAYMENT_MODES = ["Cash", "UPI", "Bank Transfer", "Cheque", "Card", "Cash on Delivery"];
 
 // ─── sq.ft auto-calculator ────────────────────────────────────────────────────
@@ -124,6 +123,7 @@ const calcItemTotals = (it) => {
 };
 
 // ─── Job-level totals for VIEW modal ──────────────────────────────────────────
+// Supports both old (discount_percentage) and new (discount_amount) data from API
 const calcJobTotals = (job) => {
   const cartItems = job.cart_items || [];
   let subtotal  = 0;
@@ -135,15 +135,22 @@ const calcJobTotals = (job) => {
     taxAmount += gstAmt;
   });
 
-  const discountPct     = parseFloat(job.discount_percentage) || 0;
-  const discountAmt     = subtotal * (discountPct / 100);
+  // ── FIXED: support flat discount_amount; fall back to old percentage field ──
+  let discountAmt = parseFloat(job.discount_amount) || 0;
+  let discountPct = 0;
+  if (!discountAmt && job.discount_percentage) {
+    // legacy records stored as percentage — convert for display only
+    discountPct = parseFloat(job.discount_percentage) || 0;
+    discountAmt = subtotal * (discountPct / 100);
+  }
+
   const taxableAmount   = subtotal - discountAmt;
   const designCharges   = parseFloat(job.design_charges)    || 0;
   const deliveryCharges = job.free_delivery ? 0 : (parseFloat(job.delivery_charges) || 0);
   const grandTotal      = taxableAmount + taxAmount + designCharges + deliveryCharges;
 
   return {
-    subtotal, discountPct, discountAmt, taxableAmount,
+    subtotal, discountAmt, discountPct, taxableAmount,
     taxAmount, designCharges, deliveryCharges, grandTotal,
     freeDelivery: !!job.free_delivery,
   };
@@ -166,7 +173,7 @@ const EMPTY_ITEM = {
   notes:          "",
 };
 
-// ✅ Added payment_mode and payment_amount to DEFAULT_EDIT_FORM
+// ── FIXED: discount_amount (flat ₹) replaces discount_percentage ──
 const DEFAULT_EDIT_FORM = {
   customer_name:           "",
   customer_phone:          "",
@@ -182,7 +189,7 @@ const DEFAULT_EDIT_FORM = {
   delivery_charges:        0,
   free_delivery:           false,
   design_charges:          0,
-  discount_percentage:     0,
+  discount_amount:         0,   // ← CHANGED from discount_percentage
   payment_mode:            "",
   payment_amount:          "",
   notes:                   "",
@@ -788,6 +795,19 @@ const AdminJobManagement = () => {
     const address_line1 = streetParts[0] || "";
     const address_line2 = streetParts.slice(1).join(", ") || "";
 
+    // ── FIXED: load discount_amount from record; fall back from old % field ──
+    const storedDiscountAmt = parseFloat(record.discount_amount) || 0;
+    const legacyDiscountPct = parseFloat(record.discount_percentage) || 0;
+    // Compute cart subtotal to convert legacy % → ₹ if needed
+    let legacyDiscountAmt = 0;
+    if (!storedDiscountAmt && legacyDiscountPct > 0) {
+      const cartSub = (record.cart_items || []).reduce((acc, it) => {
+        const { base } = calcItemTotals(it);
+        return acc + base;
+      }, 0);
+      legacyDiscountAmt = cartSub * (legacyDiscountPct / 100);
+    }
+
     setEditForm({
       customer_name:           record.customer_name  || "",
       customer_phone:          record.customer_phone || "",
@@ -805,8 +825,8 @@ const AdminJobManagement = () => {
       delivery_charges:    record.delivery_charges    ?? 0,
       free_delivery:       record.free_delivery       ?? false,
       design_charges:      record.design_charges      ?? 0,
-      discount_percentage: record.discount_percentage ?? 0,
-      // ✅ Populate payment fields from record
+      // ── FIXED: use flat amount ──
+      discount_amount:     storedDiscountAmt || legacyDiscountAmt || 0,
       payment_mode:        record.payment_mode        || "",
       payment_amount:      record.payment_amount      || "",
       notes:               record.notes               || "",
@@ -863,7 +883,7 @@ const AdminJobManagement = () => {
   const addEditItem     = () => setEditItems(p => [...p, { ...EMPTY_ITEM }]);
   const removeEditItem  = (i) => setEditItems(p => p.filter((_, j) => j !== i));
 
-  // ── Edit totals (computed live) ───────────────────────────────────────────
+  // ── FIXED: Edit totals — discount is a flat ₹ amount now ──────────────────
   const editTotals = useMemo(() => {
     let subtotal  = 0;
     let taxAmount = 0;
@@ -874,18 +894,18 @@ const AdminJobManagement = () => {
       taxAmount += gstAmt;
     });
 
-    const discountPct     = parseFloat(editForm.discount_percentage) || 0;
-    const discountAmt     = subtotal * (discountPct / 100);
+    // Flat discount amount, clamped so it never exceeds subtotal
+    const discountAmt     = Math.min(parseFloat(editForm.discount_amount) || 0, subtotal);
     const taxableAmount   = subtotal - discountAmt;
     const designCharges   = parseFloat(editForm.design_charges)   || 0;
     const deliveryCharges = editForm.free_delivery ? 0 : (parseFloat(editForm.delivery_charges) || 0);
     const grandTotal      = taxableAmount + taxAmount + designCharges + deliveryCharges;
-    // ✅ Payment balance calculation
     const paid            = parseFloat(editForm.payment_amount) || 0;
     const balance         = grandTotal - paid;
 
     return {
-      subtotal, taxAmount, discountPct, discountAmt,
+      subtotal, taxAmount,
+      discountAmt,          // flat ₹ value
       taxableAmount, designCharges, deliveryCharges, grandTotal,
       paid, balance,
     };
@@ -948,13 +968,16 @@ const AdminJobManagement = () => {
         delivery_charges:    editTotals.deliveryCharges,
         free_delivery:       editForm.free_delivery,
         design_charges:      editTotals.designCharges,
-        discount_percentage: editTotals.discountPct,
-        subtotal:            editTotals.subtotal,
-        discount_amount:     editTotals.discountAmt,
-        taxable_amount:      editTotals.taxableAmount,
-        tax_amount:          editTotals.taxAmount,
-        total_amount:        editTotals.grandTotal,
-        // ✅ Payment fields in payload
+
+        // ── FIXED: send flat discount amount; percentage becomes 0 ──
+        discount_amount:     parseFloat(editTotals.discountAmt.toFixed(2)),
+        discount_percentage: 0,   // deprecated — kept for API backward-compat
+
+        subtotal:            parseFloat(editTotals.subtotal.toFixed(2)),
+        taxable_amount:      parseFloat(editTotals.taxableAmount.toFixed(2)),
+        tax_amount:          parseFloat(editTotals.taxAmount.toFixed(2)),
+        total_amount:        parseFloat(editTotals.grandTotal.toFixed(2)),
+
         payment_mode:        editForm.payment_mode   || "",
         payment_amount:      parseFloat(editForm.payment_amount) || 0,
         balance_amount:      parseFloat(editTotals.balance.toFixed(2)),
@@ -989,7 +1012,7 @@ const AdminJobManagement = () => {
   const c2 = isMobile ? "1fr" : "1fr 1fr";
   const c3 = isMobile ? "1fr" : isTablet ? "1fr 1fr" : "1fr 1fr 1fr";
   const c4 = isMobile ? "1fr 1fr" : isTablet ? "1fr 1fr" : "repeat(4,1fr)";
-  const c5 = isMobile ? "1fr 1fr" : isTablet ? "1fr 1fr 1fr" : "repeat(5,1fr)";
+  const c5 = isMobile ? "1fr 1fr" : isTablet ? "1fr 1fr 1fr" : "repeat(4,1fr)"; // 4 cols now (removed 1 %)
 
   const formatCountdown = (secs) => {
     const m = Math.floor(secs / 60);
@@ -1084,19 +1107,18 @@ const AdminJobManagement = () => {
           : <span style={{ color: "#9ca3af", fontSize: 12 }}>—</span>;
       },
     }] : []),
-    // ✅ NEW: Approved By column - appears after Stage
     {
-      title: "Approved By", 
+      title: "Approved By",
       key: "approved_by",
       width: isMobile ? 100 : 130,
       render: (_, r) => {
         const approvedByName = r.approved_by;
         const approvedById = r.approved_by_admin_id;
-        
+
         if (!approvedByName && !approvedById) {
           return <span style={{ color: "#9ca3af", fontSize: 12 }}>—</span>;
         }
-        
+
         return (
           <Tooltip title={approvedById ? `Admin ID: ${approvedById}` : ""}>
             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
@@ -1479,7 +1501,7 @@ const AdminJobManagement = () => {
                 </div>
                 <SummaryRow label="Subtotal (items base)" value={`₹${totals.subtotal.toFixed(2)}`} />
                 {totals.discountAmt > 0 && (
-                  <SummaryRow label={`Discount (${totals.discountPct}%)`} value={`− ₹${totals.discountAmt.toFixed(2)}`} color="#059669" />
+                  <SummaryRow label="Discount" value={`− ₹${totals.discountAmt.toFixed(2)}`} color="#059669" />
                 )}
                 {totals.discountAmt > 0 && (
                   <SummaryRow label="Taxable Amount" value={`₹${totals.taxableAmount.toFixed(2)}`} color="#374151" />
@@ -1694,13 +1716,17 @@ const AdminJobManagement = () => {
           {/* ── Pricing & Tax ── */}
           <SectionHeader icon={<TagOutlined />} title="Pricing & Tax" />
           <div style={{ display: "grid", gridTemplateColumns: c5, gap: g, marginBottom: 14 }}>
-            <FormField label="Discount (%)">
+
+            {/* ── FIXED: Discount (₹) — flat amount input, no % ── */}
+            <FormField label="Discount (₹)">
               <InputNumber
-                min={0} max={100}
-                value={editForm.discount_percentage}
+                min={0}
+                max={editTotals.subtotal || undefined}
+                value={editForm.discount_amount}
                 style={{ width: "100%", borderRadius: 8 }}
-                prefix={<PercentageOutlined />}
-                onChange={(v) => handleEditInput("discount_percentage", v || 0)}
+                prefix="₹"
+                placeholder="0.00"
+                onChange={(v) => handleEditInput("discount_amount", v || 0)}
               />
             </FormField>
 
@@ -1760,7 +1786,7 @@ const AdminJobManagement = () => {
             </FormField>
           </div>
 
-          {/* ✅ Payment Section — NEW in Edit modal */}
+          {/* ── Payment Section ── */}
           <SectionHeader icon={<WalletOutlined />} title="Payment" />
           <div style={{ display: "grid", gridTemplateColumns: c2, gap: g, marginBottom: 14 }}>
             <FormField label="Payment Mode">
@@ -1788,9 +1814,9 @@ const AdminJobManagement = () => {
             </FormField>
           </div>
 
-          {/* ── Notes & Terms ── */}
-          <SectionHeader icon={<FileTextOutlined />} title="Notes " />
-          <div style={{ display: "grid",  marginBottom: 14 }}>
+          {/* ── Notes ── */}
+          <SectionHeader icon={<FileTextOutlined />} title="Notes" />
+          <div style={{ display: "grid", marginBottom: 14 }}>
             <FormField label="Notes">
               <TextArea
                 rows={3}
@@ -1800,7 +1826,6 @@ const AdminJobManagement = () => {
                 style={{ borderRadius: 8 }}
               />
             </FormField>
-
           </div>
 
           {/* ── Order Summary (live preview) ── */}
@@ -1809,8 +1834,9 @@ const AdminJobManagement = () => {
               <FileTextOutlined /> Order Summary
             </div>
             <SummaryRow label="Subtotal (items base)" value={`₹${editTotals.subtotal.toFixed(2)}`} />
+            {/* ── FIXED: show flat discount amount, not percentage ── */}
             {editTotals.discountAmt > 0 && (
-              <SummaryRow label={`Discount (${editTotals.discountPct}%)`} value={`− ₹${editTotals.discountAmt.toFixed(2)}`} color="#059669" />
+              <SummaryRow label="Discount" value={`− ₹${editTotals.discountAmt.toFixed(2)}`} color="#059669" />
             )}
             {editTotals.discountAmt > 0 && (
               <SummaryRow label="Taxable Amount" value={`₹${editTotals.taxableAmount.toFixed(2)}`} color="#374151" />
@@ -1826,7 +1852,6 @@ const AdminJobManagement = () => {
             />
             <Divider style={{ margin: "8px 0" }} />
             <SummaryRow label="Grand Total" value={`₹${editTotals.grandTotal.toFixed(2)}`} bold />
-            {/* ✅ Show paid / balance in summary when payment fields are filled */}
             {(editTotals.paid > 0 || editForm.payment_mode) && (
               <>
                 <div style={{ height: 6 }} />
@@ -1870,6 +1895,7 @@ const AdminJobManagement = () => {
               Save Changes
             </Button>
           </div>
+
         </Spin>
       </Modal>
 
@@ -1920,34 +1946,50 @@ const AdminJobManagement = () => {
               </div>
             </div>
 
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: "block", fontWeight: 600, marginBottom: 8, fontSize: 13 }}>
-                Select Designer to Assign <span style={{ color: "#ef4444" }}>*</span>
-              </label>
-              <Select
-                placeholder={designersLoading ? "Loading designers…" : "Choose a designer"}
-                style={{ width: "100%" }}
-                value={selectedDesigner?._id || undefined}
-                loading={designersLoading}
-                disabled={designersLoading}
-                onChange={(id) => setSelectedDesigner(designers.find(d => d._id === id) || null)}
-                notFoundContent={designersLoading ? "Loading…" : "No designers found"}
-              >
-                {designers.map(d => (
-                  <Option key={d._id} value={d._id}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <UserOutlined style={{ color: "#6b7280", fontSize: 12 }} />
-                      <span>{d.name || d.fullName || d.username || d._id}</span>
-                    </div>
-                  </Option>
-                ))}
-              </Select>
-              {!designersLoading && designers.length === 0 && (
-                <div style={{ marginTop: 8, color: "#b45309", fontSize: 12, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 6, padding: "6px 10px" }}>
-                  No designers found. Add a user with role "designing team" first.
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: "block", fontWeight: 600, marginBottom: 8, fontSize: 13 }}>
+              Select Designer to Assign <span style={{ color: "#ef4444" }}>*</span>
+            </label>
+            <Select
+              placeholder={designersLoading ? "Loading designers…" : "Choose a designer"}
+              style={{ width: "100%" }}
+              value={selectedDesigner?._id || undefined}
+              loading={designersLoading}
+              disabled={designersLoading}
+              onChange={(id) => {
+                if (id === "customer") {
+                  setSelectedDesigner({ _id: "customer", name: "Designed by customer" });
+                } else {
+                  setSelectedDesigner(designers.find(d => d._id === id) || null);
+                }
+              }}
+              notFoundContent={designersLoading ? "Loading…" : "No designers found"}
+            >
+              {/* Default customer option */}
+              <Option key="customer" value="customer">
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <UserOutlined style={{ color: "#6b7280", fontSize: 12 }} />
+                  <span>Designed by customer</span>
                 </div>
-              )}
-            </div>
+              </Option>
+              
+              {/* Designer options */}
+              {designers.map(d => (
+                <Option key={d._id} value={d._id}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <UserOutlined style={{ color: "#6b7280", fontSize: 12 }} />
+                    <span>{d.name || d.fullName || d.username || d._id}</span>
+                  </div>
+                </Option>
+              ))}
+            </Select>
+            
+            {!designersLoading && designers.length === 0 && (
+              <div style={{ marginTop: 8, color: "#b45309", fontSize: 12, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 6, padding: "6px 10px" }}>
+                No designers found. Add a user with role "designing team" first.
+              </div>
+            )}
+          </div>
 
             <div style={{ fontSize: 12, color: "#6b7280", background: "#fefce8", padding: "8px 10px", borderRadius: 6, border: "1px solid #fef08a" }}>
               The job will be approved and assigned to the selected designer with stage set to <strong>Design</strong>.
@@ -1966,5 +2008,4 @@ const AdminJobManagement = () => {
   );
 };
 
-export default AdminJobManagement;
-
+export default AdminJobManagement;  

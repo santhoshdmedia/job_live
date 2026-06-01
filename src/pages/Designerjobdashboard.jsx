@@ -37,12 +37,11 @@ const INFO_BASE = "https://api.dmedia.in/api/info-requests";
 const DRIVE_FOLDER_ID = "118wOyN-T0N9IZbiQUER7khCOaEH9GfRQ";
 
 // ─── Filter keys ──────────────────────────────────────────────────────────────
-const FILTER_ALL            = "all";
-const FILTER_LIVE           = "live";
-const FILTER_ON_HOLD        = "on_hold";
+const FILTER_ALL             = "all";
+const FILTER_LIVE            = "live";
+const FILTER_ON_HOLD         = "on_hold";
 const FILTER_DESIGN_UPLOADED = "design_uploaded";
 const FILTER_ACCESS_PENDING  = "access_pending";
-const FILTER_COMPLETED       = "completed";
 const FILTER_APPROVED_DESIGN = "approved_design";
 
 // ─── Image compression ────────────────────────────────────────────────────────
@@ -79,7 +78,6 @@ const STATUS = {
   accepted:    { label: "Accepted",    color: "#22c55e", bg: "#f0fdf4", border: "#86efac" },
   in_progress: { label: "In Progress", color: "#f59e0b", bg: "#fffbeb", border: "#fcd34d" },
   on_hold:     { label: "On Hold",     color: "#f97316", bg: "#fff7ed", border: "#fdba74" },
-  // completed:   { label: "Completed",   color: "#8b5cf6", bg: "#f5f3ff", border: "#c4b5fd" },
   rejected:    { label: "Rejected",    color: "#ef4444", bg: "#fef2f2", border: "#fca5a5" },
   design:      { label: "Design",      color: "#3b82f6", bg: "#eff6ff", border: "#93c5fd" },
 };
@@ -394,23 +392,36 @@ const JobCard = ({
   const isOverdue = delivDate && delivDate.isBefore(dayjs());
   const isLive = sessionData?.has_open_session;
   const hasDesign = !!(job.design_file || job.cart_items?.some((i) => i.design_file));
+  const isDesignApproved = job.design_status === "approved";
+
   return (
     <div style={{
       background: "#fff", borderRadius: 14,
-      border: `1px solid ${isLive ? "#86efac" : "#e5e7eb"}`,
-      boxShadow: isLive ? "0 0 0 2px #dcfce7, 0 4px 12px rgba(0,0,0,0.08)" : "0 2px 8px rgba(0,0,0,0.06)",
+      border: `1px solid ${isDesignApproved ? "#f9a8d4" : isLive ? "#86efac" : "#e5e7eb"}`,
+      boxShadow: isDesignApproved
+        ? "0 0 0 2px #fce7f3, 0 4px 12px rgba(0,0,0,0.08)"
+        : isLive
+          ? "0 0 0 2px #dcfce7, 0 4px 12px rgba(0,0,0,0.08)"
+          : "0 2px 8px rgba(0,0,0,0.06)",
       overflow: "hidden", transition: "all 0.2s",
     }}>
       <div style={{
         padding: "10px 14px",
-        background: isLive ? "linear-gradient(135deg,#14532d 0%,#16a34a 100%)" : "linear-gradient(135deg,#1e3a8a 0%,#1e40af 100%)",
+        background: isDesignApproved
+          ? "linear-gradient(135deg,rgb(20, 83, 45) 0%,rgb(22, 163, 74) 100%)"
+          : isLive
+            ? "linear-gradient(135deg,#14532d 0%,#16a34a 100%)"
+            : "linear-gradient(135deg,#1e3a8a 0%,#1e40af 100%)",
         display: "flex", justifyContent: "space-between", alignItems: "center",
       }}>
-        <span style={{ fontFamily: "monospace", fontWeight: 800, fontSize: 13, color: isLive ? "#bbf7d0" : "#93c5fd", letterSpacing: "0.05em" }}>
+        <span style={{ fontFamily: "monospace", fontWeight: 800, fontSize: 13, color: isDesignApproved ? "#fbcfe8" : isLive ? "#bbf7d0" : "#93c5fd", letterSpacing: "0.05em" }}>
           {job.job_no}
         </span>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {isLive && (
+          {isDesignApproved && (
+            <span style={{ fontSize: 10, fontWeight: 700, color: "#fbcfe8", background: "rgba(255,255,255,0.15)", padding: "1px 7px", borderRadius: 10 }}>✓ APPROVED</span>
+          )}
+          {isLive && !isDesignApproved && (
             <span style={{ fontSize: 10, fontWeight: 700, color: "#bbf7d0", background: "rgba(255,255,255,0.15)", padding: "1px 7px", borderRadius: 10 }}>● LIVE</span>
           )}
           <StatusBadge status={job.job_status} />
@@ -454,8 +465,16 @@ const JobCard = ({
           </div>
         </div>
         {hasDesign && (
-          <div style={{ fontSize: 11, color: "#7c3aed", fontWeight: 600, marginBottom: 10, background: "#faf5ff", border: "1px solid #c4b5fd", borderRadius: 6, padding: "4px 8px", display: "inline-block" }}>
-            <FileImageOutlined style={{ marginRight: 4 }} />Design Uploaded
+          <div style={{
+            fontSize: 11, fontWeight: 600, marginBottom: 10,
+            background: isDesignApproved ? "#fce7f3" : "#faf5ff",
+            border: `1px solid ${isDesignApproved ? "#f9a8d4" : "#c4b5fd"}`,
+            color: isDesignApproved ? "#be185d" : "#7c3aed",
+            borderRadius: 6, padding: "4px 8px", display: "inline-block",
+          }}>
+            {isDesignApproved
+              ? <><CheckCircleOutlined style={{ marginRight: 4 }} />Design Approved</>
+              : <><FileImageOutlined style={{ marginRight: 4 }} />Design Uploaded</>}
             {job.design_status === "rejected" && <span style={{ color: "#ef4444", marginLeft: 6 }}>· Rejected</span>}
           </div>
         )}
@@ -542,14 +561,24 @@ const DesignerJobDashboard = () => {
         const res = await fetch(`${BASE}`, { headers: authHeader() });
         const data = await res.json();
         const rows = Array.isArray(data?.data?.jobs) ? data.data.jobs : Array.isArray(data?.data) ? data.data : [];
-        // REMOVED: filter for design_status !== "approved" to show ALL jobs with design stage
-        myJobs = rows.filter((j) => j.current_stage?.stage === "design");
+        // ── FIX: Include jobs whose current stage is "design" OR whose
+        //         design_status is "approved" (they may have advanced to the
+        //         next stage but should still be visible in this dashboard) ──
+        myJobs = rows.filter(
+          (j) =>
+            j.current_stage?.stage === "design" ||
+            j.design_status === "approved"
+        );
       } else {
         const res = await fetch(`${BASE}/assigned-to/${userId}`, { headers: authHeader() });
         const data = await res.json();
         const rows = Array.isArray(data?.data) ? data.data : [];
-        // REMOVED: filter for design_status !== "approved" to show ALL jobs with design stage
-        myJobs = rows.filter((j) => j.current_stage?.stage === "design");
+        // ── FIX: Same inclusive filter for non-admin designers ──
+        myJobs = rows.filter(
+          (j) =>
+            j.current_stage?.stage === "design" ||
+            j.design_status === "approved"
+        );
       }
       setJobs(myJobs);
       setLastRefresh(dayjs());
@@ -577,8 +606,8 @@ const DesignerJobDashboard = () => {
             const r = await fetch(`${INFO_BASE}/job/${j._id}?userId=${userId}`, { headers: authHeader() });
             const d = await r.json();
             if (d.success) reqMap[j._id] = d.data;
-          } catch { /* ignore */ }}
-        ));
+          } catch { /* ignore */ }
+        }));
         setInfoRequestMap(reqMap);
       }
     } catch (err) {
@@ -764,23 +793,22 @@ const DesignerJobDashboard = () => {
   };
 
   // ─── Derived counts ───────────────────────────────────────────────────────
-  const liveCount = Object.values(sessionMap).filter((s) => s?.has_open_session).length;
-  const onHoldCount = jobs.filter((j) => j.job_status === "on_hold").length;
-  const designUploadedCount = jobs.filter((j) => j.design_file || j.cart_items?.some((i) => i.design_file)).length;
-  const accessPendingCount = Object.values(infoRequestMap).filter((r) => r?.status === "pending").length;
-  
-  // ─── NEW: Completed Design count ──────────────────────────────────────────
-  const completedCount = jobs.filter((j) =>
-    j.job_status === "completed" ||
-    j.job_status === "dispatch" ||
-    j.job_status === "delivered" ||
-    j.current_stage?.stage === "dispatch" ||
-    j.current_stage?.stage === "delivered" ||
-    j.current_stage?.stage === "delivery"
-  ).length;
-  
-  // ─── NEW: Approved Design count (design_status === "approved") ────────────
+
+  // Helper: a job has a design uploaded (in any form)
+  const jobHasDesign = (j) =>
+    !!(j.design_file || j.cart_items?.some((i) => i.design_file));
+
+  // Helper: a job is "done" from a designer's active-work perspective
+  const jobIsDesignDone = (j) =>
+    jobHasDesign(j) || j.design_status === "approved";
+
+  // "Total Assigned" = jobs still needing design work (no upload yet, not approved)
+  const activeJobsCount     = jobs.filter((j) => !jobIsDesignDone(j)).length;
+  const liveCount           = Object.values(sessionMap).filter((s) => s?.has_open_session).length;
+  const onHoldCount         = jobs.filter((j) => j.job_status === "on_hold" && !jobIsDesignDone(j)).length;
+  const designUploadedCount = jobs.filter((j) => jobHasDesign(j) && j.design_status !== "approved").length;
   const approvedDesignCount = jobs.filter((j) => j.design_status === "approved").length;
+  const accessPendingCount  = Object.values(infoRequestMap).filter((r) => r?.status === "pending").length;
 
   // ─── Filtered jobs ────────────────────────────────────────────────────────
   const filteredJobs = jobs.filter((job) => {
@@ -789,37 +817,30 @@ const DesignerJobDashboard = () => {
       case FILTER_LIVE:
         return sessData?.has_open_session === true;
       case FILTER_ON_HOLD:
-        return job.job_status === "on_hold";
+        // On Hold filter: only jobs on hold that don't yet have a design uploaded/approved
+        return job.job_status === "on_hold" && !jobIsDesignDone(job);
       case FILTER_DESIGN_UPLOADED:
-        return !!(job.design_file || job.cart_items?.some((i) => i.design_file));
+        // Design Uploaded: has a file but NOT yet approved
+        return jobHasDesign(job) && job.design_status !== "approved";
       case FILTER_ACCESS_PENDING:
         return infoRequestMap[job._id]?.status === "pending";
-      case FILTER_COMPLETED:
-        return (
-          job.job_status === "completed" ||
-          job.job_status === "dispatch" ||
-          job.job_status === "delivered" ||
-          job.current_stage?.stage === "dispatch" ||
-          job.current_stage?.stage === "delivered" ||
-          job.current_stage?.stage === "delivery"
-        );
       case FILTER_APPROVED_DESIGN:
         return job.design_status === "approved";
       default:
-        return true;
+        // FILTER_ALL (Total Assigned) = jobs with NO design uploaded and NOT approved
+        return !jobIsDesignDone(job);
     }
   });
 
-  // ─── Summary strip config (now with 7 cards) ────────────────────────────────
+  // ─── Summary strip config ─────────────────────────────────────────────────
   const summaryItems = [
-    { key: FILTER_ALL,            label: "Total Assigned",   value: jobs.length,           color: "#3b82f6", bg: "#eff6ff", activeBg: "#dbeafe", border: "#bfdbfe" },
-    { key: FILTER_LIVE,           label: "Live Sessions",    value: liveCount,              color: "#16a34a", bg: "#f0fdf4", activeBg: "#dcfce7", border: "#86efac" },
-    { key: FILTER_ON_HOLD,        label: "On Hold",          value: onHoldCount,            color: "#f97316", bg: "#fff7ed", activeBg: "#ffedd5", border: "#fdba74" },
-    { key: FILTER_DESIGN_UPLOADED, label: "Design Uploaded", value: designUploadedCount,    color: "#8b5cf6", bg: "#f5f3ff", activeBg: "#ede9fe", border: "#c4b5fd" },
-    // { key: FILTER_COMPLETED,       label: "Completed",       value: completedCount,         color: "#0f766e", bg: "#f0fdfa", activeBg: "#ccfbf1", border: "#99f6e4" },
-    { key: FILTER_APPROVED_DESIGN, label: "Design Approved", value: approvedDesignCount,    color: "#be185d", bg: "#fce7f3", activeBg: "#fbcfe8", border: "#f9a8d4" },
+    { key: FILTER_ALL,             label: "Total Assigned",  value: activeJobsCount,         color: "#3b82f6", bg: "#eff6ff", activeBg: "#dbeafe", border: "#bfdbfe" },
+    { key: FILTER_LIVE,            label: "Live Sessions",   value: liveCount,               color: "#16a34a", bg: "#f0fdf4", activeBg: "#dcfce7", border: "#86efac" },
+    { key: FILTER_ON_HOLD,         label: "On Hold",         value: onHoldCount,             color: "#f97316", bg: "#fff7ed", activeBg: "#ffedd5", border: "#fdba74" },
+    { key: FILTER_DESIGN_UPLOADED, label: "Design Uploaded", value: designUploadedCount,     color: "#8b5cf6", bg: "#f5f3ff", activeBg: "#ede9fe", border: "#c4b5fd" },
+    { key: FILTER_APPROVED_DESIGN, label: "Design Approved", value: approvedDesignCount,     color: "#be185d", bg: "#fce7f3", activeBg: "#fbcfe8", border: "#f9a8d4" },
     ...(!isSuperAdmin ? [
-      { key: FILTER_ACCESS_PENDING, label: "Access Pending", value: accessPendingCount,     color: "#d97706", bg: "#fffbeb", activeBg: "#fef3c7", border: "#fcd34d" },
+      { key: FILTER_ACCESS_PENDING, label: "Access Pending", value: accessPendingCount,      color: "#d97706", bg: "#fffbeb", activeBg: "#fef3c7", border: "#fcd34d" },
     ] : []),
   ];
 
@@ -849,7 +870,7 @@ const DesignerJobDashboard = () => {
           <div>
             <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: "#111827" }}>My Design Jobs</h2>
             <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>
-              Hi <strong>{userName}</strong> · {jobs.length} active job{jobs.length !== 1 ? "s" : ""} · Updated {lastRefresh.format("HH:mm:ss")} ·{" "}
+              Hi <strong>{userName}</strong> · {jobs.length} job{jobs.length !== 1 ? "s" : ""} · Updated {lastRefresh.format("HH:mm:ss")} ·{" "}
               <span style={{ color: "#16a34a", fontWeight: 600 }}>{isSuperAdmin ? "All design jobs" : `Assigned to ${userName}`}</span>
             </p>
           </div>
@@ -937,7 +958,7 @@ const DesignerJobDashboard = () => {
                 </div>
                 <div style={{ fontSize: 13, color: "#6b7280" }}>
                   {activeFilter === FILTER_ALL
-                    ? "Jobs assigned to you in the design stage will appear here."
+                    ? "Jobs assigned to you that are pending design work will appear here."
                     : `No jobs currently in "${summaryItems.find((s) => s.key === activeFilter)?.label}" state.`}
                 </div>
                 {activeFilter !== FILTER_ALL && (
@@ -1187,7 +1208,7 @@ const DesignerJobDashboard = () => {
               <>
                 <Divider style={{ margin: "12px 0" }}><span style={{ fontSize: 11, color: "#6b7280", fontWeight: 600 }}>Design Review</span></Divider>
                 <div style={{ background: "#fefce8", border: "1px solid #fde68a", borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 12, color: "#92400e" }}>
-                  ✅ A design file has been uploaded. You can approve or reject it below.
+                   A design file has been uploaded. You can approve or reject it below.
                   {designJob.design_status === "rejected" && designJob.design_rejection_reason && (
                     <div style={{ marginTop: 6, color: "#ef4444", fontWeight: 600 }}>⚠ Previously rejected: "{designJob.design_rejection_reason}"</div>
                   )}
@@ -1223,3 +1244,4 @@ const DesignerJobDashboard = () => {
 };
 
 export default DesignerJobDashboard;
+

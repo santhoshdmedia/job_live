@@ -160,8 +160,8 @@
       img.src = url;
     });
 
-  // ── Generate Invoice PDF ──────────────────────────────────────────────────────
-  const generateInvoicePDF = async (job) => {
+  // ── Build Invoice PDF (returns blob + filename) ───────────────────────────────
+  const buildInvoicePDF = async (job) => {
     const doc    = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
     const PW     = 210;
     const PH     = 297;
@@ -254,7 +254,7 @@
       const logoX   = PW - MARGIN - 32;
       const logoY   = y - 2;
       fillRect(logoX, logoY, 40, 20, WHITE, WHITE);
-      doc.addImage(logoB64, "PNG", logoX + 2, logoY + 2, 28, 22);
+      doc.addImage(logoB64, "PNG", logoX + 2, logoY + 2, 35, 15);
     } catch { /* skip on CORS / load error */ }
 
     y = cy + 4;
@@ -497,7 +497,9 @@
     doc.setTextColor(0, 0, 0);
     doc.text("D-Media", pbX + 14, footerY + 5, { align: "center" });
 
-    doc.save(`Quotation_${job.job_no || "job"}.pdf`);
+    const filename = `Quotation_${job.job_no || "job"}.pdf`;
+    const blob = doc.output("blob");
+    return { blob, filename };
   };
 
   // ── Generate Job Sheet PDF ─────────────────────────────────────────────────────
@@ -572,38 +574,42 @@
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8.5);
   doc.setTextColor(...DARK);
-  // ✅ Show company_name if available, else fall back to customer_name
   const displayName = (job.company_name && job.company_name.trim())
     ? job.company_name.trim()
     : (job.customer_name || "—");
   const custDetail = [displayName, job.customer_phone].filter(Boolean).join("   |   ");
   txt(custDetail, MARGIN + doc.getTextWidth("Customer Details :") + 2, y);
 
-
     y += 7;
     hr(y, LGRAY);
     y += 5;
 
-    const deliveryLine = [addr.street, addr.city, addr.state, addr.pincode]
-      .filter(Boolean).join(", ");
+const deliveryLine = [addr.street, addr.city, addr.state, addr.pincode]
+  .filter(Boolean).join(", ");
 
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5);
-    doc.setTextColor(...MID);
-    txt("Delivery to :", MARGIN, y);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5);
-    doc.setTextColor(...DARK);
-    const delivLines = doc.splitTextToSize(deliveryLine || "—", CW * 0.55);
-    txt(delivLines, MARGIN + doc.getTextWidth("Delivery to :") + 3, y);
+doc.setFont("helvetica", "normal");
+doc.setFontSize(8.5);
+doc.setTextColor(...MID);
+txt("Delivery to :", MARGIN, y);
 
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5);
-    doc.setTextColor(...MID);
-    txt("Est. Delivery on :", PW - MARGIN - 60, y);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(...DARK);
-    txt(estDate || "—", PW - MARGIN - 60 + doc.getTextWidth("Est. Delivery on :") + 2, y);
+doc.setFont("helvetica", "normal");
+doc.setTextColor(...DARK);
+const delivLines = doc.splitTextToSize(deliveryLine || "—", CW * 0.7);
+txt(delivLines, MARGIN + doc.getTextWidth("Delivery to :") + 3, y);
+
+const lineCount = Array.isArray(delivLines) ? delivLines.length : 1;
+const addressEndY = y + (lineCount - 1) * 4;
+
+doc.setFont("helvetica", "normal");
+doc.setFontSize(8.5);
+doc.setTextColor(...MID);
+txt("Est. Delivery on :", MARGIN, addressEndY + 6);
+
+doc.setFont("helvetica", "bold");
+doc.setTextColor(...DARK);
+txt(estDate || "—", MARGIN + doc.getTextWidth("Est. Delivery on :") + 2, addressEndY + 6);
+
+y = addressEndY + 12;
 
     y += Math.max(delivLines.length * 4.5, 6) + 5;
     hr(y, LGRAY);
@@ -701,15 +707,6 @@
     return { blob, filename };
   };
 
-  // ── Legacy direct-save wrapper (used from table row button) ───────────────────
-  const generateJobSheetPDF = async (job) => {
-    const { blob, filename } = await buildJobSheetPDF(job);
-    const url = URL.createObjectURL(blob);
-    const a   = document.createElement("a");
-    a.href = url; a.download = filename; a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
-  };
-
   // ─── Job status config ────────────────────────────────────────────────────────
   const STATUS_CONFIG = {
     draft:         { label: "Draft",         color: "default",  icon: <FileTextOutlined /> },
@@ -786,8 +783,9 @@
     );
   };
 
-  // ─── Job Sheet Share Modal ────────────────────────────────────────────────────
-  const JobSheetShareModal = ({ open, onClose, job }) => {
+  // ─── Generic PDF Share Modal ───────────────────────────────────────────────────
+  // type: "jobsheet" | "quotation"
+  const PdfShareModal = ({ open, onClose, job, type = "jobsheet" }) => {
     const [generating, setGenerating] = useState(false);
     const [pdfReady,   setPdfReady]   = useState(false);
     const [blobUrl,    setBlobUrl]    = useState(null);
@@ -795,13 +793,26 @@
     const [blobRef,    setBlobRef]    = useState(null);
     const [copyDone,   setCopyDone]   = useState(false);
 
+    const isQuotation = type === "quotation";
+
+    const accentColor  = isQuotation ? "#1e40af" : "#0f766e";
+    const accentGrad   = isQuotation
+      ? "linear-gradient(135deg,#1e40af,#3b82f6)"
+      : "linear-gradient(135deg,#0f766e,#14b8a6)";
+    const bgReady      = isQuotation ? "#eff6ff" : "#f0fdfa";
+    const borderReady  = isQuotation ? "#93c5fd" : "#99f6e4";
+    const titleLabel   = isQuotation ? "Quotation" : "Job Sheet";
+    const titleIcon    = isQuotation ? <FileTextOutlined style={{ color: accentColor, fontSize: 16 }} /> : <PrinterOutlined style={{ color: accentColor, fontSize: 16 }} />;
+
     // Generate PDF as soon as modal opens
     useEffect(() => {
       if (!open || !job) return;
       let cancelled = false;
       setPdfReady(false); setBlobUrl(null); setGenerating(true);
 
-      buildJobSheetPDF(job).then(({ blob, filename: fn }) => {
+      const builder = isQuotation ? buildInvoicePDF : buildJobSheetPDF;
+
+      builder(job).then(({ blob, filename: fn }) => {
         if (cancelled) return;
         const url = URL.createObjectURL(blob);
         setBlobUrl(url);
@@ -814,10 +825,8 @@
         if (!cancelled) setGenerating(false);
       });
 
-      return () => {
-        cancelled = true;
-      };
-    }, [open, job]);
+      return () => { cancelled = true; };
+    }, [open, job, type]);
 
     // Revoke blob URL on close
     useEffect(() => {
@@ -835,31 +844,37 @@
 
     const handleWhatsApp = () => {
       if (!job) return;
-      const phone    = (job.customer_phone || "").replace(/\D/g, "");
-      const jobNo    = job.job_no   || "—";
-      const name     = job.customer_name || "Customer";
-      const total    = parseFloat(job.total_amount || 0)
+      const phone   = (job.customer_phone || "").replace(/\D/g, "");
+      const jobNo   = job.job_no   || "—";
+      const name    = job.customer_name || "Customer";
+      const total   = parseFloat(job.total_amount || 0)
         .toLocaleString("en-IN", { minimumFractionDigits: 2 });
-      const estDate  = job.estimated_delivery_date
+      const estDate = job.estimated_delivery_date
         ? dayjs(job.estimated_delivery_date).format("DD MMM YYYY")
         : "—";
 
-      const text = encodeURIComponent(
-        `Hello ${name},\n\nYour Job Sheet from D-Media:\n\n` +
-        `📋 Job No: ${jobNo}\n` +
-        `💰 Total: ₹${total}\n` +
-        `📅 Est. Delivery: ${estDate}\n\n` +
-        `Please download your job sheet PDF attached.\n\nThank you!\nD-Media Team\nwww.dmedia.in`
-      );
+      const text = isQuotation
+        ? encodeURIComponent(
+            `Hello ${name},\n\nYour Quotation from D-Media:\n\n` +
+            `📋 Quotation No: ${jobNo}\n` +
+            `💰 Total: ₹${total}\n` +
+            `📅 Valid Until: ${estDate}\n\n` +
+            `Please find the PDF quotation attached.\n\nThank you!\nD-Media Team\nwww.dmedia.in`
+          )
+        : encodeURIComponent(
+            `Hello ${name},\n\nYour Job Sheet from D-Media:\n\n` +
+            `📋 Job No: ${jobNo}\n` +
+            `💰 Total: ₹${total}\n` +
+            `📅 Est. Delivery: ${estDate}\n\n` +
+            `Please download your job sheet PDF attached.\n\nThank you!\nD-Media Team\nwww.dmedia.in`
+          );
 
       const waUrl = phone
         ? `https://wa.me/91${phone}?text=${text}`
         : `https://wa.me/?text=${text}`;
       window.open(waUrl, "_blank");
 
-      if (pdfReady) {
-        setTimeout(handleDownload, 500);
-      }
+      if (pdfReady) setTimeout(handleDownload, 500);
     };
 
     const handleEmail = () => {
@@ -872,21 +887,30 @@
         ? dayjs(job.estimated_delivery_date).format("DD MMM YYYY")
         : "—";
 
-      const subject = encodeURIComponent(`Job Sheet – ${jobNo} | D-Media`);
-      const body    = encodeURIComponent(
-        `Hello ${name},\n\nPlease find your job sheet details below:\n\n` +
-        `Job No    : ${jobNo}\n` +
-        `Total     : ₹${total}\n` +
-        `Est. Date : ${estDate}\n\n` +
-        `Please find the PDF job sheet attached to this email.\n\n` +
-        `Thank you,\nD-Media Team\nwww.dmedia.in`
-      );
+      const subject = isQuotation
+        ? encodeURIComponent(`Quotation – ${jobNo} | D-Media`)
+        : encodeURIComponent(`Job Sheet – ${jobNo} | D-Media`);
+
+      const body = isQuotation
+        ? encodeURIComponent(
+            `Hello ${name},\n\nPlease find your quotation details below:\n\n` +
+            `Quotation No : ${jobNo}\n` +
+            `Total        : ₹${total}\n` +
+            `Valid Until  : ${estDate}\n\n` +
+            `Please find the PDF quotation attached to this email.\n\n` +
+            `Thank you,\nD-Media Team\nwww.dmedia.in`
+          )
+        : encodeURIComponent(
+            `Hello ${name},\n\nPlease find your job sheet details below:\n\n` +
+            `Job No    : ${jobNo}\n` +
+            `Total     : ₹${total}\n` +
+            `Est. Date : ${estDate}\n\n` +
+            `Please find the PDF job sheet attached to this email.\n\n` +
+            `Thank you,\nD-Media Team\nwww.dmedia.in`
+          );
 
       window.open(`mailto:?subject=${subject}&body=${body}`, "_self");
-
-      if (pdfReady) {
-        setTimeout(handleDownload, 500);
-      }
+      if (pdfReady) setTimeout(handleDownload, 500);
     };
 
     const handleNativeShare = async () => {
@@ -894,7 +918,7 @@
       try {
         const file = new File([blobRef], filename, { type: "application/pdf" });
         if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({ title: `Job Sheet – ${job?.job_no || ""}`, files: [file] });
+          await navigator.share({ title: `${titleLabel} – ${job?.job_no || ""}`, files: [file] });
         } else {
           handleDownload();
           message.info("Direct sharing not supported on this browser — PDF downloaded instead.");
@@ -914,8 +938,9 @@
       const estDate = job.estimated_delivery_date
         ? dayjs(job.estimated_delivery_date).format("DD MMM YYYY")
         : "—";
-      const text =
-        `Job No: ${jobNo}\nCustomer: ${name}\nPhone: ${phone}\nTotal: ₹${total}\nEst. Delivery: ${estDate}`;
+      const text = isQuotation
+        ? `Quotation No: ${jobNo}\nCustomer: ${name}\nPhone: ${phone}\nTotal: ₹${total}\nValid Until: ${estDate}`
+        : `Job No: ${jobNo}\nCustomer: ${name}\nPhone: ${phone}\nTotal: ₹${total}\nEst. Delivery: ${estDate}`;
       navigator.clipboard.writeText(text).then(() => {
         setCopyDone(true);
         setTimeout(() => setCopyDone(false), 2000);
@@ -952,7 +977,9 @@
         icon:    <DownloadOutlined style={{ fontSize: 22 }} />,
         label:   "Download",
         sub:     "Save PDF to device",
-        bg:      "linear-gradient(135deg,#0f766e,#14b8a6)",
+        bg:      isQuotation
+          ? "linear-gradient(135deg,#1e40af,#3b82f6)"
+          : "linear-gradient(135deg,#0f766e,#14b8a6)",
         onClick: handleDownload,
         disabled: !pdfReady,
       },
@@ -977,17 +1004,23 @@
         destroyOnClose
         title={
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <PrinterOutlined style={{ color: "#0f766e", fontSize: 16 }} />
-            <span style={{ fontWeight: 700, color: THEME.textPrimary }}>Job Sheet</span>
+            {titleIcon}
+            <span style={{ fontWeight: 700, color: THEME.textPrimary }}>{titleLabel}</span>
             {job && (
-              <Tag color="teal" style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 11, background: "#f0fdfa", borderColor: "#99f6e4", color: "#0f766e" }}>
+              <Tag style={{
+                fontFamily: "monospace", fontWeight: 700, fontSize: 11,
+                background: isQuotation ? "#eff6ff" : "#f0fdfa",
+                borderColor: isQuotation ? "#93c5fd" : "#99f6e4",
+                color: accentColor,
+              }}>
                 {job.job_no}
               </Tag>
             )}
           </div>
         }
       >
-        <div style={{ background: generating ? "#f8fafc" : "#f0fdfa", border: `1px solid ${generating ? "#e5e7eb" : "#99f6e4"}`, borderRadius: 12, padding: "14px 16px", marginBottom: 18, display: "flex", alignItems: "center", gap: 12 }}>
+        {/* PDF status bar */}
+        <div style={{ background: generating ? "#f8fafc" : bgReady, border: `1px solid ${generating ? "#e5e7eb" : borderReady}`, borderRadius: 12, padding: "14px 16px", marginBottom: 18, display: "flex", alignItems: "center", gap: 12 }}>
           {generating ? (
             <>
               <Spin size="small" />
@@ -998,11 +1031,14 @@
             </>
           ) : pdfReady ? (
             <>
-              <div style={{ width: 38, height: 38, borderRadius: 10, background: "linear-gradient(135deg,#0f766e,#14b8a6)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <PrinterOutlined style={{ color: "#fff", fontSize: 18 }} />
+              <div style={{ width: 38, height: 38, borderRadius: 10, background: accentGrad, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                {isQuotation
+                  ? <FileTextOutlined style={{ color: "#fff", fontSize: 18 }} />
+                  : <PrinterOutlined  style={{ color: "#fff", fontSize: 18 }} />
+                }
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 700, fontSize: 13, color: "#0f766e" }}>PDF Ready</div>
+                <div style={{ fontWeight: 700, fontSize: 13, color: accentColor }}>PDF Ready</div>
                 <div style={{ fontSize: 11, color: THEME.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {filename}
                 </div>
@@ -1017,6 +1053,7 @@
           )}
         </div>
 
+        {/* Customer summary */}
         {job && (
           <div style={{ background: THEME.primaryLight, border: `1px solid ${THEME.border}`, borderRadius: 10, padding: "10px 14px", marginBottom: 18, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
             <div>
@@ -1029,13 +1066,15 @@
               </div>
               {job.estimated_delivery_date && (
                 <div style={{ fontSize: 11, color: THEME.textMuted }}>
-                  Est. {dayjs(job.estimated_delivery_date).format("DD MMM YYYY")}
+                  {isQuotation ? "Valid: " : "Est. "}
+                  {dayjs(job.estimated_delivery_date).format("DD MMM YYYY")}
                 </div>
               )}
             </div>
           </div>
         )}
 
+        {/* Share buttons */}
         <div style={{ marginBottom: 6 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: THEME.textMuted, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>
             Share or Download
@@ -1079,51 +1118,62 @@
   };
 
   // ─── Job Detail View ──────────────────────────────────────────────────────────
-  const JobDetailView = ({ job, isMobile, onOpenJobSheetShare }) => {
+  const JobDetailView = ({ job, isMobile, onOpenJobSheetShare, onOpenQuotationShare, isQuotationAuthorized }) => {
     if (!job) return null;
     const addr        = job.delivery_address || {};
     const fullAddress = [addr.street, addr.city, addr.state, addr.pincode, addr.country]
       .filter(Boolean).join(", ");
 
-    // ── CHANGE: updated grid to accommodate the extra Company Name field ──────
-    // Customer Info now shows: Name, Company Name, Phone, Est. Delivery (4 fields)
-    // Using a 2-col grid on mobile, 4-col on desktop so they sit neatly
+    // ── Quotation button in detail view is only shown when status === "design"
+    const showQuotationBtn = isQuotationAuthorized && job.job_status === "design";
+
     const grid2 = { display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3,1fr)", gap: "4px 16px", marginBottom: 12 };
     const grid4 = { display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4,1fr)", gap: "4px 16px", marginBottom: 12 };
 
     return (
       <div>
-        {/* ── Job Sheet action bar at the top of detail view ── */}
+        {/* ── Action bar at the top of detail view ── */}
         <div style={{ background: "linear-gradient(135deg,#f0fdfa,#e0f2fe)", border: "1px solid #99f6e4", borderRadius: 12, padding: "12px 16px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg,#0f766e,#14b8a6)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
               <PrinterOutlined style={{ color: "#fff", fontSize: 16 }} />
             </div>
             <div>
-              <div style={{ fontWeight: 700, fontSize: 13, color: "#0f766e" }}>Job Sheet PDF</div>
+              <div style={{ fontWeight: 700, fontSize: 13, color: "#0f766e" }}>Job Documents</div>
               <div style={{ fontSize: 11, color: "#475569" }}>Download, share via WhatsApp or Email</div>
             </div>
           </div>
-          <Button
-            type="primary"
-            icon={<ShareAltOutlined />}
-            onClick={onOpenJobSheetShare}
-            style={{ background: "#0f766e", borderColor: "#0f766e", borderRadius: 8, fontWeight: 700, height: 36, paddingInline: 18 }}
-          >
-            Job Sheet
-          </Button>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {/* ── Quotation button — only when status is "design" ── */}
+            {showQuotationBtn && (
+              <Button
+                icon={<FileTextOutlined />}
+                onClick={onOpenQuotationShare}
+                style={{ background: "#1e40af", borderColor: "#1e40af", color: "#fff", borderRadius: 8, fontWeight: 700, height: 36, paddingInline: 18 }}
+              >
+                Quotation
+              </Button>
+            )}
+            <Button
+              type="primary"
+              icon={<ShareAltOutlined />}
+              onClick={onOpenJobSheetShare}
+              style={{ background: "#0f766e", borderColor: "#0f766e", borderRadius: 8, fontWeight: 700, height: 36, paddingInline: 18 }}
+            >
+              Job Sheet
+            </Button>
+          </div>
         </div>
 
         {/* ── Customer Info ──────────────────────────────────────────────────── */}
         <SectionDivider icon={<UserOutlined />} title="Customer Info" />
         <div style={grid2}>
-          {/* Name */}
           <div style={{ marginBottom: 8 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: THEME.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>Name</div>
             <div style={{ fontSize: 13, color: THEME.textPrimary }}>{job.customer_name ?? "—"}</div>
           </div>
 
-          {/* ── NEW: Company Name field ── */}
           <div style={{ marginBottom: 8 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: THEME.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>
               Company Name
@@ -1140,13 +1190,11 @@
             </div>
           </div>
 
-          {/* Phone */}
           <div style={{ marginBottom: 8 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: THEME.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>Phone</div>
             <div style={{ fontSize: 13, color: THEME.textPrimary }}>{job.customer_phone ?? "—"}</div>
           </div>
 
-          {/* Est. Delivery */}
           <div style={{ marginBottom: 8 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: THEME.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>Est. Delivery</div>
             <div style={{ fontSize: 13, color: THEME.textPrimary }}>
@@ -1246,7 +1294,7 @@
           {[
             { label: "Job No",            value: job.job_no,        mono: true },
             { label: "Status",            value: <StatusTag status={job.job_status} /> },
-            { label: "Company Name",      value: job.company_name },   // ← also shown here for completeness
+            { label: "Company Name",      value: job.company_name },
             { label: "Created By",        value: job.created_by },
             { label: "Approved By",       value: job.approved_by },
             { label: "GST No",            value: job.gst_no },
@@ -1621,12 +1669,15 @@
 
     const [pendingInfoCount, setPendingInfoCount] = useState(0);
 
-    const [shareJob,           setShareJob]           = useState(null);
-    const [shareModalOpen,     setShareModalOpen]     = useState(false);
+    // ── Job Sheet share modal state ───────────────────────────────────────────
+    const [shareJob,               setShareJob]               = useState(null);
+    const [shareModalOpen,         setShareModalOpen]         = useState(false);
+    const [viewShareModalOpen,     setViewShareModalOpen]     = useState(false);
 
-    const [viewShareModalOpen, setViewShareModalOpen] = useState(false);
-
-    const [generatingJobSheet, setGeneratingJobSheet] = useState(null);
+    // ── Quotation share modal state ───────────────────────────────────────────
+    const [quotationJob,           setQuotationJob]           = useState(null);
+    const [quotationModalOpen,     setQuotationModalOpen]     = useState(false);
+    const [viewQuotationModalOpen, setViewQuotationModalOpen] = useState(false);
 
     const autoRefreshRef = useRef(null);
     const countdownRef   = useRef(null);
@@ -1796,16 +1847,28 @@
       finally { setQcAssigning(false); }
     };
 
-    // ── Job Sheet from table row — opens share modal ────────────────────────────
+    // ── Job Sheet — from table row ────────────────────────────────────────────
     const handleJobSheet = (record) => {
       setShareJob(record);
       setShareModalOpen(true);
     };
 
-    // ── Job Sheet from View detail modal ────────────────────────────────────────
+    // ── Quotation — from table row ────────────────────────────────────────────
+    const handleQuotation = (record) => {
+      setQuotationJob(record);
+      setQuotationModalOpen(true);
+    };
+
+    // ── Job Sheet — from View detail modal ────────────────────────────────────
     const handleJobSheetFromView = () => {
       if (!viewJob) return;
       setViewShareModalOpen(true);
+    };
+
+    // ── Quotation — from View detail modal ────────────────────────────────────
+    const handleQuotationFromView = () => {
+      if (!viewJob) return;
+      setViewQuotationModalOpen(true);
     };
 
     const fmtCountdown = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
@@ -1849,9 +1912,12 @@
       ...(!isMobile ? [{ title: "Status", dataIndex: "job_status", render: (s) => <StatusTag status={s} /> }] : []),
       ...(isDesktop  ? [{ title: "Stage",  key: "stage",            render: (_, r) => <StageTag stage={r.current_stage?.stage} /> }] : []),
       {
-        title: "", width: isMobile ? 110 : 260,
+        title: "", width: isMobile ? 110 : 290,
         render: (_, record) => {
           const isQC = record.job_status === "quality_check";
+          // ── Quotation button is only shown when job_status === "design" ──
+          const showQuotation = record.job_status === "design" && isQuotationAuthorized;
+
           return (
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: isMobile ? "flex-start" : "flex-end", flexDirection: isMobile ? "column" : "row" }}>
               <Tooltip title="View Job Details">
@@ -1862,11 +1928,20 @@
                 </Button>
               </Tooltip>
 
-              {record.job_status === "design" && isQuotationAuthorized && (
-                <Tooltip title="Download Quotation PDF">
-                  <Button icon={<FileTextOutlined />} size="small"
-                    style={{ width: isMobile ? "100%" : "auto", background: THEME.textPrimary, borderColor: THEME.textPrimary, color: "#fff" }}
-                    onClick={() => generateInvoicePDF(record)}>
+              {/* ── Quotation button — only when status === "design" and authorized ── */}
+              {showQuotation && (
+                <Tooltip title="Quotation PDF & Share">
+                  <Button
+                    icon={<FileTextOutlined />}
+                    size="small"
+                    style={{
+                      width: isMobile ? "100%" : "auto",
+                      background: "#1e40af",
+                      borderColor: "#1e40af",
+                      color: "#fff",
+                    }}
+                    onClick={() => handleQuotation(record)}
+                  >
                     {!isMobile && "Quotation"}
                   </Button>
                 </Tooltip>
@@ -1946,7 +2021,7 @@
             <Card bodyStyle={{ padding: "0 0 8px 0" }} style={{ borderRadius: 12, border: `1px solid ${THEME.border}`, boxShadow: "0 2px 12px rgba(30,111,220,0.08)", background: THEME.bgCard, overflow: "hidden" }}>
               <Table
                 dataSource={pagedJobs} loading={loading} columns={columns}
-                scroll={{ x: isMobile ? 360 : 960 }} rowKey={(r) => r._id || r.job_no}
+                scroll={{ x: isMobile ? 360 : 1020 }} rowKey={(r) => r._id || r.job_no}
                 size="small" rowClassName={(_, i) => (i % 2 === 0 ? "row-alt" : "")}
                 pagination={{
                   current: page, pageSize, total: filteredJobs.length,
@@ -2034,6 +2109,17 @@
           open={!!viewJob}
           onCancel={() => setViewJob(null)}
           footer={[
+            // ── Quotation button in footer — only when status === "design" and authorized ──
+            ...(viewJob?.job_status === "design" && isQuotationAuthorized ? [
+              <Button
+                key="quotation"
+                icon={<FileTextOutlined />}
+                onClick={handleQuotationFromView}
+                style={{ background: "#1e40af", borderColor: "#1e40af", color: "#fff", fontWeight: 700, borderRadius: 8 }}
+              >
+                Quotation
+              </Button>
+            ] : []),
             <Button
               key="jobsheet"
               icon={<PrinterOutlined />}
@@ -2062,6 +2148,8 @@
             job={viewJob}
             isMobile={isMobile}
             onOpenJobSheetShare={handleJobSheetFromView}
+            onOpenQuotationShare={handleQuotationFromView}
+            isQuotationAuthorized={isQuotationAuthorized}
           />
         </Modal>
 
@@ -2193,16 +2281,34 @@
         </Modal>
 
         {/* ── Job Sheet Share Modal — from table row ──────────────────────── */}
-        <JobSheetShareModal
+        <PdfShareModal
+          type="jobsheet"
           open={shareModalOpen}
           onClose={() => { setShareModalOpen(false); setShareJob(null); }}
           job={shareJob}
         />
 
         {/* ── Job Sheet Share Modal — from View detail ────────────────────── */}
-        <JobSheetShareModal
+        <PdfShareModal
+          type="jobsheet"
           open={viewShareModalOpen}
           onClose={() => setViewShareModalOpen(false)}
+          job={viewJob}
+        />
+
+        {/* ── Quotation Share Modal — from table row ──────────────────────── */}
+        <PdfShareModal
+          type="quotation"
+          open={quotationModalOpen}
+          onClose={() => { setQuotationModalOpen(false); setQuotationJob(null); }}
+          job={quotationJob}
+        />
+
+        {/* ── Quotation Share Modal — from View detail ────────────────────── */}
+        <PdfShareModal
+          type="quotation"
+          open={viewQuotationModalOpen}
+          onClose={() => setViewQuotationModalOpen(false)}
           job={viewJob}
         />
 
