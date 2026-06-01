@@ -1946,50 +1946,34 @@ const AdminJobManagement = () => {
               </div>
             </div>
 
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: "block", fontWeight: 600, marginBottom: 8, fontSize: 13 }}>
-              Select Designer to Assign <span style={{ color: "#ef4444" }}>*</span>
-            </label>
-            <Select
-              placeholder={designersLoading ? "Loading designers…" : "Choose a designer"}
-              style={{ width: "100%" }}
-              value={selectedDesigner?._id || undefined}
-              loading={designersLoading}
-              disabled={designersLoading}
-              onChange={(id) => {
-                if (id === "customer") {
-                  setSelectedDesigner({ _id: "customer", name: "Designed by customer" });
-                } else {
-                  setSelectedDesigner(designers.find(d => d._id === id) || null);
-                }
-              }}
-              notFoundContent={designersLoading ? "Loading…" : "No designers found"}
-            >
-              {/* Default customer option */}
-              <Option key="customer" value="customer">
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <UserOutlined style={{ color: "#6b7280", fontSize: 12 }} />
-                  <span>Designed by customer</span>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: "block", fontWeight: 600, marginBottom: 8, fontSize: 13 }}>
+                Select Designer to Assign <span style={{ color: "#ef4444" }}>*</span>
+              </label>
+              <Select
+                placeholder={designersLoading ? "Loading designers…" : "Choose a designer"}
+                style={{ width: "100%" }}
+                value={selectedDesigner?._id || undefined}
+                loading={designersLoading}
+                disabled={designersLoading}
+                onChange={(id) => setSelectedDesigner(designers.find(d => d._id === id) || null)}
+                notFoundContent={designersLoading ? "Loading…" : "No designers found"}
+              >
+                {designers.map(d => (
+                  <Option key={d._id} value={d._id}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <UserOutlined style={{ color: "#6b7280", fontSize: 12 }} />
+                      <span>{d.name || d.fullName || d.username || d._id}</span>
+                    </div>
+                  </Option>
+                ))}
+              </Select>
+              {!designersLoading && designers.length === 0 && (
+                <div style={{ marginTop: 8, color: "#b45309", fontSize: 12, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 6, padding: "6px 10px" }}>
+                  No designers found. Add a user with role "designing team" first.
                 </div>
-              </Option>
-              
-              {/* Designer options */}
-              {designers.map(d => (
-                <Option key={d._id} value={d._id}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <UserOutlined style={{ color: "#6b7280", fontSize: 12 }} />
-                    <span>{d.name || d.fullName || d.username || d._id}</span>
-                  </div>
-                </Option>
-              ))}
-            </Select>
-            
-            {!designersLoading && designers.length === 0 && (
-              <div style={{ marginTop: 8, color: "#b45309", fontSize: 12, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 6, padding: "6px 10px" }}>
-                No designers found. Add a user with role "designing team" first.
-              </div>
-            )}
-          </div>
+              )}
+            </div>
 
             <div style={{ fontSize: 12, color: "#6b7280", background: "#fefce8", padding: "8px 10px", borderRadius: 6, border: "1px solid #fef08a" }}>
               The job will be approved and assigned to the selected designer with stage set to <strong>Design</strong>.

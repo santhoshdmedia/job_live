@@ -617,9 +617,11 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
             <Form.Item label="Material Brand" name="material_brand">
               <Input placeholder="e.g. 3M, LG Hausys" className="h-10" prefix={<span className="text-gray-400 text-sm">🏷️</span>} />
             </Form.Item>
+            
           <Form.Item label="Product Type" name="type">
             <Input placeholder="Enter product type" className="h-10" />
           </Form.Item>
+
             <Form.Item label="MRP Price (₹)" name="MRP_price">
               <Input type="number" placeholder="e.g. 999" className="h-10" prefix="₹" />
             </Form.Item>
