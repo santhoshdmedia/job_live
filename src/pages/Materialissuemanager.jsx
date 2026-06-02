@@ -674,7 +674,6 @@ const JobLookup = ({ onJobSelected, issuedJobIds = new Set() }) => {
   const [filter, setFilter] = useState("");
   const { toasts, show, dismiss } = useToast();
 
-  // Status color/label config
   const STATUS_CONFIG = {
     draft:       { label: "Draft",       color: "bg-slate-100 text-slate-600" },
     design:      { label: "Design",      color: "bg-blue-100 text-blue-700" },
@@ -686,51 +685,47 @@ const JobLookup = ({ onJobSelected, issuedJobIds = new Set() }) => {
     completed:   { label: "Completed",   color: "bg-purple-100 text-purple-700" },
   };
 
-const fetchProductionJobs = useCallback(async () => {
-  setLoading(true);
-  try {
-    // Only fetch approved/active statuses — never draft
-    const statuses = ["design", "in_progress", "production", "accepted", "converted"];
-    const requests = statuses.map((status) =>
-      api(`/jobs?job_status=${status}&limit=100`).catch(() => null)
-    );
-    const results = await Promise.all(requests);
+  const fetchProductionJobs = useCallback(async () => {
+    setLoading(true);
+    try {
+      const statuses = ["design", "in_progress", "production", "accepted", "converted"];
+      const requests = statuses.map((status) =>
+        api(`/jobs?job_status=${status}&limit=100`).catch(() => null)
+      );
+      const results = await Promise.all(requests);
 
-    const allJobs = results.flatMap((res) => {
-      if (!res) return [];
-      const list = res.data?.jobs || res.data || [];
-      return Array.isArray(list) ? list : [];
-    });
+      const allJobs = results.flatMap((res) => {
+        if (!res) return [];
+        const list = res.data?.jobs || res.data || [];
+        return Array.isArray(list) ? list : [];
+      });
 
-    // Deduplicate by _id
-    const seen = new Set();
-    const unique = allJobs.filter((j) => {
-      if (seen.has(j._id)) return false;
-      seen.add(j._id);
-      return true;
-    });
+      const seen = new Set();
+      const unique = allJobs.filter((j) => {
+        if (seen.has(j._id)) return false;
+        seen.add(j._id);
+        return true;
+      });
 
-    // ── KEY FIX: Strictly exclude draft/sent/viewed/rejected/expired jobs ──
-    const EXCLUDED_STATUSES = new Set(["draft", "sent", "viewed", "rejected", "expired", "completed"]);
-    const active = unique.filter((j) => !EXCLUDED_STATUSES.has(j.job_status));
+      const EXCLUDED_STATUSES = new Set(["draft", "sent", "viewed", "rejected", "expired", "completed"]);
+      const active = unique.filter((j) => !EXCLUDED_STATUSES.has(j.job_status));
 
-    // Sort: design first, then in_progress, then others
-    const ORDER = ["design", "in_progress", "production", "accepted", "converted"];
-    active.sort((a, b) => {
-      const ai = ORDER.indexOf(a.job_status);
-      const bi = ORDER.indexOf(b.job_status);
-      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
-    });
+      const ORDER = ["design", "in_progress", "production", "accepted", "converted"];
+      active.sort((a, b) => {
+        const ai = ORDER.indexOf(a.job_status);
+        const bi = ORDER.indexOf(b.job_status);
+        return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+      });
 
-    setJobs(active);
-    if (active.length === 0)
-      show("No approved jobs found (design/production stage)", "warning");
-  } catch (err) {
-    show(err.message, "error");
-  } finally {
-    setLoading(false);
-  }
-}, []);
+      setJobs(active);
+      if (active.length === 0)
+        show("No approved jobs found (design/production stage)", "warning");
+    } catch (err) {
+      show(err.message, "error");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     fetchProductionJobs();
@@ -828,11 +823,7 @@ const fetchProductionJobs = useCallback(async () => {
                       idx < filtered.length - 1 ? "border-b border-slate-100" : ""
                     }`}
                   >
-                    <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                        isDesign ? "bg-violet-600" : "bg-violet-600"
-                      }`}
-                    >
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-violet-600">
                       <span className="text-[9px] font-black text-white tracking-wider">
                         {isDesign ? "DSN" : "PROD"}
                       </span>
@@ -975,7 +966,6 @@ const IssuePanel = ({
   const [empId, setEmpId] = useState("");
 
   // ── Out-Source fields ─────────────────────────────────────────────────────
-  // outsourceType is now a free-text input (not a dropdown)
   const [outsourceType, setOutsourceType] = useState("");
   const [outsourceVendor, setOutsourceVendor] = useState("");
 
@@ -1145,7 +1135,6 @@ const IssuePanel = ({
   const handleSubmit = async () => {
     if (!job) return show("Select a job first", "error");
 
-    // Only require product selection for in-source
     if (!isOutsourced && !productId)
       return show("Select a material product", "error");
 
@@ -1159,7 +1148,6 @@ const IssuePanel = ({
       );
 
     const qty = parseFloat(issuedQty);
-    // For outsource, qty is optional — default to 0 if not provided
     if (!isOutsourced && (!qty || qty <= 0))
       return show("Issued quantity must be greater than 0", "error");
 
@@ -1307,7 +1295,7 @@ const IssuePanel = ({
     <div className="space-y-4">
       <ToastContainer toasts={toasts} dismiss={dismiss} />
 
-      {/* ── Production Jobs Card with In/Out Source tabs ──────────────────── */}
+      {/* ── Production Jobs Card ──────────────────────────────────────────── */}
       <Card className="p-5">
         <SectionHeader
           icon="🏭"
@@ -1315,124 +1303,77 @@ const IssuePanel = ({
           subtitle="Select a job currently in production"
         />
 
-        {/* ── Source Mode Toggle ─────────────────────────────────────────── */}
+        {/* ── SOURCE MODE TOGGLE — always visible at the top ─────────────── */}
         <SourceModeToggle mode={sourceMode} onChange={handleSourceModeChange} />
 
-        {/* ── In Source content ──────────────────────────────────────────── */}
-        {sourceMode === "insource" && (
-          <div className="space-y-4">
-            <JobLookup
-              onJobSelected={handleJobSelected}
-              issuedJobIds={issuedJobIds}
-            />
-
-            {job && job.cart_items?.length > 1 && (
-              <Select
-                label="Cart Item"
-                value={String(cartItemIdx)}
-                onChange={handleCartItemChange}
-                options={job.cart_items.map((item, idx) => ({
-                  value: String(idx),
-                  label: `#${idx + 1} · ${item.product_name || "Item"}${item.size ? ` · ${item.size}` : ""}`,
-                }))}
-              />
-            )}
-
-            {job && cartItem && (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {[
-                  ["Product", cartItem.product_name],
-                  ["Size", cartItem.size],
-                  ["sq.ft", cartSqFt > 0 ? `${cartSqFt} sqft` : "—"],
-                  ["Print Type", cartItem.printing_type],
-                ].map(([k, v]) => (
-                  <div
-                    key={k}
-                    className={`rounded-xl p-2.5 ${k === "sq.ft" && cartSqFt > 0 ? "bg-violet-50 border border-violet-100" : "bg-slate-50"}`}
-                  >
-                    <p
-                      className={`text-[10px] mb-0.5 uppercase tracking-wide ${k === "sq.ft" && cartSqFt > 0 ? "text-violet-400" : "text-slate-400"}`}
-                    >
-                      {k}
-                    </p>
-                    <p
-                      className={`text-xs font-semibold truncate ${k === "sq.ft" && cartSqFt > 0 ? "text-violet-700" : "text-slate-700"}`}
-                    >
-                      {v}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
+        {/* ── Outsource indicator banner (only in outsource mode) ─────────── */}
+        {isOutsourced && (
+          <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2.5 mb-4">
+            <span className="text-indigo-500 text-sm">🔗</span>
+            <span className="text-xs font-semibold text-indigo-700">
+              Outsource Mode — Material sent to external vendor
+            </span>
+            <Badge variant="indigo" className="ml-auto">
+              External
+            </Badge>
           </div>
         )}
 
-        {/* ── Out Source content ─────────────────────────────────────────── */}
-        {sourceMode === "outsource" && (
-          <div className="space-y-4">
-            {/* Outsource indicator banner */}
-            <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2.5">
-              <span className="text-indigo-500 text-sm">🔗</span>
-              <span className="text-xs font-semibold text-indigo-700">
-                Outsource Mode — Material sent to external vendor
-              </span>
-              <Badge variant="indigo" className="ml-auto">
-                External
-              </Badge>
-            </div>
+        {/* ── SHARED: Single JobLookup used by both modes ─────────────────── */}
+        <div className="space-y-4">
+          <JobLookup
+            onJobSelected={handleJobSelected}
+            issuedJobIds={issuedJobIds}
+          />
 
-            {/* Job lookup still needed for outsource too */}
-            <JobLookup
-              onJobSelected={handleJobSelected}
-              issuedJobIds={issuedJobIds}
+          {/* ── SHARED: Cart item selector ──────────────────────────────────── */}
+          {job && job.cart_items?.length > 1 && (
+            <Select
+              label="Cart Item"
+              value={String(cartItemIdx)}
+              onChange={handleCartItemChange}
+              options={job.cart_items.map((item, idx) => ({
+                value: String(idx),
+                label: `#${idx + 1} · ${item.product_name || "Item"}${item.size ? ` · ${item.size}` : ""}`,
+              }))}
             />
+          )}
 
-            {job && job.cart_items?.length > 1 && (
-              <Select
-                label="Cart Item"
-                value={String(cartItemIdx)}
-                onChange={handleCartItemChange}
-                options={job.cart_items.map((item, idx) => ({
-                  value: String(idx),
-                  label: `#${idx + 1} · ${item.product_name || "Item"}${item.size ? ` · ${item.size}` : ""}`,
-                }))}
-              />
-            )}
-
-            {job && cartItem && (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {[
-                  ["Product", cartItem.product_name],
-                  ["Size", cartItem.size],
-                  ["sq.ft", cartSqFt > 0 ? `${cartSqFt} sqft` : "—"],
-                  ["Print Type", cartItem.printing_type],
-                ].map(([k, v]) => (
-                  <div
-                    key={k}
-                    className={`rounded-xl p-2.5 ${k === "sq.ft" && cartSqFt > 0 ? "bg-violet-50 border border-violet-100" : "bg-slate-50"}`}
+          {/* ── SHARED: Cart item info grid ─────────────────────────────────── */}
+          {job && cartItem && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {[
+                ["Product", cartItem.product_name],
+                ["Size", cartItem.size],
+                ["sq.ft", cartSqFt > 0 ? `${cartSqFt} sqft` : "—"],
+                ["Print Type", cartItem.printing_type],
+              ].map(([k, v]) => (
+                <div
+                  key={k}
+                  className={`rounded-xl p-2.5 ${k === "sq.ft" && cartSqFt > 0 ? "bg-violet-50 border border-violet-100" : "bg-slate-50"}`}
+                >
+                  <p
+                    className={`text-[10px] mb-0.5 uppercase tracking-wide ${k === "sq.ft" && cartSqFt > 0 ? "text-violet-400" : "text-slate-400"}`}
                   >
-                    <p
-                      className={`text-[10px] mb-0.5 uppercase tracking-wide ${k === "sq.ft" && cartSqFt > 0 ? "text-violet-400" : "text-slate-400"}`}
-                    >
-                      {k}
-                    </p>
-                    <p
-                      className={`text-xs font-semibold truncate ${k === "sq.ft" && cartSqFt > 0 ? "text-violet-700" : "text-slate-700"}`}
-                    >
-                      {v}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
+                    {k}
+                  </p>
+                  <p
+                    className={`text-xs font-semibold truncate ${k === "sq.ft" && cartSqFt > 0 ? "text-violet-700" : "text-slate-700"}`}
+                  >
+                    {v}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
 
-            {/* ── Out Source specific fields ─────────────────────────────── */}
+          {/* ── OUT SOURCE specific fields (only when outsource mode + job selected) */}
+          {isOutsourced && job && (
             <div className="border-t border-slate-100 pt-4 space-y-3">
               <p className="text-xs font-bold text-indigo-600 uppercase tracking-wide">
                 Outsource Details
               </p>
 
-              {/* Out Source Type — free text input */}
               <Input
                 label="Out Source Type"
                 value={outsourceType}
@@ -1440,7 +1381,6 @@ const IssuePanel = ({
                 placeholder="e.g. Printing, Lamination, Fabrication…"
               />
 
-              {/* Vendor / Party Name */}
               <Input
                 label="Vendor / Party Name *"
                 value={outsourceVendor}
@@ -1448,7 +1388,6 @@ const IssuePanel = ({
                 placeholder="e.g. Sri Murugan Printers, Chennai…"
               />
 
-              {/* Preview card if vendor filled */}
               {outsourceVendor.trim() && (
                 <div className="flex items-center gap-3 bg-indigo-50 rounded-xl p-3 border border-indigo-100">
                   <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
@@ -1459,17 +1398,15 @@ const IssuePanel = ({
                       {outsourceVendor.trim()}
                     </p>
                     <p className="text-xs text-indigo-500">
-                      {outsourceType.trim()
-                        ? outsourceType.trim()
-                        : "Outsource"}{" "}
+                      {outsourceType.trim() ? outsourceType.trim() : "Outsource"}{" "}
                       · External vendor
                     </p>
                   </div>
                 </div>
               )}
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </Card>
 
       {/* ── Rest of the form only when job is selected ────────────────────── */}
@@ -2288,7 +2225,6 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
   const calc = issue.calculation;
   const isOutsourcedModal =
     issue.outsource_type && issue.outsource_type !== "none";
-  // Show the raw outsource_type string (may be free-text now)
   const outsourceLabelModal =
     OUTSOURCE_TYPES.find((o) => o.value === issue.outsource_type)?.label ||
     issue.outsource_type;
@@ -2541,18 +2477,20 @@ export default function MaterialIssueManager() {
   }, []);
 
   const handleIssued = async (newIssue, productId, qty, jobId) => {
-      setIssues(prev => [newIssue, ...prev]);
-      // Only update stock if productId exists (in-source)
-      if (productId) {
-        setProducts(prev => prev.map(p => p._id === productId
-          ? { ...p, stock_count: Math.max(0, (p.stock_count || 0) - qty) }
-          : p
-        ));
-      }
-      setIssuedJobIds(prev => new Set([...prev, jobId]));
-      setTab("issues");
-    };
-    
+    setIssues((prev) => [newIssue, ...prev]);
+    if (productId) {
+      setProducts((prev) =>
+        prev.map((p) =>
+          p._id === productId
+            ? { ...p, stock_count: Math.max(0, (p.stock_count || 0) - qty) }
+            : p,
+        ),
+      );
+    }
+    setIssuedJobIds((prev) => new Set([...prev, jobId]));
+    setTab("issues");
+  };
+
   const handleReviewSaved = (issueId, data) => {
     setIssues((prev) =>
       prev.map((i) =>
