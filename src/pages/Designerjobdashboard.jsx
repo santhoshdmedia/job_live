@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
   Button, Tag, Modal, Input, Spin, Empty, Tooltip, Divider,
-  message, Popconfirm,
+  message, Popconfirm, Progress,
 } from "antd";
 import {
   ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, UploadOutlined,
@@ -10,10 +10,10 @@ import {
   PauseCircleOutlined, HistoryOutlined, DownloadOutlined, CloudUploadOutlined,
   WarningOutlined, LinkOutlined, PictureOutlined, LockOutlined, UnlockOutlined,
   SendOutlined, InfoCircleOutlined, HourglassOutlined, TeamOutlined, StarOutlined,
+  DeleteOutlined, PaperClipOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import duration from "dayjs/plugin/duration";
-import UploadHelper from "../helper/UploadHelper";
 
 dayjs.extend(duration);
 
@@ -384,6 +384,362 @@ const SampleUploadPanel = ({ onSampleReady, onFileSelected, sampleInfo }) => {
   );
 };
 
+// ═════════════════════════════════════════════════════════════════════════════
+// MultiFileUploader  — drop-in replacement for <UploadHelper />
+//
+// Props (matching the original UploadHelper interface + multi-file extras):
+//   setImagePath(path: string)  — called with the FIRST successfully uploaded
+//                                 URL, keeping backward-compat with callers that
+//                                 read a single designFilePath string.
+//   image_path(string)          — current value (shows "already uploaded" state).
+//   onAllPaths(paths: string[]) — optional: called with the full array each time
+//                                 a file finishes uploading or is removed.
+//
+// Supported formats: PDF · JPG/JPEG · PNG · WEBP · CDR · DXF
+// Multiple files can be selected at once or dropped individually.
+// Each file shows a real XHR progress bar and a retry button on failure.
+// ═════════════════════════════════════════════════════════════════════════════
+
+// Accepted MIME types + extensions that the browser's file picker should allow.
+const ACCEPT_ATTR = ".pdf,.jpg,.jpeg,.png,.webp,.cdr,.CDR,.dxf,.DXF";
+
+// Map extension → display badge config
+const EXT_CFG = {
+  pdf:  { label: "PDF",  color: "#ef4444", bg: "#fef2f2", icon: "📄" },
+  jpg:  { label: "JPG",  color: "#f59e0b", bg: "#fffbeb", icon: "🖼️" },
+  jpeg: { label: "JPG",  color: "#f59e0b", bg: "#fffbeb", icon: "🖼️" },
+  png:  { label: "PNG",  color: "#3b82f6", bg: "#eff6ff", icon: "🖼️" },
+  webp: { label: "WEBP", color: "#8b5cf6", bg: "#f5f3ff", icon: "🖼️" },
+  cdr:  { label: "CDR",  color: "#f97316", bg: "#fff7ed", icon: "🎨" },
+  dxf:  { label: "DXF",  color: "#10b981", bg: "#f0fdf4", icon: "📐" },
+};
+
+const getExtCfg = (filename) => {
+  const ext = (filename || "").split(".").pop().toLowerCase();
+  return EXT_CFG[ext] || { label: ext.toUpperCase() || "FILE", color: "#6b7280", bg: "#f8fafc", icon: "📎" };
+};
+
+const isImageExt = (filename) =>
+  /\.(jpe?g|png|webp|gif|svg|bmp)$/i.test(filename || "");
+
+const fmtBytes = (b) => {
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+  return `${(b / (1024 * 1024)).toFixed(2)} MB`;
+};
+
+const MultiFileUploader = ({ setImagePath, image_path, onAllPaths }) => {
+  // Each entry: { id, name, size, status, progress, url, error, preview }
+  // status: "uploading" | "done" | "error"
+  const [files, setFiles] = useState([]);
+  const [dragging, setDragging] = useState(false);
+  const inputRef = useRef();
+  const idRef = useRef(0);
+  const pathsRef = useRef([]); // keeps in sync with state for callbacks
+
+  // ── Sync pathsRef whenever files state changes ────────────────────────────
+  const syncPaths = (updatedFiles) => {
+    const paths = updatedFiles.filter((f) => f.status === "done" && f.url).map((f) => f.url);
+    pathsRef.current = paths;
+    if (paths.length > 0) setImagePath(paths[0]);        // backward-compat: first URL
+    else if (image_path) setImagePath("");                // clear if all removed
+    onAllPaths?.(paths);
+  };
+
+  const makeId = () => `mfu_${++idRef.current}_${Date.now()}`;
+
+  // ── Generate a local preview for image files ──────────────────────────────
+  const makePreview = (file) =>
+    new Promise((res) => {
+      if (!file.type.startsWith("image/")) { res(null); return; }
+      const r = new FileReader();
+      r.onload = (e) => res(e.target.result);
+      r.onerror = () => res(null);
+      r.readAsDataURL(file);
+    });
+
+  // ── Upload a single file entry via XHR (real progress) ───────────────────
+  const uploadEntry = async (entry) => {
+    const { id, file } = entry;
+
+    const setEntryState = (patch) =>
+      setFiles((prev) => {
+        const next = prev.map((f) => (f.id === id ? { ...f, ...patch } : f));
+        syncPaths(next);
+        return next;
+      });
+
+    setEntryState({ status: "uploading", progress: 0 });
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const url = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        // ── Change this endpoint to match your upload API ─────────────────
+        xhr.open("POST", "https://api.dmedia.in/api/upload");
+        const token = localStorage.getItem("authToken");
+        if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable)
+            setEntryState({ progress: Math.round((e.loaded / e.total) * 100) });
+        };
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const data = JSON.parse(xhr.responseText);
+              // Accept the most common response shapes from image-upload APIs:
+              const uploaded =
+                data?.url || data?.data?.url || data?.path ||
+                data?.file_url || data?.filePath || data?.imageUrl || data?.link;
+              if (uploaded) resolve(uploaded);
+              else reject(new Error("No URL in server response"));
+            } catch { reject(new Error("Could not parse server response")); }
+          } else {
+            reject(new Error(`Server error ${xhr.status}: ${xhr.statusText}`));
+          }
+        };
+
+        xhr.onerror = () => reject(new Error("Network error — check your connection"));
+        xhr.send(formData);
+      });
+
+      setEntryState({ status: "done", progress: 100, url });
+      message.success(`✓ ${file.name} uploaded`);
+    } catch (err) {
+      setEntryState({ status: "error", error: err.message });
+      message.error(`✕ ${file.name}: ${err.message}`);
+    }
+  };
+
+  // ── Validate extension before accepting a file ────────────────────────────
+  const isAllowed = (file) => {
+    const ext = file.name.split(".").pop().toLowerCase();
+    return ["pdf", "jpg", "jpeg", "png", "webp", "cdr", "dxf"].includes(ext);
+  };
+
+  // ── Add new File objects (from input or drop) ─────────────────────────────
+  const addFiles = async (rawFiles) => {
+    const allowed = [];
+    for (const f of rawFiles) {
+      if (!isAllowed(f)) {
+        message.warning(`"${f.name}" — unsupported format. Allowed: PDF, JPG, PNG, WEBP, CDR, DXF`);
+        continue;
+      }
+      allowed.push(f);
+    }
+    if (!allowed.length) return;
+
+    const entries = await Promise.all(
+      allowed.map(async (file) => ({
+        id: makeId(),
+        file,
+        name: file.name,
+        size: file.size,
+        status: "uploading",
+        progress: 0,
+        url: null,
+        error: null,
+        preview: await makePreview(file),
+      }))
+    );
+
+    setFiles((prev) => [...prev, ...entries]);
+    entries.forEach(uploadEntry);
+  };
+
+  const handleInputChange = (e) => {
+    addFiles(Array.from(e.target.files || []));
+    e.target.value = "";
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragging(false);
+    addFiles(Array.from(e.dataTransfer.files || []));
+  };
+
+  const retryEntry = (entry) => {
+    setFiles((prev) => prev.map((f) => f.id === entry.id ? { ...f, status: "uploading", progress: 0, url: null, error: null } : f));
+    uploadEntry({ ...entry, status: "uploading" });
+  };
+
+  const removeEntry = (id) => {
+    setFiles((prev) => {
+      const next = prev.filter((f) => f.id !== id);
+      syncPaths(next);
+      return next;
+    });
+  };
+
+  const doneCount = files.filter((f) => f.status === "done").length;
+
+  return (
+    <div style={{ marginBottom: 8 }}>
+
+      {/* ── Supported-format badges ── */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 10 }}>
+        {Object.entries({
+          PDF: "#ef4444", JPG: "#f59e0b", PNG: "#3b82f6",
+          WEBP: "#8b5cf6", CDR: "#f97316", DXF: "#10b981",
+        }).map(([fmt, color]) => (
+          <span key={fmt} style={{
+            fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 6,
+            background: `${color}12`, color, border: `1px solid ${color}33`,
+            letterSpacing: "0.05em",
+          }}>{fmt}</span>
+        ))}
+        <span style={{ fontSize: 10, color: "#9ca3af", alignSelf: "center", marginLeft: 2 }}>
+          · Multiple files supported
+        </span>
+      </div>
+
+      {/* ── Drop zone ── */}
+      <div
+        onClick={() => inputRef.current?.click()}
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={handleDrop}
+        style={{
+          border: `2px dashed ${dragging ? "#7c3aed" : "#c4b5fd"}`,
+          borderRadius: 10, padding: "16px 14px", background: dragging ? "#f3e8ff" : "#faf5ff",
+          textAlign: "center", cursor: "pointer", transition: "all 0.18s ease",
+          transform: dragging ? "scale(1.01)" : "none",
+          marginBottom: files.length ? 12 : 0,
+        }}
+      >
+        <input
+          ref={inputRef}
+          type="file"
+          accept={ACCEPT_ATTR}
+          multiple
+          style={{ display: "none" }}
+          onChange={handleInputChange}
+        />
+        <div style={{ fontSize: 24, marginBottom: 5 }}>{dragging ? "📂" : "🗂️"}</div>
+        <div style={{ fontWeight: 700, fontSize: 13, color: dragging ? "#7c3aed" : "#6d28d9", marginBottom: 3 }}>
+          {dragging ? "Drop files here!" : "Click or drag files to upload"}
+        </div>
+        <div style={{ fontSize: 10, color: "#9ca3af" }}>
+          PDF · JPG · PNG · WEBP · CDR · DXF — pick multiple at once
+        </div>
+      </div>
+
+      {/* ── File list ── */}
+      {files.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {files.map((entry) => {
+            const cfg = getExtCfg(entry.name);
+            return (
+              <div key={entry.id} style={{
+                display: "flex", alignItems: "flex-start", gap: 10,
+                background: entry.status === "done" ? "#f0fdf4"
+                  : entry.status === "error" ? "#fef2f2" : "#f8fafc",
+                border: `1px solid ${entry.status === "done" ? "#86efac"
+                  : entry.status === "error" ? "#fca5a5" : "#e5e7eb"}`,
+                borderRadius: 10, padding: "10px 12px",
+              }}>
+
+                {/* Preview thumbnail or icon */}
+                <div style={{
+                  width: 42, height: 42, borderRadius: 8, flexShrink: 0,
+                  overflow: "hidden", background: "#f1f5f9",
+                  border: "1px solid #e5e7eb",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  {entry.preview
+                    ? <img src={entry.preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    : <span style={{ fontSize: 20 }}>{cfg.icon}</span>
+                  }
+                </div>
+
+                {/* Info + progress */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+                    <span style={{
+                      fontWeight: 700, fontSize: 12, color: "#111827",
+                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "72%",
+                    }}>{entry.name}</span>
+                    <span style={{
+                      fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 5,
+                      background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.color}33`,
+                      letterSpacing: "0.05em", flexShrink: 0,
+                    }}>{cfg.label}</span>
+                  </div>
+                  <div style={{ fontSize: 10, color: "#9ca3af", marginBottom: 5 }}>{fmtBytes(entry.size)}</div>
+
+                  {entry.status === "uploading" && (
+                    <>
+                      <Progress
+                        percent={entry.progress}
+                        size="small"
+                        strokeColor={{ from: "#7c3aed", to: "#a855f7" }}
+                        trailColor="#e9d5ff"
+                        showInfo={false}
+                        style={{ marginBottom: 2 }}
+                      />
+                      <div style={{ fontSize: 10, color: "#7c3aed", fontWeight: 600 }}>
+                        Uploading… {entry.progress}%
+                      </div>
+                    </>
+                  )}
+
+                  {entry.status === "done" && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <CheckCircleOutlined style={{ color: "#16a34a", fontSize: 12 }} />
+                      <span style={{ fontSize: 11, color: "#16a34a", fontWeight: 700 }}>Uploaded</span>
+                      {entry.url && (
+                        <a href={entry.url} target="_blank" rel="noopener noreferrer"
+                          style={{ fontSize: 10, color: "#0369a1", display: "flex", alignItems: "center", gap: 3, marginLeft: 4 }}>
+                          <EyeOutlined /> View
+                        </a>
+                      )}
+                    </div>
+                  )}
+
+                  {entry.status === "error" && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 11, color: "#ef4444", fontWeight: 700 }}>
+                        ✕ {entry.error || "Upload failed"}
+                      </span>
+                      <Button size="small" onClick={() => retryEntry(entry)}
+                        style={{ height: 20, fontSize: 10, padding: "0 6px", borderRadius: 4, color: "#ef4444", borderColor: "#fca5a5" }}>
+                        Retry
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Remove */}
+                <Button
+                  type="text" size="small" icon={<DeleteOutlined />}
+                  onClick={() => removeEntry(entry.id)}
+                  style={{ color: "#9ca3af", padding: 4, height: 24, flexShrink: 0, marginTop: 2 }}
+                />
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Summary when all done ── */}
+      {doneCount > 0 && files.every((f) => f.status !== "uploading") && (
+        <div style={{
+          marginTop: 8, background: "#f0fdf4", border: "1px solid #86efac",
+          borderRadius: 8, padding: "6px 10px", fontSize: 11, color: "#16a34a",
+          fontWeight: 700, display: "flex", alignItems: "center", gap: 6,
+        }}>
+          <CheckCircleOutlined />
+          {doneCount} file{doneCount !== 1 ? "s" : ""} ready — click "Save Sample" below to attach.
+        </div>
+      )}
+    </div>
+  );
+};
+
 const JobCard = ({
   job, sessionData, infoRequestStatus, hasInfoAccess, isSuperAdmin,
   onOpenSession, onCloseSession, onViewUpload, onRequestInfo, requestingInfo, userEmail,
@@ -536,7 +892,7 @@ const DesignerJobDashboard = () => {
 
   const [designModal, setDesignModal] = useState(false);
   const [designJob, setDesignJob] = useState(null);
-  const [designFilePath, setDesignFilePath] = useState("");
+  const [designFilePath, setDesignFilePath] = useState("");   // first uploaded URL (backward-compat)
   const [designNotes, setDesignNotes] = useState("");
   const [uploading, setUploading] = useState(false);
   const [approving, setApproving] = useState(false);
@@ -561,23 +917,15 @@ const DesignerJobDashboard = () => {
         const res = await fetch(`${BASE}`, { headers: authHeader() });
         const data = await res.json();
         const rows = Array.isArray(data?.data?.jobs) ? data.data.jobs : Array.isArray(data?.data) ? data.data : [];
-        // ── FIX: Include jobs whose current stage is "design" OR whose
-        //         design_status is "approved" (they may have advanced to the
-        //         next stage but should still be visible in this dashboard) ──
         myJobs = rows.filter(
-          (j) =>
-            j.current_stage?.stage === "design" ||
-            j.design_status === "approved"
+          (j) => j.current_stage?.stage === "design" || j.design_status === "approved"
         );
       } else {
         const res = await fetch(`${BASE}/assigned-to/${userId}`, { headers: authHeader() });
         const data = await res.json();
         const rows = Array.isArray(data?.data) ? data.data : [];
-        // ── FIX: Same inclusive filter for non-admin designers ──
         myJobs = rows.filter(
-          (j) =>
-            j.current_stage?.stage === "design" ||
-            j.design_status === "approved"
+          (j) => j.current_stage?.stage === "design" || j.design_status === "approved"
         );
       }
       setJobs(myJobs);
@@ -793,16 +1141,12 @@ const DesignerJobDashboard = () => {
   };
 
   // ─── Derived counts ───────────────────────────────────────────────────────
-
-  // Helper: a job has a design uploaded (in any form)
   const jobHasDesign = (j) =>
     !!(j.design_file || j.cart_items?.some((i) => i.design_file));
 
-  // Helper: a job is "done" from a designer's active-work perspective
   const jobIsDesignDone = (j) =>
     jobHasDesign(j) || j.design_status === "approved";
 
-  // "Total Assigned" = jobs still needing design work (no upload yet, not approved)
   const activeJobsCount     = jobs.filter((j) => !jobIsDesignDone(j)).length;
   const liveCount           = Object.values(sessionMap).filter((s) => s?.has_open_session).length;
   const onHoldCount         = jobs.filter((j) => j.job_status === "on_hold" && !jobIsDesignDone(j)).length;
@@ -817,17 +1161,14 @@ const DesignerJobDashboard = () => {
       case FILTER_LIVE:
         return sessData?.has_open_session === true;
       case FILTER_ON_HOLD:
-        // On Hold filter: only jobs on hold that don't yet have a design uploaded/approved
         return job.job_status === "on_hold" && !jobIsDesignDone(job);
       case FILTER_DESIGN_UPLOADED:
-        // Design Uploaded: has a file but NOT yet approved
         return jobHasDesign(job) && job.design_status !== "approved";
       case FILTER_ACCESS_PENDING:
         return infoRequestMap[job._id]?.status === "pending";
       case FILTER_APPROVED_DESIGN:
         return job.design_status === "approved";
       default:
-        // FILTER_ALL (Total Assigned) = jobs with NO design uploaded and NOT approved
         return !jobIsDesignDone(job);
     }
   });
@@ -1168,10 +1509,18 @@ const DesignerJobDashboard = () => {
               {existingDesignFile && !samplePreviewUrl && <DesignFilePreview fileUrl={existingDesignFile} label="Current Sample" isSample />}
               {samplePreviewUrl && <DesignFilePreview fileUrl={samplePreviewUrl} label="New Sample Preview" isSample />}
               <SampleUploadPanel onSampleReady={handleSampleReady} onFileSelected={setOriginalFile} sampleInfo={sampleInfo} />
+
+              {/* ── REPLACED: <UploadHelper> → <MultiFileUploader> ── */}
               <div style={{ marginBottom: 8 }}>
-                <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4, fontStyle: "italic" }}>After selecting your file above, use the uploader below to save the sample to the server:</div>
-                <UploadHelper setImagePath={(path) => setDesignFilePath(path)} image_path={designFilePath} />
+                <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 6, fontStyle: "italic" }}>
+                  Upload one or more design files below (PDF · JPG · PNG · WEBP · CDR · DXF). The first successful upload is used as the sample path.
+                </div>
+                <MultiFileUploader
+                  setImagePath={(path) => setDesignFilePath(path)}
+                  image_path={designFilePath}
+                />
               </div>
+
               <div style={{ marginTop: 6 }}>
                 <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Upload Notes</label>
                 <TextArea rows={2} placeholder="Describe the design, version notes…" value={designNotes} onChange={(e) => setDesignNotes(e.target.value)} style={{ borderRadius: 8 }} />
