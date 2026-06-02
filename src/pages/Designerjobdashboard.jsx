@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
   Button, Tag, Modal, Input, Spin, Empty, Tooltip, Divider,
-  message, Popconfirm, Progress,
+  message, Popconfirm,
 } from "antd";
 import {
   ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, UploadOutlined,
@@ -10,10 +10,10 @@ import {
   PauseCircleOutlined, HistoryOutlined, DownloadOutlined, CloudUploadOutlined,
   WarningOutlined, LinkOutlined, PictureOutlined, LockOutlined, UnlockOutlined,
   SendOutlined, InfoCircleOutlined, HourglassOutlined, TeamOutlined, StarOutlined,
-  DeleteOutlined, PaperClipOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import duration from "dayjs/plugin/duration";
+import UploadHelper from "../helper/UploadHelper";
 
 dayjs.extend(duration);
 
@@ -34,9 +34,9 @@ const profile = () => {
 
 const BASE = "https://api.dmedia.in/api/jobs";
 const INFO_BASE = "https://api.dmedia.in/api/info-requests";
-const UPLOAD_BASE = "https://api.dmedia.in/api";
 const DRIVE_FOLDER_ID = "118wOyN-T0N9IZbiQUER7khCOaEH9GfRQ";
 
+// ─── Filter keys ──────────────────────────────────────────────────────────────
 const FILTER_ALL             = "all";
 const FILTER_LIVE            = "live";
 const FILTER_ON_HOLD         = "on_hold";
@@ -71,71 +71,6 @@ const compressImage = (file, maxSizeBytes = 900 * 1024) =>
     };
     reader.onerror = reject;
     reader.readAsDataURL(file);
-  });
-
-// ─── Upload a single file to server ──────────────────────────────────────────
-const UPLOAD_ENDPOINTS = [
-  `${UPLOAD_BASE}/upload`,
-  `${UPLOAD_BASE}/uploads`,
-  `${UPLOAD_BASE}/files/upload`,
-  `${UPLOAD_BASE}/media/upload`,
-];
-
-const extractUploadedUrl = (data) => {
-  if (!data) return null;
-  const direct = data.url || data.file_url || data.fileUrl || data.filePath
-    || data.path || data.imageUrl || data.link || data.image || data.src
-    || data.secure_url || data.Location;
-  if (direct) return direct;
-  const nested = data.data || data.result || data.file || data.upload;
-  if (nested && typeof nested === "object") {
-    const inner = nested.url || nested.file_url || nested.fileUrl || nested.filePath
-      || nested.path || nested.imageUrl || nested.link || nested.image
-      || nested.src || nested.secure_url || nested.Location;
-    if (inner) return inner;
-  }
-  if (Array.isArray(data) && data[0]) {
-    return data[0].url || data[0].file_url || data[0].path || null;
-  }
-  return null;
-};
-
-const uploadFileToServer = (file, onProgress) =>
-  new Promise((resolve, reject) => {
-    let attemptIndex = 0;
-    const tryEndpoint = (url) => {
-      const formData = new FormData();
-      formData.append("file", file);
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", url);
-      const token = localStorage.getItem("authToken");
-      if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 95));
-      };
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const data = JSON.parse(xhr.responseText);
-            const uploaded = extractUploadedUrl(data);
-            if (uploaded) { onProgress(100); resolve(uploaded); }
-            else tryNext(`Server returned no URL (status ${xhr.status})`);
-          } catch { tryNext(`Could not parse response from ${url}`); }
-        } else if (xhr.status === 404) {
-          tryNext(`404 at ${url}`);
-        } else {
-          tryNext(`Server error ${xhr.status} at ${url}`);
-        }
-      };
-      xhr.onerror = () => tryNext(`Network error at ${url}`);
-      xhr.send(formData);
-    };
-    const tryNext = (reason) => {
-      attemptIndex++;
-      if (attemptIndex < UPLOAD_ENDPOINTS.length) tryEndpoint(UPLOAD_ENDPOINTS[attemptIndex]);
-      else reject(new Error("Upload failed. " + reason));
-    };
-    tryEndpoint(UPLOAD_ENDPOINTS[attemptIndex]);
   });
 
 // ─── Status config ────────────────────────────────────────────────────────────
@@ -322,8 +257,7 @@ const SessionStatusPill = ({ sessionData }) => {
   );
 };
 
-// ─── DesignFilePreview with optional cancel ───────────────────────────────────
-const DesignFilePreview = ({ fileUrl, label = "Uploaded Design", isSample = false, onCancel }) => {
+const DesignFilePreview = ({ fileUrl, label = "Uploaded Design", isSample = false }) => {
   if (!fileUrl) return null;
   const isImage = /\.(png|jpe?g|gif|webp|svg|bmp)(\?.*)?$/i.test(fileUrl);
   const isPdf = /\.pdf(\?.*)?$/i.test(fileUrl);
@@ -349,21 +283,6 @@ const DesignFilePreview = ({ fileUrl, label = "Uploaded Design", isSample = fals
           <span onClick={handleDownload} style={{ fontSize: 10, color: "#e9d5ff", fontWeight: 600, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
             <DownloadOutlined /> Download
           </span>
-          {/* ── Cancel / Remove button ── */}
-          {onCancel && (
-            <span
-              onClick={onCancel}
-              style={{
-                fontSize: 10, color: "#fecaca", fontWeight: 700,
-                display: "flex", alignItems: "center", gap: 3,
-                cursor: "pointer", padding: "1px 6px",
-                background: "rgba(239,68,68,0.18)", borderRadius: 6,
-                border: "1px solid rgba(239,68,68,0.35)",
-              }}
-            >
-              <CloseCircleOutlined /> Cancel
-            </span>
-          )}
         </div>
       </div>
       {isImage ? (
@@ -465,258 +384,6 @@ const SampleUploadPanel = ({ onSampleReady, onFileSelected, sampleInfo }) => {
   );
 };
 
-// ═════════════════════════════════════════════════════════════════════════════
-// MultiFileUploader — stores files LOCALLY (no immediate server upload)
-// Files are uploaded to the server only when "Save Sample" is clicked.
-// This avoids broken-endpoint errors on initial file selection.
-// ═════════════════════════════════════════════════════════════════════════════
-
-const ACCEPT_ATTR = ".pdf,.jpg,.jpeg,.png,.webp,.cdr,.CDR,.dxf,.DXF";
-
-const EXT_CFG = {
-  pdf:  { label: "PDF",  color: "#ef4444", bg: "#fef2f2", icon: "📄" },
-  jpg:  { label: "JPG",  color: "#f59e0b", bg: "#fffbeb", icon: "🖼️" },
-  jpeg: { label: "JPG",  color: "#f59e0b", bg: "#fffbeb", icon: "🖼️" },
-  png:  { label: "PNG",  color: "#3b82f6", bg: "#eff6ff", icon: "🖼️" },
-  webp: { label: "WEBP", color: "#8b5cf6", bg: "#f5f3ff", icon: "🖼️" },
-  cdr:  { label: "CDR",  color: "#f97316", bg: "#fff7ed", icon: "🎨" },
-  dxf:  { label: "DXF",  color: "#10b981", bg: "#f0fdf4", icon: "📐" },
-};
-
-const getExtCfg = (filename) => {
-  const ext = (filename || "").split(".").pop().toLowerCase();
-  return EXT_CFG[ext] || { label: ext.toUpperCase() || "FILE", color: "#6b7280", bg: "#f8fafc", icon: "📎" };
-};
-
-const fmtBytes = (b) => {
-  if (b < 1024) return `${b} B`;
-  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
-  return `${(b / (1024 * 1024)).toFixed(2)} MB`;
-};
-
-/**
- * MultiFileUploader
- *
- * Props:
- *   onFilesChange(fileObjects[]) — called whenever the local file list changes.
- *     Each fileObject: { id, file, name, size, preview, localUrl }
- *   existingUrls[] — already-uploaded URLs to show as "done" entries.
- *   onRemoveExisting(url) — called when user removes an existing URL.
- *
- * The PARENT is responsible for actually uploading the files when the user
- * clicks "Save Sample". This component only manages local selection + preview.
- */
-const MultiFileUploader = ({ onFilesChange, existingUrls = [], onRemoveExisting }) => {
-  const [localFiles, setLocalFiles] = useState([]);
-  const [dragging, setDragging] = useState(false);
-  const inputRef = useRef();
-  const idRef = useRef(0);
-
-  const makeId = () => `mfu_${++idRef.current}_${Date.now()}`;
-
-  const makePreview = (file) =>
-    new Promise((res) => {
-      if (!file.type.startsWith("image/")) { res(null); return; }
-      const r = new FileReader();
-      r.onload = (e) => res(e.target.result);
-      r.onerror = () => res(null);
-      r.readAsDataURL(file);
-    });
-
-  const isAllowed = (file) => {
-    const ext = file.name.split(".").pop().toLowerCase();
-    return ["pdf", "jpg", "jpeg", "png", "webp", "cdr", "dxf"].includes(ext);
-  };
-
-  const addFiles = async (rawFiles) => {
-    const allowed = [];
-    for (const f of rawFiles) {
-      if (!isAllowed(f)) {
-        message.warning(`"${f.name}" — unsupported format. Allowed: PDF, JPG, PNG, WEBP, CDR, DXF`);
-        continue;
-      }
-      allowed.push(f);
-    }
-    if (!allowed.length) return;
-
-    const entries = await Promise.all(
-      allowed.map(async (file) => ({
-        id: makeId(),
-        file,
-        name: file.name,
-        size: file.size,
-        localUrl: URL.createObjectURL(file),
-        preview: await makePreview(file),
-      }))
-    );
-
-    setLocalFiles((prev) => {
-      const next = [...prev, ...entries];
-      onFilesChange?.(next);
-      return next;
-    });
-    message.success(`${entries.length} file${entries.length !== 1 ? "s" : ""} added — click "Save Sample" to upload`);
-  };
-
-  const handleInputChange = (e) => {
-    addFiles(Array.from(e.target.files || []));
-    e.target.value = "";
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    setDragging(false);
-    addFiles(Array.from(e.dataTransfer.files || []));
-  };
-
-  const removeLocal = (id) => {
-    setLocalFiles((prev) => {
-      const entry = prev.find((f) => f.id === id);
-      if (entry?.localUrl) URL.revokeObjectURL(entry.localUrl);
-      const next = prev.filter((f) => f.id !== id);
-      onFilesChange?.(next);
-      return next;
-    });
-  };
-
-  // Cleanup object URLs on unmount
-  useEffect(() => {
-    return () => { localFiles.forEach((f) => { if (f.localUrl) URL.revokeObjectURL(f.localUrl); }); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  return (
-    <div style={{ marginBottom: 8 }}>
-      {/* ── Format badges ── */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 10 }}>
-        {Object.entries({ PDF: "#ef4444", JPG: "#f59e0b", PNG: "#3b82f6", WEBP: "#8b5cf6", CDR: "#f97316", DXF: "#10b981" }).map(([fmt, color]) => (
-          <span key={fmt} style={{ fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 6, background: `${color}12`, color, border: `1px solid ${color}33`, letterSpacing: "0.05em" }}>{fmt}</span>
-        ))}
-        <span style={{ fontSize: 10, color: "#9ca3af", alignSelf: "center", marginLeft: 2 }}>· Multiple files supported</span>
-      </div>
-
-      {/* ── Drop zone ── */}
-      <div
-        onClick={() => inputRef.current?.click()}
-        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={handleDrop}
-        style={{
-          border: `2px dashed ${dragging ? "#7c3aed" : "#c4b5fd"}`,
-          borderRadius: 10, padding: "16px 14px", background: dragging ? "#f3e8ff" : "#faf5ff",
-          textAlign: "center", cursor: "pointer", transition: "all 0.18s ease",
-          transform: dragging ? "scale(1.01)" : "none",
-          marginBottom: (localFiles.length || existingUrls.length) ? 12 : 0,
-        }}
-      >
-        <input ref={inputRef} type="file" accept={ACCEPT_ATTR} multiple style={{ display: "none" }} onChange={handleInputChange} />
-        <div style={{ fontSize: 24, marginBottom: 5 }}>{dragging ? "📂" : "🗂️"}</div>
-        <div style={{ fontWeight: 700, fontSize: 13, color: dragging ? "#7c3aed" : "#6d28d9", marginBottom: 3 }}>
-          {dragging ? "Drop files here!" : "Click or drag files to upload"}
-        </div>
-        <div style={{ fontSize: 10, color: "#9ca3af" }}>PDF · JPG · PNG · WEBP · CDR · DXF — pick multiple at once</div>
-      </div>
-
-      {/* ── Already-uploaded (existing) URLs ── */}
-      {existingUrls.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
-          {existingUrls.map((url, idx) => {
-            const ext = url.split("?")[0].split(".").pop().toLowerCase();
-            const cfg = getExtCfg(url);
-            const isImg = ["png", "jpg", "jpeg", "webp", "gif", "svg"].includes(ext);
-            return (
-              <div key={url} style={{
-                display: "flex", alignItems: "center", gap: 10,
-                background: "#f0fdf4", border: "1px solid #86efac",
-                borderRadius: 10, padding: "8px 12px",
-              }}>
-                <div style={{ width: 38, height: 38, borderRadius: 8, overflow: "hidden", background: "#f1f5f9", border: "1px solid #e5e7eb", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  {isImg
-                    ? <img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    : <span style={{ fontSize: 18 }}>{cfg.icon}</span>}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#16a34a" }}><CheckCircleOutlined style={{ marginRight: 4 }} />Uploaded file {idx + 1}</div>
-                  <a href={url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: "#0369a1" }}><EyeOutlined style={{ marginRight: 3 }} />View</a>
-                </div>
-                {onRemoveExisting && (
-                  <Button type="text" size="small" icon={<DeleteOutlined />} onClick={() => onRemoveExisting(url)} style={{ color: "#9ca3af", padding: 4, height: 24, flexShrink: 0 }} />
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* ── Locally selected (pending upload) files ── */}
-      {localFiles.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {localFiles.map((entry) => {
-            const cfg = getExtCfg(entry.name);
-            return (
-              <div key={entry.id} style={{
-                display: "flex", alignItems: "flex-start", gap: 10,
-                background: "#fffbeb", border: "1px solid #fcd34d",
-                borderRadius: 10, padding: "10px 12px",
-              }}>
-                {/* Preview thumbnail or icon */}
-                <div style={{ width: 42, height: 42, borderRadius: 8, flexShrink: 0, overflow: "hidden", background: "#f1f5f9", border: "1px solid #e5e7eb", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  {entry.preview
-                    ? <img src={entry.preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    : <span style={{ fontSize: 20 }}>{cfg.icon}</span>}
-                </div>
-
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
-                    <span style={{ fontWeight: 700, fontSize: 12, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "72%" }}>{entry.name}</span>
-                    <span style={{ fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 5, background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.color}33`, letterSpacing: "0.05em", flexShrink: 0 }}>{cfg.label}</span>
-                  </div>
-                  <div style={{ fontSize: 10, color: "#9ca3af", marginBottom: 4 }}>{fmtBytes(entry.size)}</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{
-                      fontSize: 10, fontWeight: 700, color: "#d97706",
-                      background: "#fef3c7", padding: "1px 7px", borderRadius: 6,
-                      border: "1px solid #fcd34d", display: "flex", alignItems: "center", gap: 4,
-                    }}>
-                      <HourglassOutlined style={{ fontSize: 9 }} />Ready to upload on Save
-                    </span>
-                    {entry.preview && (
-                      <a href={entry.localUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: "#0369a1", display: "flex", alignItems: "center", gap: 3 }}>
-                        <EyeOutlined /> Preview
-                      </a>
-                    )}
-                  </div>
-                </div>
-
-                {/* Remove */}
-                <Button type="text" size="small" icon={<DeleteOutlined />} onClick={() => removeLocal(entry.id)} style={{ color: "#9ca3af", padding: 4, height: 24, flexShrink: 0, marginTop: 2 }} />
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* ── Pending summary ── */}
-      {localFiles.length > 0 && (
-        <div style={{
-          marginTop: 8, background: "#fffbeb", border: "1px solid #fcd34d",
-          borderRadius: 8, padding: "6px 10px", fontSize: 11, color: "#92400e",
-          fontWeight: 700, display: "flex", alignItems: "center", gap: 6,
-        }}>
-          <HourglassOutlined />
-          {localFiles.length} file{localFiles.length !== 1 ? "s" : ""} selected — will be uploaded when you click "Save Sample"
-        </div>
-      )}
-    </div>
-  );
-};
-
-// ─── Helper: upload a Blob/File to the server ─────────────────────────────────
-const uploadBlobToServer = async (fileOrBlob, filename, onProgress) => {
-  const file = fileOrBlob instanceof File ? fileOrBlob : new File([fileOrBlob], filename || "upload", { type: fileOrBlob.type });
-  return uploadFileToServer(file, onProgress);
-};
-
 const JobCard = ({
   job, sessionData, infoRequestStatus, hasInfoAccess, isSuperAdmin,
   onOpenSession, onCloseSession, onViewUpload, onRequestInfo, requestingInfo, userEmail,
@@ -741,7 +408,7 @@ const JobCard = ({
       <div style={{
         padding: "10px 14px",
         background: isDesignApproved
-          ? "linear-gradient(135deg,rgb(20,83,45) 0%,rgb(22,163,74) 100%)"
+          ? "linear-gradient(135deg,rgb(20, 83, 45) 0%,rgb(22, 163, 74) 100%)"
           : isLive
             ? "linear-gradient(135deg,#14532d 0%,#16a34a 100%)"
             : "linear-gradient(135deg,#1e3a8a 0%,#1e40af 100%)",
@@ -751,8 +418,12 @@ const JobCard = ({
           {job.job_no}
         </span>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {isDesignApproved && <span style={{ fontSize: 10, fontWeight: 700, color: "#fbcfe8", background: "rgba(255,255,255,0.15)", padding: "1px 7px", borderRadius: 10 }}>✓ APPROVED</span>}
-          {isLive && !isDesignApproved && <span style={{ fontSize: 10, fontWeight: 700, color: "#bbf7d0", background: "rgba(255,255,255,0.15)", padding: "1px 7px", borderRadius: 10 }}>● LIVE</span>}
+          {isDesignApproved && (
+            <span style={{ fontSize: 10, fontWeight: 700, color: "#fbcfe8", background: "rgba(255,255,255,0.15)", padding: "1px 7px", borderRadius: 10 }}>✓ APPROVED</span>
+          )}
+          {isLive && !isDesignApproved && (
+            <span style={{ fontSize: 10, fontWeight: 700, color: "#bbf7d0", background: "rgba(255,255,255,0.15)", padding: "1px 7px", borderRadius: 10 }}>● LIVE</span>
+          )}
           <StatusBadge status={job.job_status} />
         </div>
       </div>
@@ -776,7 +447,9 @@ const JobCard = ({
               </span>
             </div>
           ))}
-          {(job.cart_items || []).length > 2 && <div style={{ fontSize: 11, color: "#6b7280" }}>+{job.cart_items.length - 2} more items</div>}
+          {(job.cart_items || []).length > 2 && (
+            <div style={{ fontSize: 11, color: "#6b7280" }}>+{job.cart_items.length - 2} more items</div>
+          )}
         </div>
         {sessionData && (sessionData.total_duration_seconds > 0 || sessionData.worked_days > 0) && (
           <div style={{ display: "flex", justifyContent: "space-between", background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "6px 10px", marginBottom: 10, fontSize: 11 }}>
@@ -846,6 +519,7 @@ const DesignerJobDashboard = () => {
   const [sessionMap, setSessionMap] = useState({});
   const [lastRefresh, setLastRefresh] = useState(dayjs());
 
+  // ── Active filter for summary strip ──────────────────────────────────────
   const [activeFilter, setActiveFilter] = useState(FILTER_ALL);
 
   const [infoRequestMap, setInfoRequestMap] = useState({});
@@ -863,15 +537,6 @@ const DesignerJobDashboard = () => {
   const [designModal, setDesignModal] = useState(false);
   const [designJob, setDesignJob] = useState(null);
   const [designFilePath, setDesignFilePath] = useState("");
-
-  // ── Multi-file state ──────────────────────────────────────────────────────
-  // localPendingFiles: FileObject[] selected by MultiFileUploader, not yet uploaded
-  const [localPendingFiles, setLocalPendingFiles] = useState([]);
-  // existingUploadedUrls: already-uploaded URLs (from previous saves)
-  const [existingUploadedUrls, setExistingUploadedUrls] = useState([]);
-  // uploadProgress: map of fileId -> 0-100 while uploading on save
-  const [uploadProgress, setUploadProgress] = useState({});
-
   const [designNotes, setDesignNotes] = useState("");
   const [uploading, setUploading] = useState(false);
   const [approving, setApproving] = useState(false);
@@ -896,12 +561,24 @@ const DesignerJobDashboard = () => {
         const res = await fetch(`${BASE}`, { headers: authHeader() });
         const data = await res.json();
         const rows = Array.isArray(data?.data?.jobs) ? data.data.jobs : Array.isArray(data?.data) ? data.data : [];
-        myJobs = rows.filter((j) => j.current_stage?.stage === "design" || j.design_status === "approved");
+        // ── FIX: Include jobs whose current stage is "design" OR whose
+        //         design_status is "approved" (they may have advanced to the
+        //         next stage but should still be visible in this dashboard) ──
+        myJobs = rows.filter(
+          (j) =>
+            j.current_stage?.stage === "design" ||
+            j.design_status === "approved"
+        );
       } else {
         const res = await fetch(`${BASE}/assigned-to/${userId}`, { headers: authHeader() });
         const data = await res.json();
         const rows = Array.isArray(data?.data) ? data.data : [];
-        myJobs = rows.filter((j) => j.current_stage?.stage === "design" || j.design_status === "approved");
+        // ── FIX: Same inclusive filter for non-admin designers ──
+        myJobs = rows.filter(
+          (j) =>
+            j.current_stage?.stage === "design" ||
+            j.design_status === "approved"
+        );
       }
       setJobs(myJobs);
       setLastRefresh(dayjs());
@@ -1040,28 +717,15 @@ const DesignerJobDashboard = () => {
 
   // ─── Design modal ─────────────────────────────────────────────────────────
   const openDesignModal = (job) => {
-    setDesignJob(job);
-    setDesignFilePath(job.design_file || "");
-    // Populate existing uploaded URLs from the job
-    const existing = [];
-    if (job.design_file) existing.push(job.design_file);
-    if (Array.isArray(job.design_files)) {
-      job.design_files.forEach((u) => { if (u && !existing.includes(u)) existing.push(u); });
-    }
-    setExistingUploadedUrls(existing);
-    setLocalPendingFiles([]);
-    setUploadProgress({});
-    setDesignNotes("");
+    setDesignJob(job); setDesignFilePath(job.design_file || ""); setDesignNotes("");
     setShowRejectInput(false); setRejectReason(""); setSampleInfo(null);
     setOriginalFile(null); setDriveLink(job.design_drive_link || ""); setSamplePreviewUrl(""); setDesignModal(true);
   };
 
   const closeDesignModal = () => {
     if (sampleInfo?.dataUrl) URL.revokeObjectURL(sampleInfo.dataUrl);
-    localPendingFiles.forEach((f) => { if (f.localUrl) URL.revokeObjectURL(f.localUrl); });
-    setDesignModal(false); setDesignJob(null); setDesignFilePath("");
-    setLocalPendingFiles([]); setExistingUploadedUrls([]); setUploadProgress({});
-    setSampleInfo(null); setOriginalFile(null); setDriveLink(""); setSamplePreviewUrl("");
+    setDesignModal(false); setDesignJob(null); setDesignFilePath(""); setSampleInfo(null);
+    setOriginalFile(null); setDriveLink(""); setSamplePreviewUrl("");
   };
 
   const handleSampleReady = (info) => {
@@ -1069,74 +733,18 @@ const DesignerJobDashboard = () => {
     setSampleInfo(info); setSamplePreviewUrl(info?.dataUrl || "");
   };
 
-  // ── Cancel sample upload ──────────────────────────────────────────────────
-  const handleCancelSample = () => {
-    if (sampleInfo?.dataUrl) URL.revokeObjectURL(sampleInfo.dataUrl);
-    setSampleInfo(null);
-    setSamplePreviewUrl("");
-    setOriginalFile(null);
-    // Also clear designFilePath if it was pointing at the sample
-    if (designFilePath === samplePreviewUrl) setDesignFilePath("");
-  };
-
-  // ── Remove an existing uploaded URL ──────────────────────────────────────
-  const handleRemoveExistingUrl = (url) => {
-    setExistingUploadedUrls((prev) => prev.filter((u) => u !== url));
-    if (designFilePath === url) setDesignFilePath(existingUploadedUrls.find((u) => u !== url) || "");
-  };
-
-  // ── Upload all pending files + save ──────────────────────────────────────
   const handleUploadDesign = async () => {
-    const hasSample = !!samplePreviewUrl;
-    const hasExisting = existingUploadedUrls.length > 0;
-    const hasPending = localPendingFiles.length > 0;
-
-    if (!hasSample && !hasExisting && !hasPending) {
-      message.warning("Please upload at least one design file first");
-      return;
-    }
-
+    if (!designFilePath && !samplePreviewUrl) { message.warning("Please upload a design file first"); return; }
     setUploading(true);
     try {
-      // 1. Upload any locally-pending files to the server
-      const newlyUploadedUrls = [];
-      for (const entry of localPendingFiles) {
-        try {
-          const url = await uploadFileToServer(
-            entry.file,
-            (pct) => setUploadProgress((prev) => ({ ...prev, [entry.id]: pct })),
-          );
-          newlyUploadedUrls.push(url);
-          setUploadProgress((prev) => ({ ...prev, [entry.id]: 100 }));
-        } catch (err) {
-          message.error(`Failed to upload "${entry.name}": ${err.message}`);
-          setUploading(false);
-          return; // abort if any file fails
-        }
-      }
-
-      // 2. Build the full URL list
-      const allUrls = [...existingUploadedUrls, ...newlyUploadedUrls];
-      const primaryUrl = allUrls[0] || designFilePath || "";
-
       const liveSecs = getLiveDisplaySecs(designJob._id);
       const res = await fetch(`${BASE}/${designJob._id}/upload_design`, {
         method: "POST", headers: jsonHeader(),
-        body: JSON.stringify({
-          design_file: primaryUrl,
-          design_files: allUrls,
-          design_drive_link: driveLink || null,
-          notes: designNotes,
-          duration_seconds: liveSecs,
-          duration_display: fmtSecs(liveSecs),
-          handled_by: { user_id: userId, name: userName },
-          stage: designJob.current_stage?.stage || "design",
-          is_sample: true,
-        }),
+        body: JSON.stringify({ design_file: designFilePath, design_drive_link: driveLink || null, notes: designNotes, duration_seconds: liveSecs, duration_display: fmtSecs(liveSecs), handled_by: { user_id: userId, name: userName }, stage: designJob.current_stage?.stage || "design", is_sample: true }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.message || "Upload failed");
-      message.success(`Design saved! (${allUrls.length} file${allUrls.length !== 1 ? "s" : ""})`);
+      message.success("Design saved!");
       stopLiveTimer(designJob._id);
       closeDesignModal();
       loadJobs();
@@ -1185,9 +793,16 @@ const DesignerJobDashboard = () => {
   };
 
   // ─── Derived counts ───────────────────────────────────────────────────────
-  const jobHasDesign = (j) => !!(j.design_file || j.cart_items?.some((i) => i.design_file));
-  const jobIsDesignDone = (j) => jobHasDesign(j) || j.design_status === "approved";
 
+  // Helper: a job has a design uploaded (in any form)
+  const jobHasDesign = (j) =>
+    !!(j.design_file || j.cart_items?.some((i) => i.design_file));
+
+  // Helper: a job is "done" from a designer's active-work perspective
+  const jobIsDesignDone = (j) =>
+    jobHasDesign(j) || j.design_status === "approved";
+
+  // "Total Assigned" = jobs still needing design work (no upload yet, not approved)
   const activeJobsCount     = jobs.filter((j) => !jobIsDesignDone(j)).length;
   const liveCount           = Object.values(sessionMap).filter((s) => s?.has_open_session).length;
   const onHoldCount         = jobs.filter((j) => j.job_status === "on_hold" && !jobIsDesignDone(j)).length;
@@ -1199,22 +814,34 @@ const DesignerJobDashboard = () => {
   const filteredJobs = jobs.filter((job) => {
     const sessData = sessionMap[job._id];
     switch (activeFilter) {
-      case FILTER_LIVE:            return sessData?.has_open_session === true;
-      case FILTER_ON_HOLD:         return job.job_status === "on_hold" && !jobIsDesignDone(job);
-      case FILTER_DESIGN_UPLOADED: return jobHasDesign(job) && job.design_status !== "approved";
-      case FILTER_ACCESS_PENDING:  return infoRequestMap[job._id]?.status === "pending";
-      case FILTER_APPROVED_DESIGN: return job.design_status === "approved";
-      default:                     return !jobIsDesignDone(job);
+      case FILTER_LIVE:
+        return sessData?.has_open_session === true;
+      case FILTER_ON_HOLD:
+        // On Hold filter: only jobs on hold that don't yet have a design uploaded/approved
+        return job.job_status === "on_hold" && !jobIsDesignDone(job);
+      case FILTER_DESIGN_UPLOADED:
+        // Design Uploaded: has a file but NOT yet approved
+        return jobHasDesign(job) && job.design_status !== "approved";
+      case FILTER_ACCESS_PENDING:
+        return infoRequestMap[job._id]?.status === "pending";
+      case FILTER_APPROVED_DESIGN:
+        return job.design_status === "approved";
+      default:
+        // FILTER_ALL (Total Assigned) = jobs with NO design uploaded and NOT approved
+        return !jobIsDesignDone(job);
     }
   });
 
+  // ─── Summary strip config ─────────────────────────────────────────────────
   const summaryItems = [
-    { key: FILTER_ALL,             label: "Total Assigned",  value: activeJobsCount,     color: "#3b82f6", bg: "#eff6ff", activeBg: "#dbeafe", border: "#bfdbfe" },
-    { key: FILTER_LIVE,            label: "Live Sessions",   value: liveCount,           color: "#16a34a", bg: "#f0fdf4", activeBg: "#dcfce7", border: "#86efac" },
-    { key: FILTER_ON_HOLD,         label: "On Hold",         value: onHoldCount,         color: "#f97316", bg: "#fff7ed", activeBg: "#ffedd5", border: "#fdba74" },
-    { key: FILTER_DESIGN_UPLOADED, label: "Design Uploaded", value: designUploadedCount, color: "#8b5cf6", bg: "#f5f3ff", activeBg: "#ede9fe", border: "#c4b5fd" },
-    { key: FILTER_APPROVED_DESIGN, label: "Design Approved", value: approvedDesignCount, color: "#be185d", bg: "#fce7f3", activeBg: "#fbcfe8", border: "#f9a8d4" },
-    ...(!isSuperAdmin ? [{ key: FILTER_ACCESS_PENDING, label: "Access Pending", value: accessPendingCount, color: "#d97706", bg: "#fffbeb", activeBg: "#fef3c7", border: "#fcd34d" }] : []),
+    { key: FILTER_ALL,             label: "Total Assigned",  value: activeJobsCount,         color: "#3b82f6", bg: "#eff6ff", activeBg: "#dbeafe", border: "#bfdbfe" },
+    { key: FILTER_LIVE,            label: "Live Sessions",   value: liveCount,               color: "#16a34a", bg: "#f0fdf4", activeBg: "#dcfce7", border: "#86efac" },
+    { key: FILTER_ON_HOLD,         label: "On Hold",         value: onHoldCount,             color: "#f97316", bg: "#fff7ed", activeBg: "#ffedd5", border: "#fdba74" },
+    { key: FILTER_DESIGN_UPLOADED, label: "Design Uploaded", value: designUploadedCount,     color: "#8b5cf6", bg: "#f5f3ff", activeBg: "#ede9fe", border: "#c4b5fd" },
+    { key: FILTER_APPROVED_DESIGN, label: "Design Approved", value: approvedDesignCount,     color: "#be185d", bg: "#fce7f3", activeBg: "#fbcfe8", border: "#f9a8d4" },
+    ...(!isSuperAdmin ? [
+      { key: FILTER_ACCESS_PENDING, label: "Access Pending", value: accessPendingCount,      color: "#d97706", bg: "#fffbeb", activeBg: "#fef3c7", border: "#fcd34d" },
+    ] : []),
   ];
 
   const existingDesignFile = designJob?.design_file;
@@ -1222,11 +849,6 @@ const DesignerJobDashboard = () => {
   const hasExistingDesign = !!(existingDesignFile || cartDesignFile);
   const designSessData = designJob ? sessionMap[designJob._id] : null;
   const designLiveSecs = designJob ? getLiveDisplaySecs(designJob._id) : 0;
-
-  const totalFilesQueued = localPendingFiles.length + existingUploadedUrls.length;
-
-  // ─── Per-file upload progress display during save ─────────────────────────
-  const isUploadingFiles = uploading && localPendingFiles.length > 0;
 
   return (
     <div style={{ padding: "16px", background: "linear-gradient(160deg,#f0f4ff 0%,#f8fafc 60%,#faf5ff 100%)", minHeight: "100vh" }}>
@@ -1258,37 +880,62 @@ const DesignerJobDashboard = () => {
         </Tooltip>
       </div>
 
-      {/* ── Summary strip ── */}
+      {/* ── Summary strip (CLICKABLE FILTERS) ── */}
       <div style={{ display: "grid", gridTemplateColumns: `repeat(${summaryItems.length}, minmax(0, 1fr))`, gap: 10, marginBottom: 16 }}>
         {summaryItems.map(({ key, label, value, color, bg, activeBg, border }) => {
           const isActive = activeFilter === key;
           return (
-            <div key={key} onClick={() => setActiveFilter(isActive ? FILTER_ALL : key)}
+            <div
+              key={key}
+              onClick={() => setActiveFilter(isActive ? FILTER_ALL : key)}
               style={{
-                background: isActive ? activeBg : bg, borderRadius: 10, padding: "10px 10px",
+                background: isActive ? activeBg : bg,
+                borderRadius: 10, padding: "10px 10px",
                 border: `${isActive ? "2px" : "1px"} solid ${isActive ? color : `${color}33`}`,
-                cursor: "pointer", transition: "all 0.18s ease",
+                cursor: "pointer",
+                transition: "all 0.18s ease",
                 boxShadow: isActive ? `0 0 0 3px ${color}22, 0 2px 8px ${color}22` : "none",
-                transform: isActive ? "translateY(-1px)" : "none", position: "relative",
-              }}>
-              {isActive && <div style={{ position: "absolute", top: 6, right: 8, width: 7, height: 7, borderRadius: "50%", background: color, animation: "pulse 1.5s infinite" }} />}
+                transform: isActive ? "translateY(-1px)" : "none",
+                position: "relative",
+              }}
+            >
+              {isActive && (
+                <div style={{
+                  position: "absolute", top: 6, right: 8,
+                  width: 7, height: 7, borderRadius: "50%",
+                  background: color, animation: "pulse 1.5s infinite",
+                }} />
+              )}
               <div style={{ fontSize: 18, fontWeight: 800, color }}>{value}</div>
               <div style={{ fontSize: 10, color: isActive ? color : "#6b7280", fontWeight: isActive ? 700 : 600 }}>{label}</div>
-              {isActive && <div style={{ fontSize: 8, color, fontWeight: 700, marginTop: 2, textTransform: "uppercase", letterSpacing: "0.04em" }}>● Filtering</div>}
+              {isActive && (
+                <div style={{ fontSize: 8, color, fontWeight: 700, marginTop: 2, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                  ● Filtering
+                </div>
+              )}
             </div>
           );
         })}
       </div>
 
+      {/* ── Active filter banner ── */}
       {activeFilter !== FILTER_ALL && (
-        <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 10, padding: "8px 14px", marginBottom: 14, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{
+          background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 10,
+          padding: "8px 14px", marginBottom: 14,
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
           <span style={{ fontSize: 12, color: "#0369a1", fontWeight: 600 }}>
             Showing <strong>{filteredJobs.length}</strong> job{filteredJobs.length !== 1 ? "s" : ""} for filter: <strong>{summaryItems.find((s) => s.key === activeFilter)?.label}</strong>
           </span>
-          <Button size="small" onClick={() => setActiveFilter(FILTER_ALL)} style={{ fontSize: 11, height: 24, borderRadius: 6, color: "#0369a1", borderColor: "#bae6fd" }}>Clear Filter ×</Button>
+          <Button size="small" onClick={() => setActiveFilter(FILTER_ALL)}
+            style={{ fontSize: 11, height: 24, borderRadius: 6, color: "#0369a1", borderColor: "#bae6fd" }}>
+            Clear Filter ×
+          </Button>
         </div>
       )}
 
+      {/* ── Privacy notice for designers ── */}
       {!isSuperAdmin && (
         <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 10, padding: "10px 14px", marginBottom: 16, display: "flex", alignItems: "flex-start", gap: 10 }}>
           <LockOutlined style={{ color: "#0369a1", fontSize: 16, marginTop: 1, flexShrink: 0 }} />
@@ -1307,7 +954,7 @@ const DesignerJobDashboard = () => {
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={
               <div>
                 <div style={{ fontWeight: 700, fontSize: 15, color: "#374151", marginBottom: 4 }}>
-                  {activeFilter === FILTER_ALL ? "No jobs assigned" : "No jobs match this filter"}
+                  {activeFilter === FILTER_ALL ? "No jobs assigned" : `No jobs match this filter`}
                 </div>
                 <div style={{ fontSize: 13, color: "#6b7280" }}>
                   {activeFilter === FILTER_ALL
@@ -1370,7 +1017,9 @@ const DesignerJobDashboard = () => {
               <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>{(requestJob.cart_items || []).map((i) => i.product_name).join(", ")}</div>
             </div>
           )}
-          <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#6b7280", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>Reason for Request (optional)</label>
+          <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#6b7280", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            Reason for Request (optional)
+          </label>
           <TextArea rows={3} placeholder="e.g. Need to coordinate delivery timing with customer…" value={requestReason} onChange={(e) => setRequestReason(e.target.value)} style={{ borderRadius: 8 }} />
           <div style={{ marginTop: 10, fontSize: 11, color: "#6b7280" }}>
             <HourglassOutlined style={{ marginRight: 4 }} />An admin will review your request. You'll see the status update on the job card.
@@ -1447,7 +1096,6 @@ const DesignerJobDashboard = () => {
         footer={null} width={600} destroyOnClose styles={{ body: { maxHeight: "82vh", overflowY: "auto", padding: "16px 20px" } }}>
         {designJob && (
           <div>
-            {/* Job summary */}
             <div style={{ background: "linear-gradient(135deg,#f5f3ff,#eff6ff)", borderRadius: 10, padding: "12px 14px", marginBottom: 14, border: "1px solid #ddd6fe" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                 <div>
@@ -1472,7 +1120,6 @@ const DesignerJobDashboard = () => {
               </div>
             </div>
 
-            {/* Timer */}
             <div style={{ background: liveTimers[designJob._id] ? "#eff6ff" : "#f9fafb", border: `1px solid ${liveTimers[designJob._id] ? "#bfdbfe" : "#e5e7eb"}`, borderRadius: 10, padding: "12px 14px", marginBottom: 14 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
                 <ClockCircleOutlined style={{ marginRight: 4 }} />Accumulated Design Time
@@ -1514,90 +1161,24 @@ const DesignerJobDashboard = () => {
               </div>
             </div>
 
-            {/* ── Sample upload section ── */}
             <div style={{ marginBottom: 6 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
                 <PictureOutlined style={{ marginRight: 4 }} />{existingDesignFile ? "Update Sample File" : "Upload Sample File"} (auto-compressed ≤ 1 MB)
               </div>
-
-              {/* Show existing server sample with cancel button */}
-              {existingDesignFile && !samplePreviewUrl && (
-                <DesignFilePreview
-                  fileUrl={existingDesignFile}
-                  label="Current Sample"
-                  isSample
-                  onCancel={() => {
-                    // Remove existing server sample reference (will be cleared on save)
-                    setDesignFilePath("");
-                    setExistingUploadedUrls((prev) => prev.filter((u) => u !== existingDesignFile));
-                  }}
-                />
-              )}
-
-              {/* Show new locally-compressed sample preview with cancel button */}
-              {samplePreviewUrl && (
-                <DesignFilePreview
-                  fileUrl={samplePreviewUrl}
-                  label="New Sample Preview"
-                  isSample
-                  onCancel={handleCancelSample}
-                />
-              )}
-
+              {existingDesignFile && !samplePreviewUrl && <DesignFilePreview fileUrl={existingDesignFile} label="Current Sample" isSample />}
+              {samplePreviewUrl && <DesignFilePreview fileUrl={samplePreviewUrl} label="New Sample Preview" isSample />}
               <SampleUploadPanel onSampleReady={handleSampleReady} onFileSelected={setOriginalFile} sampleInfo={sampleInfo} />
-
-              {/* ── Multi-file uploader (local-only, uploads on Save) ── */}
               <div style={{ marginBottom: 8 }}>
-                <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 6, fontStyle: "italic" }}>
-                  Add one or more design files below (PDF · JPG · PNG · WEBP · CDR · DXF). Files upload when you click "Save Sample".
-                </div>
-                <MultiFileUploader
-                  onFilesChange={setLocalPendingFiles}
-                  existingUrls={existingUploadedUrls}
-                  onRemoveExisting={handleRemoveExistingUrl}
-                />
+                <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4, fontStyle: "italic" }}>After selecting your file above, use the uploader below to save the sample to the server:</div>
+                <UploadHelper setImagePath={(path) => setDesignFilePath(path)} image_path={designFilePath} />
               </div>
-
-              {/* ── Per-file upload progress (shown during save) ── */}
-              {isUploadingFiles && localPendingFiles.map((entry) => {
-                const pct = uploadProgress[entry.id] || 0;
-                return (
-                  <div key={entry.id} style={{ marginBottom: 6 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#374151", marginBottom: 2 }}>
-                      <span style={{ fontWeight: 600, maxWidth: "75%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.name}</span>
-                      <span style={{ color: "#7c3aed", fontWeight: 700 }}>{pct}%</span>
-                    </div>
-                    <Progress percent={pct} size="small" strokeColor={{ from: "#7c3aed", to: "#a855f7" }} trailColor="#e9d5ff" showInfo={false} />
-                  </div>
-                );
-              })}
-
-              {/* ── File count badge ── */}
-              {totalFilesQueued > 0 && !uploading && (
-                <div style={{ marginBottom: 8, fontSize: 11, color: "#7c3aed", fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
-                  <PaperClipOutlined />
-                  {existingUploadedUrls.length > 0 && `${existingUploadedUrls.length} existing`}
-                  {existingUploadedUrls.length > 0 && localPendingFiles.length > 0 && " + "}
-                  {localPendingFiles.length > 0 && `${localPendingFiles.length} pending upload`}
-                </div>
-              )}
-
               <div style={{ marginTop: 6 }}>
                 <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Upload Notes</label>
                 <TextArea rows={2} placeholder="Describe the design, version notes…" value={designNotes} onChange={(e) => setDesignNotes(e.target.value)} style={{ borderRadius: 8 }} />
               </div>
-
-              <Button
-                type="primary"
-                icon={uploading ? <Spin size="small" /> : <UploadOutlined />}
-                loading={uploading}
-                disabled={!samplePreviewUrl && existingUploadedUrls.length === 0 && localPendingFiles.length === 0}
-                onClick={handleUploadDesign}
-                style={{ marginTop: 10, width: "100%", height: 38, background: "#7c3aed", border: "none", borderRadius: 8, fontWeight: 600 }}
-              >
-                {uploading
-                  ? `Uploading… (${localPendingFiles.length} file${localPendingFiles.length !== 1 ? "s" : ""})`
-                  : `${existingDesignFile ? "Update Sample" : "Save Sample"}${totalFilesQueued > 1 ? ` (${totalFilesQueued} files)` : ""}${designLiveSecs > 0 ? ` · ${fmtSecs(designLiveSecs)} logged` : ""}`}
+              <Button type="primary" icon={<UploadOutlined />} loading={uploading} disabled={!designFilePath && !samplePreviewUrl} onClick={handleUploadDesign}
+                style={{ marginTop: 10, width: "100%", height: 38, background: "#7c3aed", border: "none", borderRadius: 8, fontWeight: 600 }}>
+                {existingDesignFile ? "Update Sample" : "Save Sample"}{designLiveSecs > 0 && ` (${fmtSecs(designLiveSecs)} logged)`}
               </Button>
             </div>
 
@@ -1627,7 +1208,7 @@ const DesignerJobDashboard = () => {
               <>
                 <Divider style={{ margin: "12px 0" }}><span style={{ fontSize: 11, color: "#6b7280", fontWeight: 600 }}>Design Review</span></Divider>
                 <div style={{ background: "#fefce8", border: "1px solid #fde68a", borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 12, color: "#92400e" }}>
-                  A design file has been uploaded. You can approve or reject it below.
+                   A design file has been uploaded. You can approve or reject it below.
                   {designJob.design_status === "rejected" && designJob.design_rejection_reason && (
                     <div style={{ marginTop: 6, color: "#ef4444", fontWeight: 600 }}>⚠ Previously rejected: "{designJob.design_rejection_reason}"</div>
                   )}
@@ -1663,3 +1244,4 @@ const DesignerJobDashboard = () => {
 };
 
 export default DesignerJobDashboard;
+

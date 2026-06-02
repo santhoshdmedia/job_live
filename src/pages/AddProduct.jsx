@@ -476,6 +476,32 @@ const MaterialIssueHistoryModal = ({ open, onClose, product }) => {
   );
 };
 
+// ─── Size Calculator Helper ───────────────────────────────────────────────────
+const calculateArea = (width, height, widthUnit, heightUnit, targetUnit) => {
+  if (!width || !height) return null;
+  
+  // Convert to base unit (feet for area calculations)
+  const toFeet = (value, unit) => {
+    const conversions = {
+      inches: 1/12,
+      feet: 1,
+      cm: 0.0328084,
+      meters: 3.28084,
+      mm: 0.00328084
+    };
+    return value * (conversions[unit] || 1);
+  };
+  
+  const widthInFeet = toFeet(parseFloat(width), widthUnit);
+  const heightInFeet = toFeet(parseFloat(height), heightUnit);
+  const areaInSqFt = widthInFeet * heightInFeet;
+  
+  // Convert to target unit
+  if (targetUnit === 'sqft') return areaInSqFt;
+  if (targetUnit === 'sqm') return areaInSqFt * 0.092903;
+  return areaInSqFt;
+};
+
 // ─── NewProductStockModal ─────────────────────────────────────────────────────
 const NewProductStockModal = ({ open, onClose, onSuccess }) => {
   const [form]         = Form.useForm();
@@ -483,8 +509,9 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
   const [stockImages, setStockImages]   = useState([]);
   const [primaryUnit, setPrimaryUnit]   = useState("pcs");
   const [stockQty, setStockQty]         = useState({ qty: 0 });
+  const [calculatedArea, setCalculatedArea] = useState(null);
 
-  // ✅ FIX: width and height each carry their own unit
+  // Product size state
   const [productSize, setProductSize] = useState({
     width:       "",
     width_unit:  "feet",
@@ -499,19 +526,49 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
       setPrimaryUnit("pcs");
       setStockQty({ qty: 0 });
       setProductSize({ width: "", width_unit: "feet", height: "", height_unit: "feet" });
+      setCalculatedArea(null);
     } else {
       form.setFieldsValue({ date: moment() });
     }
   }, [open, form]);
 
+  // Calculate area when width, height, or primary unit changes
+  useEffect(() => {
+    if (primaryUnit === 'sqft' || primaryUnit === 'sqm') {
+      if (productSize.width && productSize.height) {
+        const area = calculateArea(
+          productSize.width, 
+          productSize.height, 
+          productSize.width_unit, 
+          productSize.height_unit, 
+          primaryUnit
+        );
+        setCalculatedArea(area);
+        if (area) {
+          setStockQty({ qty: area });
+        }
+      } else {
+        setCalculatedArea(null);
+        if (stockQty.qty !== 0) {
+          setStockQty({ qty: 0 });
+        }
+      }
+    } else {
+      setCalculatedArea(null);
+    }
+  }, [productSize.width, productSize.height, productSize.width_unit, productSize.height_unit, primaryUnit]);
+
   const handleSubmit = async (values) => {
     try {
       setLoading(true);
 
-      const qty = stockQty.qty || 0;
+      let qty = stockQty.qty || 0;
+      
+      // If primary unit is area-based, ensure quantity is calculated
+      if ((primaryUnit === 'sqft' || primaryUnit === 'sqm') && calculatedArea && qty === 0) {
+        qty = calculatedArea;
+      }
 
-      // ✅ FIX: Build size payload with separate width_unit and height_unit.
-      //         Also set legacy `unit` to width_unit so old reads degrade gracefully.
       const sizePayload =
         productSize.width !== "" || productSize.height !== ""
           ? {
@@ -519,7 +576,7 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
               width_unit:  productSize.width_unit  || "feet",
               height:      productSize.height !== "" ? Number(productSize.height) : null,
               height_unit: productSize.height_unit || "feet",
-              unit:        productSize.width_unit  || "feet", // legacy compat
+              unit:        productSize.width_unit  || "feet",
             }
           : null;
 
@@ -540,7 +597,6 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
         name:                   values.name,
         material_brand:         values.material_brand || "",
         size:                   sizePayload,
-        // ✅ HSN Code field removed from form — not sent in payload
         type:                   values.type           || "Stand Alone Product",
         MRP_price:              values.MRP_price      || "",
         customer_product_price: values.customer_price || "",
@@ -579,13 +635,15 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
     }
   };
 
-  // ✅ Helper: size preview label
   const sizePreviewLabel = () => {
     const parts = [];
     if (productSize.width !== "")  parts.push(`${productSize.width} ${productSize.width_unit}`);
     if (productSize.height !== "") parts.push(`${productSize.height} ${productSize.height_unit}`);
     return parts.join(" × ");
   };
+
+  // Check if primary unit is area-based
+  const isAreaUnit = primaryUnit === 'sqft' || primaryUnit === 'sqm';
 
   return (
     <Modal open={open} onCancel={onClose} footer={null} width={860} destroyOnClose
@@ -609,19 +667,16 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
             <div className="w-1 h-5 bg-teal-500 rounded-full" />
             <span className="font-bold text-gray-800 text-sm uppercase tracking-wide">Product Details</span>
           </div>
-          {/* ✅ HSN Code field REMOVED — grid is now 3-col for name/brand/type */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Form.Item label="Product Name" name="name" rules={[formValidation("Enter product name")]}>
               <Input placeholder="e.g. Vinyl Banner Roll" className="h-10" />
             </Form.Item>
             <Form.Item label="Material Brand" name="material_brand">
               <Input placeholder="e.g. 3M, LG Hausys" className="h-10" prefix={<span className="text-gray-400 text-sm">🏷️</span>} />
             </Form.Item>
-            
-          <Form.Item label="Product Type" name="type">
-            <Input placeholder="Enter product type" className="h-10" />
-          </Form.Item>
-
+            <Form.Item label="Product Type" name="type">
+              <Input placeholder="Enter product type" className="h-10" />
+            </Form.Item>
             <Form.Item label="MRP Price (₹)" name="MRP_price">
               <Input type="number" placeholder="e.g. 999" className="h-10" prefix="₹" />
             </Form.Item>
@@ -639,8 +694,7 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
             <span className="ml-auto text-xs text-gray-400 font-medium">Optional</span>
           </div>
           <div className="flex gap-4 items-start">
-
-            {/* Width — value + its own unit */}
+            {/* Width */}
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-sm font-semibold text-gray-600">W</span>
@@ -654,7 +708,6 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
                   className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-400"
                   placeholder="Width"
                 />
-                {/* ✅ width_unit — its own select */}
                 <select
                   value={productSize.width_unit}
                   onChange={(e) => setProductSize((prev) => ({ ...prev, width_unit: e.target.value }))}
@@ -665,7 +718,7 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
               </div>
             </div>
 
-            {/* Height — value + its own unit */}
+            {/* Height */}
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-sm font-semibold text-gray-600">H</span>
@@ -679,7 +732,6 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
                   className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-400"
                   placeholder="Height"
                 />
-                {/* ✅ height_unit — its own select */}
                 <select
                   value={productSize.height_unit}
                   onChange={(e) => setProductSize((prev) => ({ ...prev, height_unit: e.target.value }))}
@@ -689,14 +741,28 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
                 </select>
               </div>
             </div>
-
           </div>
 
-          {/* ✅ Preview shows each dimension with its own unit */}
+          {/* Size Preview */}
           {(productSize.width !== "" || productSize.height !== "") && (
             <div className="mt-3 inline-flex px-3 py-1.5 rounded-lg text-xs font-semibold"
               style={{ background: "#fef9c3", border: "1px solid #fde68a", color: "#854d0e" }}>
               📐 Size: {sizePreviewLabel()}
+            </div>
+          )}
+          
+          {/* Calculated Area Display */}
+          {isAreaUnit && calculatedArea !== null && (
+            <div className="mt-3 p-3 rounded-lg" style={{ background: "#dcfce7", border: "1px solid #86efac" }}>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-green-800">📐 Calculated Area:</span>
+                <span className="text-lg font-bold text-green-700">
+                  {calculatedArea.toFixed(2)} {primaryUnit === 'sqft' ? 'sq ft' : 'sq m'}
+                </span>
+              </div>
+              <p className="text-xs text-green-600 mt-1">
+                Based on {productSize.width || 0} {productSize.width_unit} × {productSize.height || 0} {productSize.height_unit}
+              </p>
             </div>
           )}
         </div>
@@ -709,12 +775,27 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
           </div>
           <Text className="text-sm font-semibold text-gray-700 mb-1 block">Primary Unit</Text>
           <Text className="text-xs text-gray-400 mb-2 block">The default unit shown in stock tables and reports</Text>
-          <Select value={primaryUnit} onChange={setPrimaryUnit} className="w-full" size="large"
-            options={UNITS.map((u) => ({ value: u.value, label: `${u.icon} ${u.label}` }))} />
+          <Select 
+            value={primaryUnit} 
+            onChange={(value) => {
+              setPrimaryUnit(value);
+              if (value !== 'sqft' && value !== 'sqm') {
+                setStockQty({ qty: 0 });
+              }
+            }} 
+            className="w-full" 
+            size="large"
+            options={UNITS.map((u) => ({ value: u.value, label: `${u.icon} ${u.label}` }))} 
+          />
           <div className="mt-3">
             <Tag color="green" className="font-semibold text-xs">
               {UNIT_MAP[primaryUnit]?.icon} {unitLabel(primaryUnit)} (primary)
             </Tag>
+            {isAreaUnit && (
+              <Tag color="blue" className="font-semibold text-xs ml-2">
+                📐 Area-based unit - Auto-calculated from size
+              </Tag>
+            )}
           </div>
         </div>
 
@@ -728,10 +809,29 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="md:col-span-2">
               <Text className="text-sm font-semibold text-gray-700 mb-1 block">
-                Initial Stock Quantity <span className="text-red-500">*</span>
+                Initial Stock  <span className="text-red-500">*</span>
               </Text>
-              <UnitQtyInput value={stockQty} onChange={setStockQty} />
-              <Text className="text-xs text-gray-400 mt-1 block">Enter the initial stock quantity for this product</Text>
+              <UnitQtyInput 
+                value={stockQty} 
+                onChange={(val) => {
+                  if (!isAreaUnit || val.qty === 0) {
+                    setStockQty(val);
+                  } else if (isAreaUnit) {
+                    message.warning("For area-based units, quantity is auto-calculated from dimensions");
+                  }
+                }} 
+                disabled={isAreaUnit && calculatedArea !== null}
+              />
+              {isAreaUnit && calculatedArea !== null && (
+                <Text className="text-xs text-green-600 mt-1 block">
+                  ℹ️ Quantity auto-calculated from dimensions: {calculatedArea.toFixed(2)} {primaryUnit}
+                </Text>
+              )}
+              {!isAreaUnit && (
+                <Text className="text-xs text-gray-400 mt-1 block">
+                  Enter the initial stock quantity for this product
+                </Text>
+              )}
             </div>
 
             <Form.Item label="Handler Name" name="handler_name" rules={[formValidation("Enter handler name")]}>
@@ -742,7 +842,6 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
               <Input placeholder="e.g. Warehouse Rack A-3" className="h-10" />
             </Form.Item>
 
-            {/* Auto-filled, non-editable entry date */}
             <Form.Item label="Date & Time" name="date" initialValue={moment()}
               rules={[formValidation("Date & time is required")]}
               getValueProps={(value) => ({ value: value && moment(value) })}>
@@ -754,7 +853,6 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
               <Input placeholder="e.g. INV-001" className="h-10" />
             </Form.Item>
 
-            {/* Invoice date stored in stock_info[].invoice_date */}
             <Form.Item label="Invoice Date & Time" name="invoice_date">
               <DatePicker showTime className="h-10 w-full" format="DD/MM/YYYY h:mm A"
                 placeholder="Select invoice date & time" />
@@ -1121,7 +1219,6 @@ const StockHistoryModal = ({ open, onClose, product }) => {
 };
 
 // ─── Size display helper ──────────────────────────────────────────────────────
-// ✅ Reads the new width_unit/height_unit fields; falls back to legacy `unit`
 const renderSizeCell = (size) => {
   if (!size || (size.width == null && size.height == null)) {
     return <span className="text-xs text-gray-400 italic">—</span>;
@@ -1291,7 +1388,6 @@ const AddProduct = () => {
       csv += cols.join(",") + "\r\n";
       tableData.forEach((product, index) => {
         const size    = product.size;
-        // ✅ Export shows width/height each with their own unit
         const wUnit   = size?.width_unit  || size?.unit || "feet";
         const hUnit   = size?.height_unit || size?.unit || "feet";
         const sizeStr = size
@@ -1400,11 +1496,8 @@ const AddProduct = () => {
           🏷️ {brand}
         </span>
       ) : <span className="text-xs text-gray-400 italic">—</span> },
-
-    // ✅ Size column uses the new renderSizeCell helper
     { title: "Size", key: "size", dataIndex: "size", width: 160,
       render: (size) => renderSizeCell(size) },
-
     { title: "Stock", dataIndex: "totalStock", width: 150, align: "center",
       render: (stock, record) => {
         const primaryUnit = record.primary_unit || "pcs";
