@@ -101,6 +101,26 @@ const STORAGE_KEYS = {
   ACTIVE_TAB:   "products_activeTab",
 };
 
+// ─── Alphabet sequence helper ─────────────────────────────────────────────────
+const indexToAlpha = (index) => {
+  let result = "";
+  let i = index;
+  do {
+    result = String.fromCharCode(65 + (i % 26)) + result;
+    i = Math.floor(i / 26) - 1;
+  } while (i >= 0);
+  return result;
+};
+
+// Generate product code: DM + sanitized product name + suffix (A, B, C...)
+const generateProductCode = (productName, suffixIndex) => {
+  const sanitized = (productName || "PRODUCT")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 8);
+  return `DM${sanitized}${indexToAlpha(suffixIndex)}`;
+};
+
 // ─── Device Detection ─────────────────────────────────────────────────────────
 const isMobileDevice = () =>
   /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
@@ -479,26 +499,15 @@ const MaterialIssueHistoryModal = ({ open, onClose, product }) => {
 // ─── Size Calculator Helper ───────────────────────────────────────────────────
 const calculateArea = (width, height, widthUnit, heightUnit, targetUnit) => {
   if (!width || !height) return null;
-  
-  // Convert to base unit (feet for area calculations)
   const toFeet = (value, unit) => {
-    const conversions = {
-      inches: 1/12,
-      feet: 1,
-      cm: 0.0328084,
-      meters: 3.28084,
-      mm: 0.00328084
-    };
+    const conversions = { inches: 1/12, feet: 1, cm: 0.0328084, meters: 3.28084, mm: 0.00328084 };
     return value * (conversions[unit] || 1);
   };
-  
-  const widthInFeet = toFeet(parseFloat(width), widthUnit);
+  const widthInFeet  = toFeet(parseFloat(width),  widthUnit);
   const heightInFeet = toFeet(parseFloat(height), heightUnit);
-  const areaInSqFt = widthInFeet * heightInFeet;
-  
-  // Convert to target unit
-  if (targetUnit === 'sqft') return areaInSqFt;
-  if (targetUnit === 'sqm') return areaInSqFt * 0.092903;
+  const areaInSqFt   = widthInFeet * heightInFeet;
+  if (targetUnit === "sqft") return areaInSqFt;
+  if (targetUnit === "sqm")  return areaInSqFt * 0.092903;
   return areaInSqFt;
 };
 
@@ -510,8 +519,8 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
   const [primaryUnit, setPrimaryUnit]   = useState("pcs");
   const [stockQty, setStockQty]         = useState({ qty: 0 });
   const [calculatedArea, setCalculatedArea] = useState(null);
+  const [productQuantity, setProductQuantity] = useState(1);
 
-  // Product size state
   const [productSize, setProductSize] = useState({
     width:       "",
     width_unit:  "feet",
@@ -527,6 +536,7 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
       setStockQty({ qty: 0 });
       setProductSize({ width: "", width_unit: "feet", height: "", height_unit: "feet" });
       setCalculatedArea(null);
+      setProductQuantity(1);
     } else {
       form.setFieldsValue({ date: moment() });
     }
@@ -534,40 +544,50 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
 
   // Calculate area when width, height, or primary unit changes
   useEffect(() => {
-    if (primaryUnit === 'sqft' || primaryUnit === 'sqm') {
+    if (primaryUnit === "sqft" || primaryUnit === "sqm") {
       if (productSize.width && productSize.height) {
         const area = calculateArea(
-          productSize.width, 
-          productSize.height, 
-          productSize.width_unit, 
-          productSize.height_unit, 
+          productSize.width,
+          productSize.height,
+          productSize.width_unit,
+          productSize.height_unit,
           primaryUnit
         );
         setCalculatedArea(area);
         if (area) {
-          setStockQty({ qty: area });
+          setStockQty({ qty: parseFloat((area * productQuantity).toFixed(4)) });
         }
       } else {
         setCalculatedArea(null);
-        if (stockQty.qty !== 0) {
-          setStockQty({ qty: 0 });
-        }
+        setStockQty({ qty: 0 });
       }
     } else {
       setCalculatedArea(null);
     }
   }, [productSize.width, productSize.height, productSize.width_unit, productSize.height_unit, primaryUnit]);
 
+  // When quantity changes, update Initial Stock for area units
+  useEffect(() => {
+    if (primaryUnit === "sqft" || primaryUnit === "sqm") {
+      if (calculatedArea) {
+        setStockQty({ qty: parseFloat((calculatedArea * productQuantity).toFixed(4)) });
+      }
+    }
+  }, [productQuantity]);
+
+  const productName    = Form.useWatch("name", form) || "";
+  const generatedCodes = useMemo(() => {
+    const count = Math.max(1, Math.min(productQuantity || 1, 100));
+    return Array.from({ length: count }, (_, i) => generateProductCode(productName, i));
+  }, [productName, productQuantity]);
+
+  // ─── FIX: handleSubmit now stores calculated_area, product_quantity, product_codes ───
   const handleSubmit = async (values) => {
     try {
       setLoading(true);
 
-      let qty = stockQty.qty || 0;
-      
-      // If primary unit is area-based, ensure quantity is calculated
-      if ((primaryUnit === 'sqft' || primaryUnit === 'sqm') && calculatedArea && qty === 0) {
-        qty = calculatedArea;
-      }
+      const qty      = stockQty.qty || 0;
+      const quantity = Math.max(1, productQuantity || 1);
 
       const sizePayload =
         productSize.width !== "" || productSize.height !== ""
@@ -593,39 +613,65 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
         date:         values.date ? values.date.toISOString() : new Date().toISOString(),
       };
 
-      const payload = {
-        name:                   values.name,
-        material_brand:         values.material_brand || "",
-        size:                   sizePayload,
-        type:                   values.type           || "Stand Alone Product",
-        MRP_price:              values.MRP_price      || "",
-        customer_product_price: values.customer_price || "",
-        primary_unit:           primaryUnit,
-        supported_units:        [primaryUnit],
-        unit_stock_summary: [{
-          unit:      primaryUnit,
-          total_in:  qty,
-          total_out: 0,
-          net_stock: qty,
-        }],
-        stock_info:    [stockEntry],
-        stock_count:   qty,
-        stock_offline: [],
-        stocks_status: qty > 10 ? "In Stock" : "Limited",
-        is_visible:    false,
-        material_issues: [],
-        material_stats: {
-          total_issued_qty:   0,
-          total_returned_qty: 0,
-          total_wastage_qty:  0,
-          avg_wastage_pct:    0,
-          issue_count:        0,
-          stats_unit:         primaryUnit,
-        },
-      };
+      // All codes generated for this batch — stored on every record so the
+      // batch relationship is always recoverable from any single document.
+      const allCodes = Array.from({ length: quantity }, (_, i) =>
+        generateProductCode(values.name, i)
+      );
 
-      const result = await addproduct(payload);
-      SUCCESS_NOTIFICATION(result);
+      // Create `quantity` separate product records
+      const creationPromises = allCodes.map((productCode) => {
+        const payload = {
+          name:                   values.name,
+          product_code:           productCode,
+          material_brand:         values.material_brand || "",
+          size:                   sizePayload,
+
+          // ── NEW fields ──────────────────────────────────────────────────────
+          // Area of ONE physical unit (null when unit is not area-based)
+          calculated_area:  calculatedArea !== null
+            ? parseFloat(calculatedArea.toFixed(4))
+            : null,
+
+          // How many products were created in this batch
+          product_quantity: quantity,
+
+          // All auto-generated codes for the batch
+          product_codes:    allCodes,
+          // ───────────────────────────────────────────────────────────────────
+
+          type:                   values.type           || "Stand Alone Product",
+          MRP_price:              values.MRP_price      || "",
+          customer_product_price: values.customer_price || "",
+          primary_unit:           primaryUnit,
+          supported_units:        [primaryUnit],
+          unit_stock_summary: [{
+            unit:      primaryUnit,
+            total_in:  qty,
+            total_out: 0,
+            net_stock: qty,
+          }],
+          stock_info:    [{ ...stockEntry, _id: uuidv4() }],
+          stock_count:   qty,
+          stock_offline: [],
+          stocks_status: qty > 10 ? "In Stock" : "Limited",
+          is_visible:    false,
+          material_issues: [],
+          material_stats: {
+            total_issued_qty:   0,
+            total_returned_qty: 0,
+            total_wastage_qty:  0,
+            avg_wastage_pct:    0,
+            issue_count:        0,
+            stats_unit:         primaryUnit,
+          },
+        };
+        return addproduct(payload);
+      });
+
+      const results = await Promise.all(creationPromises);
+      SUCCESS_NOTIFICATION(results[0]);
+      message.success(`${quantity} product${quantity > 1 ? "s" : ""} created successfully!`);
       onSuccess();
       onClose();
     } catch (err) {
@@ -642,8 +688,7 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
     return parts.join(" × ");
   };
 
-  // Check if primary unit is area-based
-  const isAreaUnit = primaryUnit === 'sqft' || primaryUnit === 'sqm';
+  const isAreaUnit = primaryUnit === "sqft" || primaryUnit === "sqm";
 
   return (
     <Modal open={open} onCancel={onClose} footer={null} width={860} destroyOnClose
@@ -750,14 +795,14 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
               📐 Size: {sizePreviewLabel()}
             </div>
           )}
-          
+
           {/* Calculated Area Display */}
           {isAreaUnit && calculatedArea !== null && (
             <div className="mt-3 p-3 rounded-lg" style={{ background: "#dcfce7", border: "1px solid #86efac" }}>
               <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-green-800">📐 Calculated Area:</span>
+                <span className="text-sm font-semibold text-green-800">📐 Calculated Area (per unit):</span>
                 <span className="text-lg font-bold text-green-700">
-                  {calculatedArea.toFixed(2)} {primaryUnit === 'sqft' ? 'sq ft' : 'sq m'}
+                  {calculatedArea.toFixed(2)} {primaryUnit === "sqft" ? "sq ft" : "sq m"}
                 </span>
               </div>
               <p className="text-xs text-green-600 mt-1">
@@ -775,17 +820,17 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
           </div>
           <Text className="text-sm font-semibold text-gray-700 mb-1 block">Primary Unit</Text>
           <Text className="text-xs text-gray-400 mb-2 block">The default unit shown in stock tables and reports</Text>
-          <Select 
-            value={primaryUnit} 
+          <Select
+            value={primaryUnit}
             onChange={(value) => {
               setPrimaryUnit(value);
-              if (value !== 'sqft' && value !== 'sqm') {
+              if (value !== "sqft" && value !== "sqm") {
                 setStockQty({ qty: 0 });
               }
-            }} 
-            className="w-full" 
+            }}
+            className="w-full"
             size="large"
-            options={UNITS.map((u) => ({ value: u.value, label: `${u.icon} ${u.label}` }))} 
+            options={UNITS.map((u) => ({ value: u.value, label: `${u.icon} ${u.label}` }))}
           />
           <div className="mt-3">
             <Tag color="green" className="font-semibold text-xs">
@@ -807,31 +852,106 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
             <Tag color="success" className="text-xs">Stock IN Entry</Tag>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+            {/* Initial Stock */}
             <div className="md:col-span-2">
               <Text className="text-sm font-semibold text-gray-700 mb-1 block">
-                Initial Stock  <span className="text-red-500">*</span>
+                Initial Stock <span className="text-red-500">*</span>
               </Text>
-              <UnitQtyInput 
-                value={stockQty} 
+              <UnitQtyInput
+                value={stockQty}
                 onChange={(val) => {
-                  if (!isAreaUnit || val.qty === 0) {
+                  if (!isAreaUnit) {
                     setStockQty(val);
-                  } else if (isAreaUnit) {
-                    message.warning("For area-based units, quantity is auto-calculated from dimensions");
+                  } else {
+                    message.warning("For area-based units, quantity is auto-calculated from dimensions × count");
                   }
-                }} 
+                }}
                 disabled={isAreaUnit && calculatedArea !== null}
               />
               {isAreaUnit && calculatedArea !== null && (
                 <Text className="text-xs text-green-600 mt-1 block">
-                  ℹ️ Quantity auto-calculated from dimensions: {calculatedArea.toFixed(2)} {primaryUnit}
+                  ℹ️ Total = {calculatedArea.toFixed(2)} {primaryUnit} × {productQuantity} unit(s) = {stockQty.qty} {primaryUnit}
                 </Text>
               )}
               {!isAreaUnit && (
                 <Text className="text-xs text-gray-400 mt-1 block">
-                  Enter the initial stock quantity for this product
+                  Enter the initial stock quantity per product
                 </Text>
               )}
+            </div>
+
+            {/* Quantity */}
+            <div className="md:col-span-2">
+              <div className="rounded-2xl p-4" style={{ background: "linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%)", border: "1.5px solid #bfdbfe" }}>
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-1 h-5 bg-blue-500 rounded-full" />
+                  <Text className="text-sm font-bold text-gray-800">Quantity</Text>
+                  <span className="text-xs text-gray-400 ml-1">(How many of this product to create)</span>
+                </div>
+                <InputNumber
+                  min={1}
+                  max={100}
+                  value={productQuantity}
+                  onChange={(val) => setProductQuantity(val ?? 1)}
+                  size="large"
+                  style={{ width: "100%", borderRadius: 10 }}
+                  placeholder="1"
+                />
+
+                {/* Product Code Preview */}
+                {productName.trim() !== "" && productQuantity >= 1 && (
+                  <div className="mt-3">
+                    <Text className="text-xs font-semibold text-gray-600 block mb-2">
+                      🏷️ Product codes that will be generated ({generatedCodes.length}):
+                    </Text>
+                    <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
+                      {generatedCodes.slice(0, 26).map((code) => (
+                        <span key={code}
+                          className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-mono font-bold"
+                          style={{ background: "#dbeafe", color: "#1d4ed8", border: "1px solid #93c5fd" }}>
+                          {code}
+                        </span>
+                      ))}
+                      {generatedCodes.length > 26 && (
+                        <span className="text-xs text-gray-400 self-center">
+                          +{generatedCodes.length - 26} more
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Total stock summary */}
+                    {!isAreaUnit && stockQty.qty > 0 && (
+                      <div className="mt-3 p-2 rounded-lg flex items-center justify-between"
+                        style={{ background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
+                        <span className="text-xs text-green-700 font-semibold">
+                          📦 Each product gets:
+                        </span>
+                        <span className="text-sm font-bold text-green-800">
+                          {formatQty(stockQty.qty, primaryUnit)}
+                        </span>
+                      </div>
+                    )}
+                    {isAreaUnit && calculatedArea && (
+                      <div className="mt-3 p-2 rounded-lg flex items-center justify-between"
+                        style={{ background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
+                        <span className="text-xs text-green-700 font-semibold">
+                          📦 Each product gets:
+                        </span>
+                        <span className="text-sm font-bold text-green-800">
+                          {calculatedArea.toFixed(2)} {unitLabel(primaryUnit)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {productName.trim() === "" && (
+                  <Text className="text-xs text-gray-400 mt-2 block">
+                    ℹ️ Enter a product name to preview auto-generated codes
+                  </Text>
+                )}
+              </div>
             </div>
 
             <Form.Item label="Handler Name" name="handler_name" rules={[formValidation("Enter handler name")]}>
@@ -874,7 +994,7 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
           <Button type="primary" htmlType="submit" loading={loading} icon={<PlusOutlined />}
             className="rounded-lg px-6 h-10 font-semibold"
             style={{ background: "#0d9488", borderColor: "#0d9488" }}>
-            Create Product
+            {productQuantity > 1 ? `Create ${productQuantity} Products` : "Create Product"}
           </Button>
         </div>
       </Form>
@@ -1384,7 +1504,7 @@ const AddProduct = () => {
     try {
       setExportLoading(true);
       let csv = "data:text/csv;charset=utf-8,";
-      const cols = ["S.No", "Product Name", "Material Brand", "Size", "Type", "MRP Price", "Primary Unit", "Stock Count"];
+      const cols = ["S.No", "Product Name", "Product Code", "Material Brand", "Size", "Calculated Area", "Product Quantity", "Type", "MRP Price", "Primary Unit", "Stock Count"];
       csv += cols.join(",") + "\r\n";
       tableData.forEach((product, index) => {
         const size    = product.size;
@@ -1394,10 +1514,16 @@ const AddProduct = () => {
           ? `${size.width ?? "—"} ${wUnit} x ${size.height ?? "—"} ${hUnit}`
           : "—";
         const row = {
-          "S.No": index + 1, "Product Name": product.name || "N/A",
-          "Material Brand": product.material_brand || "—", "Size": sizeStr,
+          "S.No": index + 1,
+          "Product Name": product.name || "N/A",
+          "Product Code": product.product_code || "—",
+          "Material Brand": product.material_brand || "—",
+          "Size": sizeStr,
+          "Calculated Area": product.calculated_area != null ? `${product.calculated_area} ${unitLabel(product.primary_unit || "pcs")}` : "—",
+          "Product Quantity": product.product_quantity || 1,
           "Type": product.type || "N/A",
-          "MRP Price": product.MRP_price || "N/A", "Primary Unit": unitLabel(product.primary_unit || "pcs"),
+          "MRP Price": product.MRP_price || "N/A",
+          "Primary Unit": unitLabel(product.primary_unit || "pcs"),
           "Stock Count": product.stock_count ?? 0,
         };
         csv += cols.map((c) => `"${row[c] || ""}"`).join(",") + "\r\n";
@@ -1478,11 +1604,19 @@ const AddProduct = () => {
           </div>
         );
       }},
-    { title: "Name", dataIndex: "name", width: 180,
+    { title: "Name", dataIndex: "name", width: 200,
       render: (data, record) => (
         <div className="flex flex-col space-y-1">
           <Tooltip title={data}><span className="font-semibold text-gray-900 text-sm line-clamp-2">{data}</span></Tooltip>
-          <span className="text-xs text-gray-500">Code: {record.product_code || "N/A"}</span>
+          {record.product_code && (
+            <span className="font-mono text-xs px-1.5 py-0.5 rounded font-bold w-fit"
+              style={{ background: "#dbeafe", color: "#1d4ed8", border: "1px solid #93c5fd" }}>
+              {record.product_code}
+            </span>
+          )}
+          {!record.product_code && (
+            <span className="text-xs text-gray-400">Code: N/A</span>
+          )}
           <span className="inline-flex items-center gap-1">
             <span className="text-xs px-1.5 py-0.5 rounded font-semibold" style={{ background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe" }}>
               {UNIT_MAP[record.primary_unit || "pcs"]?.icon} {unitLabel(record.primary_unit || "pcs")}
@@ -1497,7 +1631,21 @@ const AddProduct = () => {
         </span>
       ) : <span className="text-xs text-gray-400 italic">—</span> },
     { title: "Size", key: "size", dataIndex: "size", width: 160,
-      render: (size) => renderSizeCell(size) },
+      render: (size, record) => (
+        <div className="flex flex-col gap-1">
+          {renderSizeCell(size)}
+          {record.calculated_area != null && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-semibold"
+              style={{ background: "#dcfce7", color: "#166534", border: "1px solid #86efac" }}>
+              📐 {record.calculated_area} {unitLabel(record.primary_unit || "pcs")}
+            </span>
+          )}
+        </div>
+      )},
+    { title: "Qty / Batch", key: "product_quantity", dataIndex: "product_quantity", width: 100, align: "center",
+      render: (qty) => qty > 1 ? (
+        <Tag color="blue" className="font-semibold text-xs">Batch: {qty}</Tag>
+      ) : <span className="text-xs text-gray-500">—</span> },
     { title: "Stock", dataIndex: "totalStock", width: 150, align: "center",
       render: (stock, record) => {
         const primaryUnit = record.primary_unit || "pcs";
