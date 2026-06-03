@@ -39,6 +39,7 @@ import {
   ExperimentOutlined,
   WarningOutlined,
   ExclamationCircleOutlined,
+  EditOutlined,
 } from "@ant-design/icons";
 import _ from "lodash";
 import { v4 as uuidv4 } from "uuid";
@@ -69,6 +70,9 @@ import { formValidation } from "../helper/formvalidation";
 
 const { Title, Text } = Typography;
 const { confirm } = Modal;
+
+// ─── Admin email constant ─────────────────────────────────────────────────────
+const ADMIN_EMAIL = "admin@dmedia.in";
 
 // ─── Unit configuration ───────────────────────────────────────────────────────
 export const UNITS = [
@@ -112,7 +116,6 @@ const indexToAlpha = (index) => {
   return result;
 };
 
-// Generate product code: DM + sanitized product name + suffix (A, B, C...)
 const generateProductCode = (productName, suffixIndex) => {
   const sanitized = (productName || "PRODUCT")
     .toUpperCase()
@@ -511,6 +514,134 @@ const calculateArea = (width, height, widthUnit, heightUnit, targetUnit) => {
   return areaInSqFt;
 };
 
+// ─── EditInvoiceModal (admin only) ────────────────────────────────────────────
+const EditInvoiceModal = ({ open, onClose, product, onSuccess }) => {
+  const [form]    = Form.useForm();
+  const [loading, setLoading] = useState(false);
+
+  // Pre-fill form with the latest stock_info entry's invoice data (or product-level fallback)
+  useEffect(() => {
+    if (!open || !product) return;
+    const latestStock = _.get(product, "stock_info", []);
+    const last = latestStock[latestStock.length - 1] || {};
+    form.setFieldsValue({
+      invoice:      last.invoice      || "",
+      invoice_date: last.invoice_date ? moment(last.invoice_date) : null,
+    });
+  }, [open, product, form]);
+
+  const handleSubmit = async (values) => {
+    try {
+      setLoading(true);
+
+      // Update every stock_info entry (or just the latest — here we update the latest entry)
+      const existingStockInfo = _.get(product, "stock_info", []).map((item) => ({
+        ...item,
+        date: item.date ? new Date(item.date).toISOString() : null,
+      }));
+
+      // Apply the edited invoice fields to the most recent stock_info entry
+      if (existingStockInfo.length > 0) {
+        const lastIndex = existingStockInfo.length - 1;
+        existingStockInfo[lastIndex] = {
+          ...existingStockInfo[lastIndex],
+          invoice:      values.invoice      || "",
+          invoice_date: values.invoice_date ? values.invoice_date.toISOString() : null,
+        };
+      }
+
+      const result = await editProduct(
+        { stock_info: existingStockInfo },
+        product._id
+      );
+      SUCCESS_NOTIFICATION(result);
+      message.success("Invoice details updated successfully!");
+      onSuccess();
+      onClose();
+    } catch (err) {
+      ERROR_NOTIFICATION(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      onCancel={onClose}
+      footer={null}
+      width={480}
+      destroyOnClose
+      title={
+        <div className="flex items-center gap-3 pb-3 border-b border-gray-100">
+          <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center">
+            <EditOutlined style={{ color: "#4f46e5", fontSize: 16 }} />
+          </div>
+          <div>
+            <div className="font-bold text-gray-900 text-base">Edit Invoice Details</div>
+            <div className="text-xs text-gray-500 font-normal truncate max-w-[260px]">
+              {product?.name}
+            </div>
+          </div>
+          <Tag color="purple" className="ml-auto font-semibold text-xs">
+            🔒 Admin Only
+          </Tag>
+        </div>
+      }
+    >
+      <div className="mt-1 mb-4 px-3 py-2 rounded-lg flex items-center gap-2"
+        style={{ background: "#eef2ff", border: "1px solid #c7d2fe" }}>
+        <LockOutlined style={{ color: "#4f46e5", fontSize: 13 }} />
+        <span className="text-xs text-indigo-700 font-medium">
+          Editing invoice fields on the most recent stock entry for this product.
+        </span>
+      </div>
+
+      <Form form={form} layout="vertical" onFinish={handleSubmit}>
+        <Form.Item
+          label={<span className="font-semibold text-gray-700">Invoice No.</span>}
+          name="invoice"
+        >
+          <Input
+            placeholder="e.g. INV-001"
+            className="h-10"
+            prefix={<span className="text-gray-400 text-sm">📄</span>}
+          />
+        </Form.Item>
+
+        <Form.Item
+          label={<span className="font-semibold text-gray-700">Invoice Date &amp; Time</span>}
+          name="invoice_date"
+          getValueProps={(value) => ({ value: value && moment(value) })}
+        >
+          <DatePicker
+            showTime
+            className="h-10 w-full"
+            format="DD/MM/YYYY h:mm A"
+            placeholder="Select invoice date &amp; time"
+          />
+        </Form.Item>
+
+        <div className="flex justify-end gap-3 mt-4 pt-4 border-t border-gray-100">
+          <Button onClick={onClose} className="rounded-lg px-6">
+            Cancel
+          </Button>
+          <Button
+            type="primary"
+            htmlType="submit"
+            loading={loading}
+            icon={<EditOutlined />}
+            className="rounded-lg px-6 h-10 font-semibold"
+            style={{ background: "#4f46e5", borderColor: "#4f46e5" }}
+          >
+            Save Changes
+          </Button>
+        </div>
+      </Form>
+    </Modal>
+  );
+};
+
 // ─── NewProductStockModal ─────────────────────────────────────────────────────
 const NewProductStockModal = ({ open, onClose, onSuccess }) => {
   const [form]         = Form.useForm();
@@ -542,7 +673,6 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
     }
   }, [open, form]);
 
-  // Calculate area when width, height, or primary unit changes
   useEffect(() => {
     if (primaryUnit === "sqft" || primaryUnit === "sqm") {
       if (productSize.width && productSize.height) {
@@ -566,7 +696,6 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
     }
   }, [productSize.width, productSize.height, productSize.width_unit, productSize.height_unit, primaryUnit]);
 
-  // When quantity changes, update Initial Stock for area units
   useEffect(() => {
     if (primaryUnit === "sqft" || primaryUnit === "sqm") {
       if (calculatedArea) {
@@ -581,7 +710,6 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
     return Array.from({ length: count }, (_, i) => generateProductCode(productName, i));
   }, [productName, productQuantity]);
 
-  // ─── FIX: handleSubmit now stores calculated_area, product_quantity, product_codes ───
   const handleSubmit = async (values) => {
     try {
       setLoading(true);
@@ -613,33 +741,21 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
         date:         values.date ? values.date.toISOString() : new Date().toISOString(),
       };
 
-      // All codes generated for this batch — stored on every record so the
-      // batch relationship is always recoverable from any single document.
       const allCodes = Array.from({ length: quantity }, (_, i) =>
         generateProductCode(values.name, i)
       );
 
-      // Create `quantity` separate product records
       const creationPromises = allCodes.map((productCode) => {
         const payload = {
           name:                   values.name,
           product_code:           productCode,
           material_brand:         values.material_brand || "",
           size:                   sizePayload,
-
-          // ── NEW fields ──────────────────────────────────────────────────────
-          // Area of ONE physical unit (null when unit is not area-based)
           calculated_area:  calculatedArea !== null
             ? parseFloat(calculatedArea.toFixed(4))
             : null,
-
-          // How many products were created in this batch
           product_quantity: quantity,
-
-          // All auto-generated codes for the batch
           product_codes:    allCodes,
-          // ───────────────────────────────────────────────────────────────────
-
           type:                   values.type           || "Stand Alone Product",
           MRP_price:              values.MRP_price      || "",
           customer_product_price: values.customer_price || "",
@@ -706,7 +822,6 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
       }>
       <Form form={form} layout="vertical" onFinish={handleSubmit} className="mt-4">
 
-        {/* ── Product Details ── */}
         <div className="mb-4">
           <div className="flex items-center gap-2 mb-3">
             <div className="w-1 h-5 bg-teal-500 rounded-full" />
@@ -731,7 +846,6 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
           </div>
         </div>
 
-        {/* ── Size Section ── */}
         <div className="rounded-2xl p-4 mb-4" style={{ background: "#fefce8", border: "1.5px solid #fde68a" }}>
           <div className="flex items-center gap-2 mb-3">
             <div className="w-1 h-5 bg-yellow-400 rounded-full" />
@@ -739,7 +853,6 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
             <span className="ml-auto text-xs text-gray-400 font-medium">Optional</span>
           </div>
           <div className="flex gap-4 items-start">
-            {/* Width */}
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-sm font-semibold text-gray-600">W</span>
@@ -763,7 +876,6 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
               </div>
             </div>
 
-            {/* Height */}
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-sm font-semibold text-gray-600">H</span>
@@ -788,7 +900,6 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
             </div>
           </div>
 
-          {/* Size Preview */}
           {(productSize.width !== "" || productSize.height !== "") && (
             <div className="mt-3 inline-flex px-3 py-1.5 rounded-lg text-xs font-semibold"
               style={{ background: "#fef9c3", border: "1px solid #fde68a", color: "#854d0e" }}>
@@ -796,7 +907,6 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
             </div>
           )}
 
-          {/* Calculated Area Display */}
           {isAreaUnit && calculatedArea !== null && (
             <div className="mt-3 p-3 rounded-lg" style={{ background: "#dcfce7", border: "1px solid #86efac" }}>
               <div className="flex items-center justify-between">
@@ -812,7 +922,6 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
           )}
         </div>
 
-        {/* ── Unit Configuration ── */}
         <div className="rounded-2xl p-4 mb-4" style={{ background: "#f0fdf4", border: "1.5px solid #bbf7d0" }}>
           <div className="flex items-center gap-2 mb-3">
             <div className="w-1 h-5 bg-teal-600 rounded-full" />
@@ -844,7 +953,6 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
           </div>
         </div>
 
-        {/* ── Initial Stock Info ── */}
         <div className="mb-4">
           <div className="flex items-center gap-2 mb-3">
             <div className="w-1 h-5 bg-green-500 rounded-full" />
@@ -853,7 +961,6 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-            {/* Initial Stock */}
             <div className="md:col-span-2">
               <Text className="text-sm font-semibold text-gray-700 mb-1 block">
                 Initial Stock <span className="text-red-500">*</span>
@@ -881,7 +988,6 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
               )}
             </div>
 
-            {/* Quantity */}
             <div className="md:col-span-2">
               <div className="rounded-2xl p-4" style={{ background: "linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%)", border: "1.5px solid #bfdbfe" }}>
                 <div className="flex items-center gap-2 mb-2">
@@ -899,7 +1005,6 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
                   placeholder="1"
                 />
 
-                {/* Product Code Preview */}
                 {productName.trim() !== "" && productQuantity >= 1 && (
                   <div className="mt-3">
                     <Text className="text-xs font-semibold text-gray-600 block mb-2">
@@ -920,7 +1025,6 @@ const NewProductStockModal = ({ open, onClose, onSuccess }) => {
                       )}
                     </div>
 
-                    {/* Total stock summary */}
                     {!isAreaUnit && stockQty.qty > 0 && (
                       <div className="mt-3 p-2 rounded-lg flex items-center justify-between"
                         style={{ background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
@@ -1385,6 +1489,12 @@ function groupByUnit(unitQtyArray = []) {
 const AddProduct = () => {
   const { user } = useSelector((state) => state.authSlice);
 
+  // ── Check if current user is the admin ──
+  const isAdmin = useMemo(
+    () => user?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase(),
+    [user]
+  );
+
   const [tableData, setTableData]   = useState([]);
   const [search, setSearch]         = useState("");
   const [loading, setLoading]       = useState(false);
@@ -1412,6 +1522,9 @@ const AddProduct = () => {
   const [stockOutProduct, setStockOutProduct]         = useState(null);
   const [stockHistoryProduct, setStockHistoryProduct] = useState(null);
   const [materialIssueProduct, setMaterialIssueProduct] = useState(null);
+
+  // ── Invoice edit modal state (admin only) ──
+  const [editInvoiceProduct, setEditInvoiceProduct] = useState(null);
 
   const [paginationConfig, setPaginationConfig] = useState(() => {
     const savedPageSize   = localStorage.getItem(STORAGE_KEYS.PAGE_SIZE);
@@ -1584,6 +1697,7 @@ const AddProduct = () => {
 
   const activeFilterCount = [filterByProductCategory, filterByProductSubcategory, vendorFilter, filterByType, visibilityFilter, search, stockMin !== "" ? "s" : "", stockMax !== "" ? "s" : "", priceMin !== "" ? "p" : "", priceMax !== "" ? "p" : ""].filter(Boolean).length;
 
+  // ─── Columns (Edit Invoice button shown only to admin) ────────────────────
   const columns = [
     { title: "S.No", dataIndex: "serialNumber", key: "serialNumber", align: "center", width: 60, fixed: "left",
       render: (n) => <span className="text-gray-700 font-semibold">{n}</span> },
@@ -1661,7 +1775,11 @@ const AddProduct = () => {
           </div>
         );
       }},
-    { title: "Actions", width: 260, align: "center", fixed: "right",
+    {
+      title: "Actions",
+      width: isAdmin ? 320 : 260,
+      align: "center",
+      fixed: "right",
       render: (_, record) => (
         <div className="flex items-center justify-center gap-1.5 flex-wrap">
           <Tooltip title="Stock IN">
@@ -1676,13 +1794,36 @@ const AddProduct = () => {
             <Button size="small" icon={<EyeOutlined />} onClick={() => setStockHistoryProduct(record)}
               style={{ background: "#eff6ff", borderColor: "#2563eb", color: "#2563eb", fontWeight: 600, fontSize: 11, borderRadius: 8 }}>History</Button>
           </Tooltip>
+
+          {/* ── Edit Invoice — admin only ── */}
+          {isAdmin && (
+            <Tooltip title="Edit Invoice No. & Invoice Date (Admin only)">
+              <Button
+                size="small"
+                icon={<EditOutlined />}
+                onClick={() => setEditInvoiceProduct(record)}
+                style={{
+                  background: "#f5f3ff",
+                  borderColor: "#7c3aed",
+                  color: "#7c3aed",
+                  fontWeight: 600,
+                  fontSize: 11,
+                  borderRadius: 8,
+                }}
+              >
+                Invoice
+              </Button>
+            </Tooltip>
+          )}
+
           <Tooltip title="Delete product permanently">
             <Button size="small" icon={<DeleteFilled />} loading={deletingProductId === record._id}
               onClick={() => handleDeleteProduct(record)} danger
               style={{ background: "#fff1f2", borderColor: "#ef4444", color: "#ef4444", fontWeight: 600, fontSize: 11, borderRadius: 8 }}>Delete</Button>
           </Tooltip>
         </div>
-      )},
+      ),
+    },
   ];
 
   const paginationProps = {
@@ -1813,6 +1954,16 @@ const AddProduct = () => {
       {stockOutProduct && <StockOutModal open={true} product={stockOutProduct} onClose={() => setStockOutProduct(null)} onSuccess={() => { fetchData(); setStockOutProduct(null); }} />}
       {stockHistoryProduct  && <StockHistoryModal         open={true} product={stockHistoryProduct}  onClose={() => setStockHistoryProduct(null)}  />}
       {materialIssueProduct && <MaterialIssueHistoryModal open={true} product={materialIssueProduct} onClose={() => setMaterialIssueProduct(null)} />}
+
+      {/* ── Edit Invoice Modal (admin only) ── */}
+      {isAdmin && editInvoiceProduct && (
+        <EditInvoiceModal
+          open={true}
+          product={editInvoiceProduct}
+          onClose={() => setEditInvoiceProduct(null)}
+          onSuccess={() => { fetchData(); setEditInvoiceProduct(null); }}
+        />
+      )}
     </div>
   );
 };

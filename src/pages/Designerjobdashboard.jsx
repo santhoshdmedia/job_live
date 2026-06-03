@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from "react";
+import { uploadImage } from "../api"; // ← same import used by UploadHelper
 import {
   Button, Tag, Modal, Input, Spin, Empty, Tooltip, Divider,
-  message, Popconfirm,
+  message, Popconfirm, Progress,
 } from "antd";
 import {
   ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined, UploadOutlined,
@@ -10,10 +11,10 @@ import {
   PauseCircleOutlined, HistoryOutlined, DownloadOutlined, CloudUploadOutlined,
   WarningOutlined, LinkOutlined, PictureOutlined, LockOutlined, UnlockOutlined,
   SendOutlined, InfoCircleOutlined, HourglassOutlined, TeamOutlined, StarOutlined,
+  FilePdfOutlined, FileOutlined, DeleteOutlined, PlusOutlined, LoadingOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import duration from "dayjs/plugin/duration";
-import UploadHelper from "../helper/UploadHelper";
 
 dayjs.extend(duration);
 
@@ -44,8 +45,33 @@ const FILTER_DESIGN_UPLOADED = "design_uploaded";
 const FILTER_ACCESS_PENDING  = "access_pending";
 const FILTER_APPROVED_DESIGN = "approved_design";
 
+// ─── Supported file types ─────────────────────────────────────────────────────
+const SUPPORTED_TYPES = {
+  "image/jpeg":       { label: "JPEG", icon: "🖼", compressible: true },
+  "image/jpg":        { label: "JPG",  icon: "🖼", compressible: true },
+  "image/png":        { label: "PNG",  icon: "🖼", compressible: true },
+  "image/webp":       { label: "WEBP", icon: "🖼", compressible: true },
+  "application/pdf":  { label: "PDF",  icon: "📄", compressible: false },
+  // CDR and DXF don't have standard MIME types - handled by extension
+};
+
+const SUPPORTED_EXTENSIONS = ["jpg", "jpeg", "png", "webp", "pdf", "cdr", "dxf"];
+
+const getFileType = (file) => {
+  const ext = file.name.split(".").pop()?.toLowerCase() || "";
+  if (SUPPORTED_TYPES[file.type]) return SUPPORTED_TYPES[file.type];
+  if (ext === "cdr") return { label: "CDR",  icon: "✏️", compressible: false };
+  if (ext === "dxf") return { label: "DXF",  icon: "📐", compressible: false };
+  return null;
+};
+
+const isFileSupported = (file) => {
+  const ext = file.name.split(".").pop()?.toLowerCase() || "";
+  return !!(SUPPORTED_TYPES[file.type] || SUPPORTED_EXTENSIONS.includes(ext));
+};
+
 // ─── Image compression ────────────────────────────────────────────────────────
-const compressImage = (file, maxSizeBytes = 900 * 1024) =>
+const compressImage = (file, maxSizeBytes = 500 * 1024) =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -55,15 +81,27 @@ const compressImage = (file, maxSizeBytes = 900 * 1024) =>
         const MAX_DIM = 2400;
         const scale = img.width > MAX_DIM || img.height > MAX_DIM
           ? MAX_DIM / Math.max(img.width, img.height) : 1;
-        canvas.width = Math.round(img.width * scale);
+        canvas.width  = Math.round(img.width  * scale);
         canvas.height = Math.round(img.height * scale);
         canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-        const tryCompress = (q) => canvas.toBlob((blob) => {
-          if (!blob) { reject(new Error("Compression failed")); return; }
-          if (blob.size <= maxSizeBytes || q <= 0.2) {
-            resolve({ blob, dataUrl: URL.createObjectURL(blob), sizeKB: Math.round(blob.size / 1024) });
-          } else { tryCompress(Math.max(q - 0.12, 0.2)); }
-        }, "image/jpeg", q);
+
+        const tryCompress = (q) =>
+          canvas.toBlob((blob) => {
+            if (!blob) { reject(new Error("Compression failed")); return; }
+            if (blob.size <= maxSizeBytes || q <= 0.1) {
+              const compressedFile = new File([blob], file.name.replace(/\.[^.]+$/, ".jpg"), { type: "image/jpeg" });
+              resolve({
+                file: compressedFile,
+                blob,
+                dataUrl: URL.createObjectURL(blob),
+                originalSizeKB: Math.round(file.size / 1024),
+                compressedSizeKB: Math.round(blob.size / 1024),
+              });
+            } else {
+              tryCompress(Math.max(q - 0.1, 0.1));
+            }
+          }, "image/jpeg", q);
+
         tryCompress(0.85);
       };
       img.onerror = reject;
@@ -137,16 +175,6 @@ const CustomerInfoBlock = ({ job, requestStatus, hasAccess, onRequestInfo, reque
           <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>
             <TeamOutlined style={{ marginRight: 3, fontSize: 15 }} />Created by: {job.created_by || "—"}
           </div>
-          {hasAccess && !isSuperAdmin && !isSpecialUser && (
-            <div style={{ fontSize: 10, color: "#16a34a", fontWeight: 600, marginTop: 2 }}>
-              <UnlockOutlined style={{ marginRight: 3 }} />Access granted
-            </div>
-          )}
-          {isSpecialUser && (
-            <div style={{ fontSize: 10, color: "#8b5cf6", fontWeight: 600, marginTop: 2 }}>
-              <StarOutlined style={{ marginRight: 3 }} />Special access: hari@dmedia.in
-            </div>
-          )}
         </div>
       </div>
     );
@@ -197,16 +225,11 @@ const CustomerInfoBlock = ({ job, requestStatus, hasAccess, onRequestInfo, reque
               padding: "3px 8px", border: "1px solid #fcd34d", borderRadius: 8,
               display: "flex", alignItems: "center", gap: 4,
             }}>
-              <HourglassOutlined style={{ animation: "spin 2s linear infinite" }} />Pending…
+              <HourglassOutlined />Pending…
             </span>
           ) : null}
         </div>
       </div>
-      {requestStatus === "rejected" && (
-        <div style={{ marginTop: 6, fontSize: 10, color: "#ef4444", fontWeight: 600 }}>
-          <CloseCircleOutlined style={{ marginRight: 4 }} />Previous request was denied. You may submit a new request.
-        </div>
-      )}
     </div>
   );
 };
@@ -257,43 +280,187 @@ const SessionStatusPill = ({ sessionData }) => {
   );
 };
 
-const DesignFilePreview = ({ fileUrl, label = "Uploaded Design", isSample = false }) => {
-  if (!fileUrl) return null;
-  const isImage = /\.(png|jpe?g|gif|webp|svg|bmp)(\?.*)?$/i.test(fileUrl);
-  const isPdf = /\.pdf(\?.*)?$/i.test(fileUrl);
-  const handleDownload = async () => {
-    try {
-      const blob = await fetch(fileUrl).then((r) => r.blob());
-      const url = URL.createObjectURL(blob);
-      const ext = fileUrl.split("?")[0].split(".").pop() || "file";
-      const a = Object.assign(document.createElement("a"), { href: url, download: `design_${Date.now()}.${ext}` });
-      document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-    } catch { window.open(fileUrl, "_blank"); }
+// ─── File Type Badge ──────────────────────────────────────────────────────────
+const FileTypeBadge = ({ label }) => {
+  const colors = {
+    JPEG: { bg: "#eff6ff", color: "#1e40af", border: "#bfdbfe" },
+    JPG:  { bg: "#eff6ff", color: "#1e40af", border: "#bfdbfe" },
+    PNG:  { bg: "#f0fdf4", color: "#166534", border: "#86efac" },
+    WEBP: { bg: "#f5f3ff", color: "#5b21b6", border: "#c4b5fd" },
+    PDF:  { bg: "#fef2f2", color: "#991b1b", border: "#fca5a5" },
+    CDR:  { bg: "#fffbeb", color: "#92400e", border: "#fcd34d" },
+    DXF:  { bg: "#f0f9ff", color: "#0c4a6e", border: "#bae6fd" },
   };
+  const c = colors[label?.toUpperCase()] || { bg: "#f8fafc", color: "#374151", border: "#e5e7eb" };
   return (
-    <div style={{ border: `1px solid ${isSample ? "#a5b4fc" : "#c4b5fd"}`, borderRadius: 10, overflow: "hidden", marginBottom: 14, background: isSample ? "#f0f0ff" : "#faf5ff" }}>
-      <div style={{ padding: "8px 12px", background: isSample ? "linear-gradient(135deg,#4f46e5,#6366f1)" : "linear-gradient(135deg,#7c3aed,#9333ea)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: "#f5f3ff", letterSpacing: "0.05em" }}>
-          {isSample ? <><PictureOutlined style={{ marginRight: 5 }} />Sample Preview (≤1 MB)</> : <><FileImageOutlined style={{ marginRight: 5 }} />{label}</>}
-        </span>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <a href={fileUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: "#e9d5ff", fontWeight: 600, display: "flex", alignItems: "center", gap: 4, textDecoration: "none" }}>
-            <EyeOutlined /> Open
-          </a>
-          <span onClick={handleDownload} style={{ fontSize: 10, color: "#e9d5ff", fontWeight: 600, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
-            <DownloadOutlined /> Download
-          </span>
-        </div>
+    <span style={{
+      fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 4,
+      background: c.bg, color: c.color, border: `1px solid ${c.border}`,
+      textTransform: "uppercase", letterSpacing: "0.06em",
+    }}>{label}</span>
+  );
+};
+
+// ─── Single File Item in upload list ─────────────────────────────────────────
+const UploadedFileItem = ({ item, onRemove, onPreview }) => {
+  const isImage = item.previewUrl && item.fileType?.compressible;
+  const isPdf   = item.label?.toUpperCase() === "PDF";
+
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 10,
+      background: item.uploading ? "#f0f9ff" : item.error ? "#fef2f2" : item.uploaded ? "#f0fdf4" : "#fafafa",
+      border: `1px solid ${item.error ? "#fca5a5" : item.uploaded ? "#86efac" : "#e5e7eb"}`,
+      borderRadius: 10, padding: "8px 10px", marginBottom: 8,
+    }}>
+      {/* Thumbnail or icon */}
+      <div style={{
+        width: 44, height: 44, borderRadius: 8, overflow: "hidden", flexShrink: 0,
+        background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center",
+        border: "1px solid #e5e7eb",
+      }}>
+        {isImage ? (
+          <img src={item.previewUrl} alt="thumb" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        ) : isPdf ? (
+          <FilePdfOutlined style={{ fontSize: 22, color: "#ef4444" }} />
+        ) : (
+          <FileOutlined style={{ fontSize: 22, color: "#6b7280" }} />
+        )}
       </div>
-      {isImage ? (
-        <div style={{ padding: 10, textAlign: "center", background: isSample ? "#eef0ff" : "#f5f3ff" }}>
-          <img src={fileUrl} alt="Design preview" style={{ maxWidth: "100%", maxHeight: 220, objectFit: "contain", borderRadius: 6, boxShadow: "0 2px 8px rgba(124,58,237,0.15)" }} />
-          {isSample && <div style={{ fontSize: 10, color: "#6366f1", fontWeight: 600, marginTop: 6 }}>ℹ Compressed preview — upload original via Google Drive below</div>}
+
+      {/* Info */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>
+            {item.name}
+          </span>
+          <FileTypeBadge label={item.label} />
         </div>
-      ) : isPdf ? (
-        <div style={{ padding: "10px 12px", fontSize: 12, color: "#6b7280" }}>📄 PDF — <a href={fileUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#7c3aed" }}>Click to view</a></div>
-      ) : (
-        <div style={{ padding: "10px 12px", fontSize: 12, color: "#6b7280" }}>📎 File — <a href={fileUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#7c3aed" }}>Download / View</a></div>
+        <div style={{ fontSize: 10, color: "#6b7280", display: "flex", alignItems: "center", gap: 8 }}>
+          {item.compressible && item.originalSizeKB && (
+            <span>
+              {item.originalSizeKB} KB → <strong style={{ color: "#16a34a" }}>{item.compressedSizeKB} KB</strong> compressed
+            </span>
+          )}
+          {!item.compressible && item.originalSizeKB && (
+            <span>{item.originalSizeKB} KB</span>
+          )}
+          {item.uploading && <span style={{ color: "#0369a1", fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}><LoadingOutlined spin />Uploading…</span>}
+          {item.uploaded && !item.uploading && <span style={{ color: "#16a34a", fontWeight: 600 }}><CheckCircleOutlined style={{ marginRight: 3 }} />Saved</span>}
+          {item.error && <span style={{ color: "#ef4444", fontWeight: 600 }}><CloseCircleOutlined style={{ marginRight: 3 }} />Failed</span>}
+        </div>
+        {item.uploading && (
+          <Progress percent={item.progress || 0} size="small" showInfo={false} strokeColor="#3b82f6" style={{ marginTop: 4 }} />
+        )}
+      </div>
+
+      {/* Actions */}
+      <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+        {item.uploadedUrl && (
+          <Tooltip title="Preview">
+            <Button size="small" type="text" icon={<EyeOutlined />}
+              onClick={() => window.open(item.uploadedUrl, "_blank")}
+              style={{ color: "#7c3aed", padding: "0 4px" }} />
+          </Tooltip>
+        )}
+        <Tooltip title="Remove">
+          <Button size="small" type="text" icon={<DeleteOutlined />}
+            onClick={() => onRemove(item.id)}
+            style={{ color: "#ef4444", padding: "0 4px" }}
+            disabled={item.uploading} />
+        </Tooltip>
+      </div>
+    </div>
+  );
+};
+
+// ─── Multi-File Upload Panel ──────────────────────────────────────────────────
+const MultiFileUploadPanel = ({ files, onFilesAdded, onRemoveFile, uploading }) => {
+  const inputRef = useRef();
+  const [dragging, setDragging] = useState(false);
+
+  const handleFiles = (fileList) => {
+    const valid = [];
+    const invalid = [];
+    for (const file of fileList) {
+      if (isFileSupported(file)) valid.push(file);
+      else invalid.push(file.name);
+    }
+    if (invalid.length) {
+      message.warning(`Unsupported: ${invalid.join(", ")}. Supported: JPG, PNG, WEBP, PDF, CDR, DXF`);
+    }
+    if (valid.length) onFilesAdded(valid);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault(); setDragging(false);
+    handleFiles(Array.from(e.dataTransfer.files));
+  };
+
+  return (
+    <div>
+      {/* Drop zone */}
+      <div
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={handleDrop}
+        onClick={() => inputRef.current?.click()}
+        style={{
+          border: `2px dashed ${dragging ? "#7c3aed" : "#c4b5fd"}`,
+          borderRadius: 12, padding: "20px 16px", background: dragging ? "#f5f0ff" : "#faf5ff",
+          textAlign: "center", cursor: "pointer", transition: "all 0.2s",
+          marginBottom: 10,
+        }}>
+        <input
+          ref={inputRef}
+          type="file"
+          multiple
+          accept=".jpg,.jpeg,.png,.webp,.pdf,.cdr,.dxf,image/jpeg,image/png,image/webp,application/pdf"
+          style={{ display: "none" }}
+          onChange={(e) => handleFiles(Array.from(e.target.files || []))}
+        />
+        {uploading ? (
+          <div style={{ color: "#7c3aed", fontSize: 13 }}><Spin size="small" style={{ marginRight: 8 }} />Processing files…</div>
+        ) : (
+          <>
+            <div style={{ fontSize: 28, marginBottom: 6 }}>📁</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#7c3aed", marginBottom: 4 }}>
+              Click or drag & drop design files
+            </div>
+            <div style={{ fontSize: 11, color: "#9ca3af", marginBottom: 8 }}>
+              Multiple files supported
+            </div>
+            <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 4 }}>
+              {["JPG", "PNG", "WEBP", "PDF", "CDR", "DXF"].map((fmt) => (
+                <span key={fmt} style={{
+                  fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
+                  background: "#ede9fe", color: "#6d28d9", border: "1px solid #c4b5fd",
+                }}>{fmt}</span>
+              ))}
+            </div>
+            <div style={{ marginTop: 8, fontSize: 10, color: "#a78bfa", fontStyle: "italic" }}>
+              📸 Images auto-compressed to ≤ 500 KB
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* File list */}
+      {files.length > 0 && (
+        <div>
+          <div style={{
+            fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase",
+            letterSpacing: "0.06em", marginBottom: 8, display: "flex", justifyContent: "space-between",
+          }}>
+            <span>{files.length} file{files.length !== 1 ? "s" : ""} selected</span>
+            <span style={{ color: "#16a34a" }}>
+              {files.filter(f => f.uploaded).length} uploaded
+            </span>
+          </div>
+          {files.map((item) => (
+            <UploadedFileItem key={item.id} item={item} onRemove={onRemoveFile} />
+          ))}
+        </div>
       )}
     </div>
   );
@@ -311,19 +478,7 @@ const DriveUploadSection = ({ jobNo, driveLinkValue, onDriveLinkChange }) => {
       <div style={{ padding: "12px 14px", background: "#fffbeb" }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 8, background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 8, padding: "8px 10px", marginBottom: 12 }}>
           <WarningOutlined style={{ color: "#ef4444", fontSize: 13, marginTop: 1, flexShrink: 0 }} />
-          <div style={{ fontSize: 11, color: "#991b1b", lineHeight: 1.5 }}><strong>Auto-cleanup in 48 hours.</strong> Files in the shared Drive folder are deleted after 48 hours. Download or move originals before then.</div>
-        </div>
-        <div style={{ marginBottom: 12 }}>
-          {[
-            { n: "1", text: "Click the button below to open the shared Drive folder" },
-            { n: "2", text: `Upload your original high-quality design for job ${jobNo}` },
-            { n: "3", text: 'Right-click the file → "Get link" → paste it below' },
-          ].map(({ n, text }) => (
-            <div key={n} style={{ display: "flex", gap: 8, marginBottom: 6, alignItems: "flex-start" }}>
-              <span style={{ width: 18, height: 18, borderRadius: "50%", background: "#f59e0b", color: "#fff", fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>{n}</span>
-              <span style={{ fontSize: 12, color: "#374151" }}>{text}</span>
-            </div>
-          ))}
+          <div style={{ fontSize: 11, color: "#991b1b", lineHeight: 1.5 }}><strong>Auto-cleanup in 48 hours.</strong> Files in the shared Drive folder are deleted after 48 hours.</div>
         </div>
         <Button icon={<CloudUploadOutlined />} onClick={() => window.open(driveUrl, "_blank")}
           style={{ width: "100%", height: 36, marginBottom: 10, background: "#1a73e8", border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
@@ -339,47 +494,7 @@ const DriveUploadSection = ({ jobNo, driveLinkValue, onDriveLinkChange }) => {
             <CheckCircleOutlined /> Drive link recorded.
           </div>
         )}
-        <div style={{ marginTop: 10, fontSize: 10, color: "#92400e", textAlign: "center", fontStyle: "italic" }}>⏱ Drive files auto-deleted 48 hrs after upload.</div>
       </div>
-    </div>
-  );
-};
-
-const SampleUploadPanel = ({ onSampleReady, onFileSelected, sampleInfo }) => {
-  const [compressing, setCompressing] = useState(false);
-  const inputRef = useRef();
-  const handleFileChange = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    onFileSelected(file);
-    if (file.type.startsWith("image/")) {
-      setCompressing(true);
-      try {
-        const result = await compressImage(file, 900 * 1024);
-        onSampleReady(result);
-        message.success(`Sample compressed to ${result.sizeKB} KB`);
-      } catch (err) { message.error("Compression failed: " + err.message); }
-      finally { setCompressing(false); }
-    } else { onSampleReady(null); }
-    e.target.value = "";
-  };
-  return (
-    <div style={{ border: "2px dashed #c4b5fd", borderRadius: 10, padding: "14px", background: "#faf5ff", marginBottom: 10, textAlign: "center", cursor: "pointer" }}
-      onClick={() => inputRef.current?.click()}
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={(e) => { e.preventDefault(); const file = e.dataTransfer.files?.[0]; if (file) handleFileChange({ target: { files: [file] } }); }}>
-      <input ref={inputRef} type="file" accept="image/*,.pdf" style={{ display: "none" }} onChange={handleFileChange} />
-      {compressing ? (
-        <div style={{ color: "#7c3aed", fontSize: 12 }}><Spin size="small" style={{ marginRight: 8 }} />Compressing…</div>
-      ) : sampleInfo ? (
-        <div style={{ color: "#16a34a", fontSize: 12, fontWeight: 600 }}><CheckCircleOutlined style={{ marginRight: 6 }} />Sample ready ({sampleInfo.sizeKB} KB) — click to replace</div>
-      ) : (
-        <div>
-          <UploadOutlined style={{ fontSize: 22, color: "#7c3aed", marginBottom: 6 }} />
-          <div style={{ fontSize: 12, color: "#7c3aed", fontWeight: 600 }}>Click or drag design file here</div>
-          <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 4 }}>Images auto-compressed to ≤1 MB · PDF accepted as-is</div>
-        </div>
-      )}
     </div>
   );
 };
@@ -518,8 +633,6 @@ const DesignerJobDashboard = () => {
   const [loading, setLoading] = useState(false);
   const [sessionMap, setSessionMap] = useState({});
   const [lastRefresh, setLastRefresh] = useState(dayjs());
-
-  // ── Active filter for summary strip ──────────────────────────────────────
   const [activeFilter, setActiveFilter] = useState(FILTER_ALL);
 
   const [infoRequestMap, setInfoRequestMap] = useState({});
@@ -534,24 +647,23 @@ const DesignerJobDashboard = () => {
   const [actionNotes, setActionNotes] = useState("");
   const [actioning, setActioning] = useState(false);
 
+  // ── New multi-file design state ────────────────────────────────────────────
   const [designModal, setDesignModal] = useState(false);
   const [designJob, setDesignJob] = useState(null);
-  const [designFilePath, setDesignFilePath] = useState("");
   const [designNotes, setDesignNotes] = useState("");
-  const [uploading, setUploading] = useState(false);
+  const [driveLink, setDriveLink] = useState("");
+  const [designFiles, setDesignFiles] = useState([]); // array of file objects with metadata
+  const [processingFiles, setProcessingFiles] = useState(false);
+  const [submittingDesign, setSubmittingDesign] = useState(false);
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [showRejectInput, setShowRejectInput] = useState(false);
-  const [sampleInfo, setSampleInfo] = useState(null);
-  const [originalFile, setOriginalFile] = useState(null);
-  const [driveLink, setDriveLink] = useState("");
-  const [samplePreviewUrl, setSamplePreviewUrl] = useState("");
 
   const [liveTimers, setLiveTimers] = useState({});
   const timerRefs = useRef({});
 
-  // ─── Load jobs + sessions ─────────────────────────────────────────────────
+  // ─── Load jobs ──────────────────────────────────────────────────────────────
   const loadJobs = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
@@ -561,24 +673,12 @@ const DesignerJobDashboard = () => {
         const res = await fetch(`${BASE}`, { headers: authHeader() });
         const data = await res.json();
         const rows = Array.isArray(data?.data?.jobs) ? data.data.jobs : Array.isArray(data?.data) ? data.data : [];
-        // ── FIX: Include jobs whose current stage is "design" OR whose
-        //         design_status is "approved" (they may have advanced to the
-        //         next stage but should still be visible in this dashboard) ──
-        myJobs = rows.filter(
-          (j) =>
-            j.current_stage?.stage === "design" ||
-            j.design_status === "approved"
-        );
+        myJobs = rows.filter(j => j.current_stage?.stage === "design" || j.design_status === "approved");
       } else {
         const res = await fetch(`${BASE}/assigned-to/${userId}`, { headers: authHeader() });
         const data = await res.json();
         const rows = Array.isArray(data?.data) ? data.data : [];
-        // ── FIX: Same inclusive filter for non-admin designers ──
-        myJobs = rows.filter(
-          (j) =>
-            j.current_stage?.stage === "design" ||
-            j.design_status === "approved"
-        );
+        myJobs = rows.filter(j => j.current_stage?.stage === "design" || j.design_status === "approved");
       }
       setJobs(myJobs);
       setLastRefresh(dayjs());
@@ -617,7 +717,6 @@ const DesignerJobDashboard = () => {
 
   useEffect(() => { loadJobs(); }, [loadJobs]);
 
-  // ─── Live timer helpers ───────────────────────────────────────────────────
   const startLiveTimer = (jobId, sessionStartedAt, previousTotalSecs = 0) => {
     if (timerRefs.current[jobId]) return;
     setLiveTimers((prev) => ({ ...prev, [jobId]: { startedAt: sessionStartedAt, base: previousTotalSecs } }));
@@ -644,8 +743,8 @@ const DesignerJobDashboard = () => {
     return (entry.base || 0) + (entry.currentSessionSecs || 0);
   };
 
-  // ─── Open / Close session ─────────────────────────────────────────────────
-  const handleOpenSession = (job) => { setPendingAction({ job, action: "open" }); setActionNotes(""); setNotesModal(true); };
+  // ─── Session handlers ──────────────────────────────────────────────────────
+  const handleOpenSession  = (job) => { setPendingAction({ job, action: "open" }); setActionNotes(""); setNotesModal(true); };
   const handleCloseSession = (job, action) => { setPendingAction({ job, action }); setActionNotes(""); setNotesModal(true); };
 
   const confirmOpenSession = async () => {
@@ -676,12 +775,7 @@ const DesignerJobDashboard = () => {
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.message || "Failed to close session");
-      const msgs = {
-        on_hold: `Paused! ${data.data?.stage_summary?.total_duration_display || ""} logged.`,
-        completed: `Design complete! Total: ${data.data?.stage_summary?.total_duration_display || ""} across ${data.data?.stage_summary?.worked_days || 0} days.`,
-        rejected: "Design stage rejected.",
-      };
-      message.success(msgs[action] || data.message);
+      message.success(`Session ${action === "on_hold" ? "paused" : "completed"}!`);
       setNotesModal(false);
       stopLiveTimer(job._id);
       await loadJobs();
@@ -695,7 +789,7 @@ const DesignerJobDashboard = () => {
     else confirmCloseSession();
   };
 
-  // ─── Request Info flow ────────────────────────────────────────────────────
+  // ─── Info request ──────────────────────────────────────────────────────────
   const openRequestModal = (job) => { setRequestJob(job); setRequestReason(""); setRequestModal(true); };
 
   const submitInfoRequest = async () => {
@@ -708,56 +802,175 @@ const DesignerJobDashboard = () => {
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.message || "Request failed");
-      message.success("Request submitted! Waiting for admin approval.");
+      message.success("Request submitted!");
       setRequestModal(false);
       setInfoRequestMap((prev) => ({ ...prev, [requestJob._id]: { status: "pending", has_access: false, request: data.data } }));
     } catch (err) { message.error(err.message); }
     finally { setSubmittingReq(false); }
   };
 
-  // ─── Design modal ─────────────────────────────────────────────────────────
+  // ─── Design Modal ──────────────────────────────────────────────────────────
   const openDesignModal = (job) => {
-    setDesignJob(job); setDesignFilePath(job.design_file || ""); setDesignNotes("");
-    setShowRejectInput(false); setRejectReason(""); setSampleInfo(null);
-    setOriginalFile(null); setDriveLink(job.design_drive_link || ""); setSamplePreviewUrl(""); setDesignModal(true);
+    setDesignJob(job);
+    setDesignNotes("");
+    setDriveLink(job.design_drive_link || "");
+    setDesignFiles([]);
+    setShowRejectInput(false);
+    setRejectReason("");
+    setDesignModal(true);
   };
 
   const closeDesignModal = () => {
-    if (sampleInfo?.dataUrl) URL.revokeObjectURL(sampleInfo.dataUrl);
-    setDesignModal(false); setDesignJob(null); setDesignFilePath(""); setSampleInfo(null);
-    setOriginalFile(null); setDriveLink(""); setSamplePreviewUrl("");
+    // Revoke all object URLs
+    designFiles.forEach(f => { if (f.previewUrl) URL.revokeObjectURL(f.previewUrl); });
+    setDesignModal(false);
+    setDesignJob(null);
+    setDesignFiles([]);
+    setDriveLink("");
   };
 
-  const handleSampleReady = (info) => {
-    if (sampleInfo?.dataUrl) URL.revokeObjectURL(sampleInfo.dataUrl);
-    setSampleInfo(info); setSamplePreviewUrl(info?.dataUrl || "");
+  // ── Process newly added files ──────────────────────────────────────────────
+  const handleFilesAdded = async (rawFiles) => {
+    setProcessingFiles(true);
+    const newItems = [];
+
+    for (const file of rawFiles) {
+      const fileType = getFileType(file);
+      const id = `file_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      const ext = file.name.split(".").pop()?.toLowerCase();
+      const originalSizeKB = Math.round(file.size / 1024);
+
+      let processedFile = file;
+      let previewUrl    = null;
+      let compressedSizeKB = originalSizeKB;
+
+      // Compress images only
+      if (fileType?.compressible) {
+        try {
+          const result = await compressImage(file, 500 * 1024);
+          processedFile    = result.file;
+          previewUrl       = result.dataUrl;
+          compressedSizeKB = result.compressedSizeKB;
+        } catch (err) {
+          console.warn("Compression failed for", file.name, err);
+          previewUrl = URL.createObjectURL(file);
+        }
+      }
+
+      newItems.push({
+        id,
+        name:             file.name,
+        label:            fileType?.label || ext?.toUpperCase() || "FILE",
+        fileType,
+        compressible:     fileType?.compressible || false,
+        file:             processedFile,
+        originalFile:     file,
+        previewUrl,
+        originalSizeKB,
+        compressedSizeKB,
+        uploading:        false,
+        uploaded:         false,
+        uploadedUrl:      null,
+        error:            null,
+        progress:         0,
+      });
+    }
+
+    setDesignFiles((prev) => [...prev, ...newItems]);
+    setProcessingFiles(false);
+
+    if (newItems.length) {
+      message.success(`${newItems.length} file${newItems.length > 1 ? "s" : ""} ready for upload`);
+    }
   };
 
-  const handleUploadDesign = async () => {
-    if (!designFilePath && !samplePreviewUrl) { message.warning("Please upload a design file first"); return; }
-    setUploading(true);
+  const handleRemoveFile = (id) => {
+    setDesignFiles((prev) => {
+      const item = prev.find(f => f.id === id);
+      if (item?.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      return prev.filter(f => f.id !== id);
+    });
+  };
+
+  // ── Upload all files to server ─────────────────────────────────────────────
+  // Uses the exact same uploadImage() function and FormData shape as UploadHelper.jsx
+  const uploadFileToServer = async (item) => {
+    const formData = new FormData();
+    formData.append("image", item.file, item.file.name);
+    // uploadImage is the same axios/fetch wrapper from ../api used by UploadHelper
+    const result = await uploadImage(formData);
+    const url = result?.data?.data?.url || result?.data?.url || "";
+    if (!url) throw new Error("Upload succeeded but no URL returned");
+    return url;
+  };
+
+  const handleSubmitDesign = async () => {
+    if (!designFiles.length && !driveLink) {
+      message.warning("Please add at least one design file or a Drive link");
+      return;
+    }
+
+    setSubmittingDesign(true);
+    const uploadedUrls = [];
+
+    // Upload each pending file
+    for (const item of designFiles) {
+      if (item.uploaded && item.uploadedUrl) {
+        uploadedUrls.push(item.uploadedUrl);
+        continue;
+      }
+
+      // Mark as uploading
+      setDesignFiles((prev) => prev.map(f => f.id === item.id ? { ...f, uploading: true, progress: 10 } : f));
+
+      try {
+        const url = await uploadFileToServer(item);
+        uploadedUrls.push(url);
+        setDesignFiles((prev) => prev.map(f => f.id === item.id ? { ...f, uploading: false, uploaded: true, uploadedUrl: url, progress: 100 } : f));
+      } catch (err) {
+        setDesignFiles((prev) => prev.map(f => f.id === item.id ? { ...f, uploading: false, error: err.message, progress: 0 } : f));
+        message.error(`Failed to upload ${item.name}: ${err.message}`);
+      }
+    }
+
+    if (!uploadedUrls.length && !driveLink) {
+      setSubmittingDesign(false);
+      return;
+    }
+
+    // Save to job — use first uploaded URL as primary design_file, rest stored in notes
+    const primaryUrl      = uploadedUrls[0] || "";
+    const liveSecs        = getLiveDisplaySecs(designJob._id);
+    const allUrlsText     = uploadedUrls.length > 1
+      ? `\nAll uploaded files:\n${uploadedUrls.map((u, i) => `${i + 1}. ${u}`).join("\n")}`
+      : "";
+
     try {
-      const liveSecs = getLiveDisplaySecs(designJob._id);
       const res = await fetch(`${BASE}/${designJob._id}/upload_design`, {
         method: "POST", headers: jsonHeader(),
-        body: JSON.stringify({ design_file: designFilePath, design_drive_link: driveLink || null, notes: designNotes, duration_seconds: liveSecs, duration_display: fmtSecs(liveSecs), handled_by: { user_id: userId, name: userName }, stage: designJob.current_stage?.stage || "design", is_sample: true }),
+        body: JSON.stringify({
+          design_file:       primaryUrl,
+          design_drive_link: driveLink || null,
+          notes:             (designNotes || "") + allUrlsText,
+          duration_seconds:  liveSecs,
+          duration_display:  fmtSecs(liveSecs),
+          handled_by:        { user_id: userId, name: userName },
+          stage:             designJob.current_stage?.stage || "design",
+          is_sample:         true,
+        }),
       });
       const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.message || "Upload failed");
-      message.success("Design saved!");
+      if (!res.ok || !data.success) throw new Error(data.message || "Save failed");
+
+      message.success(`Design saved! ${uploadedUrls.length} file${uploadedUrls.length > 1 ? "s" : ""} uploaded.`);
       stopLiveTimer(designJob._id);
       closeDesignModal();
       loadJobs();
-    } catch (err) { message.error(err.message); }
-    finally { setUploading(false); }
-  };
-
-  const updateStatusAfterDesignUpload = async (newStatus) => {
-    try {
-      const res = await fetch(`${BASE}/${designJob._id}/status`, { method: "PATCH", headers: jsonHeader(), body: JSON.stringify({ job_status: newStatus }) });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.message);
-    } catch (err) { message.error("Failed to update design status: " + err.message); }
+    } catch (err) {
+      message.error(err.message);
+    } finally {
+      setSubmittingDesign(false);
+    }
   };
 
   const handleApproveDesign = async () => {
@@ -765,11 +978,22 @@ const DesignerJobDashboard = () => {
     try {
       const res = await fetch(`${BASE}/${designJob._id}/approve_design`, {
         method: "POST", headers: jsonHeader(),
-        body: JSON.stringify({ handled_by: { user_id: userId, name: userName }, design_file: designFilePath, drive_link: `https://drive.google.com/drive/folders/${DRIVE_FOLDER_ID}`, notes: designNotes }),
+        body: JSON.stringify({
+          handled_by:  { user_id: userId, name: userName },
+          design_file: designJob.design_file,
+          drive_link:  `https://drive.google.com/drive/folders/${DRIVE_FOLDER_ID}`,
+          notes:       designNotes,
+        }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.message || "Approval failed");
-      await updateStatusAfterDesignUpload("production");
+
+      // Update status to production
+      await fetch(`${BASE}/${designJob._id}/status`, {
+        method: "PATCH", headers: jsonHeader(),
+        body: JSON.stringify({ job_status: "production" }),
+      });
+
       message.success("Design approved!");
       closeDesignModal(); loadJobs();
     } catch (err) { message.error(err.message); }
@@ -792,17 +1016,10 @@ const DesignerJobDashboard = () => {
     finally { setRejecting(false); }
   };
 
-  // ─── Derived counts ───────────────────────────────────────────────────────
+  // ─── Counts ────────────────────────────────────────────────────────────────
+  const jobHasDesign   = (j) => !!(j.design_file || j.cart_items?.some((i) => i.design_file));
+  const jobIsDesignDone = (j) => jobHasDesign(j) || j.design_status === "approved";
 
-  // Helper: a job has a design uploaded (in any form)
-  const jobHasDesign = (j) =>
-    !!(j.design_file || j.cart_items?.some((i) => i.design_file));
-
-  // Helper: a job is "done" from a designer's active-work perspective
-  const jobIsDesignDone = (j) =>
-    jobHasDesign(j) || j.design_status === "approved";
-
-  // "Total Assigned" = jobs still needing design work (no upload yet, not approved)
   const activeJobsCount     = jobs.filter((j) => !jobIsDesignDone(j)).length;
   const liveCount           = Object.values(sessionMap).filter((s) => s?.has_open_session).length;
   const onHoldCount         = jobs.filter((j) => j.job_status === "on_hold" && !jobIsDesignDone(j)).length;
@@ -810,45 +1027,32 @@ const DesignerJobDashboard = () => {
   const approvedDesignCount = jobs.filter((j) => j.design_status === "approved").length;
   const accessPendingCount  = Object.values(infoRequestMap).filter((r) => r?.status === "pending").length;
 
-  // ─── Filtered jobs ────────────────────────────────────────────────────────
   const filteredJobs = jobs.filter((job) => {
     const sessData = sessionMap[job._id];
     switch (activeFilter) {
-      case FILTER_LIVE:
-        return sessData?.has_open_session === true;
-      case FILTER_ON_HOLD:
-        // On Hold filter: only jobs on hold that don't yet have a design uploaded/approved
-        return job.job_status === "on_hold" && !jobIsDesignDone(job);
-      case FILTER_DESIGN_UPLOADED:
-        // Design Uploaded: has a file but NOT yet approved
-        return jobHasDesign(job) && job.design_status !== "approved";
-      case FILTER_ACCESS_PENDING:
-        return infoRequestMap[job._id]?.status === "pending";
-      case FILTER_APPROVED_DESIGN:
-        return job.design_status === "approved";
-      default:
-        // FILTER_ALL (Total Assigned) = jobs with NO design uploaded and NOT approved
-        return !jobIsDesignDone(job);
+      case FILTER_LIVE:            return sessData?.has_open_session === true;
+      case FILTER_ON_HOLD:         return job.job_status === "on_hold" && !jobIsDesignDone(job);
+      case FILTER_DESIGN_UPLOADED: return jobHasDesign(job) && job.design_status !== "approved";
+      case FILTER_ACCESS_PENDING:  return infoRequestMap[job._id]?.status === "pending";
+      case FILTER_APPROVED_DESIGN: return job.design_status === "approved";
+      default:                     return !jobIsDesignDone(job);
     }
   });
 
-  // ─── Summary strip config ─────────────────────────────────────────────────
   const summaryItems = [
-    { key: FILTER_ALL,             label: "Total Assigned",  value: activeJobsCount,         color: "#3b82f6", bg: "#eff6ff", activeBg: "#dbeafe", border: "#bfdbfe" },
-    { key: FILTER_LIVE,            label: "Live Sessions",   value: liveCount,               color: "#16a34a", bg: "#f0fdf4", activeBg: "#dcfce7", border: "#86efac" },
-    { key: FILTER_ON_HOLD,         label: "On Hold",         value: onHoldCount,             color: "#f97316", bg: "#fff7ed", activeBg: "#ffedd5", border: "#fdba74" },
-    { key: FILTER_DESIGN_UPLOADED, label: "Design Uploaded", value: designUploadedCount,     color: "#8b5cf6", bg: "#f5f3ff", activeBg: "#ede9fe", border: "#c4b5fd" },
-    { key: FILTER_APPROVED_DESIGN, label: "Design Approved", value: approvedDesignCount,     color: "#be185d", bg: "#fce7f3", activeBg: "#fbcfe8", border: "#f9a8d4" },
-    ...(!isSuperAdmin ? [
-      { key: FILTER_ACCESS_PENDING, label: "Access Pending", value: accessPendingCount,      color: "#d97706", bg: "#fffbeb", activeBg: "#fef3c7", border: "#fcd34d" },
-    ] : []),
+    { key: FILTER_ALL,             label: "Total Assigned",  value: activeJobsCount,     color: "#3b82f6", bg: "#eff6ff", activeBg: "#dbeafe", border: "#bfdbfe" },
+    { key: FILTER_LIVE,            label: "Live Sessions",   value: liveCount,           color: "#16a34a", bg: "#f0fdf4", activeBg: "#dcfce7", border: "#86efac" },
+    { key: FILTER_ON_HOLD,         label: "On Hold",         value: onHoldCount,         color: "#f97316", bg: "#fff7ed", activeBg: "#ffedd5", border: "#fdba74" },
+    { key: FILTER_DESIGN_UPLOADED, label: "Design Uploaded", value: designUploadedCount, color: "#8b5cf6", bg: "#f5f3ff", activeBg: "#ede9fe", border: "#c4b5fd" },
+    { key: FILTER_APPROVED_DESIGN, label: "Design Approved", value: approvedDesignCount, color: "#be185d", bg: "#fce7f3", activeBg: "#fbcfe8", border: "#f9a8d4" },
+    ...(!isSuperAdmin ? [{ key: FILTER_ACCESS_PENDING, label: "Access Pending", value: accessPendingCount, color: "#d97706", bg: "#fffbeb", activeBg: "#fef3c7", border: "#fcd34d" }] : []),
   ];
 
-  const existingDesignFile = designJob?.design_file;
-  const cartDesignFile = designJob?.cart_items?.find((i) => i.design_file)?.design_file;
-  const hasExistingDesign = !!(existingDesignFile || cartDesignFile);
-  const designSessData = designJob ? sessionMap[designJob._id] : null;
-  const designLiveSecs = designJob ? getLiveDisplaySecs(designJob._id) : 0;
+  const hasExistingDesign = !!(designJob?.design_file || designJob?.cart_items?.some((i) => i.design_file));
+  const designSessData    = designJob ? sessionMap[designJob._id] : null;
+  const designLiveSecs    = designJob ? getLiveDisplaySecs(designJob._id) : 0;
+  const allUploaded       = designFiles.length > 0 && designFiles.every(f => f.uploaded);
+  const hasUploading      = designFiles.some(f => f.uploading);
 
   return (
     <div style={{ padding: "16px", background: "linear-gradient(160deg,#f0f4ff 0%,#f8fafc 60%,#faf5ff 100%)", minHeight: "100vh" }}>
@@ -857,7 +1061,7 @@ const DesignerJobDashboard = () => {
         @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
       `}</style>
 
-      {/* ── Header ── */}
+      {/* Header */}
       <div style={{
         background: "#fff", borderRadius: 14, border: "1px solid #e5e7eb",
         padding: "14px 18px", marginBottom: 16, boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
@@ -870,8 +1074,7 @@ const DesignerJobDashboard = () => {
           <div>
             <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: "#111827" }}>My Design Jobs</h2>
             <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>
-              Hi <strong>{userName}</strong> · {jobs.length} job{jobs.length !== 1 ? "s" : ""} · Updated {lastRefresh.format("HH:mm:ss")} ·{" "}
-              <span style={{ color: "#16a34a", fontWeight: 600 }}>{isSuperAdmin ? "All design jobs" : `Assigned to ${userName}`}</span>
+              Hi <strong>{userName}</strong> · {jobs.length} job{jobs.length !== 1 ? "s" : ""} · Updated {lastRefresh.format("HH:mm:ss")}
             </p>
           </div>
         </div>
@@ -880,99 +1083,47 @@ const DesignerJobDashboard = () => {
         </Tooltip>
       </div>
 
-      {/* ── Summary strip (CLICKABLE FILTERS) ── */}
+      {/* Summary strip */}
       <div style={{ display: "grid", gridTemplateColumns: `repeat(${summaryItems.length}, minmax(0, 1fr))`, gap: 10, marginBottom: 16 }}>
         {summaryItems.map(({ key, label, value, color, bg, activeBg, border }) => {
           const isActive = activeFilter === key;
           return (
-            <div
-              key={key}
-              onClick={() => setActiveFilter(isActive ? FILTER_ALL : key)}
+            <div key={key} onClick={() => setActiveFilter(isActive ? FILTER_ALL : key)}
               style={{
-                background: isActive ? activeBg : bg,
-                borderRadius: 10, padding: "10px 10px",
+                background: isActive ? activeBg : bg, borderRadius: 10, padding: "10px",
                 border: `${isActive ? "2px" : "1px"} solid ${isActive ? color : `${color}33`}`,
-                cursor: "pointer",
-                transition: "all 0.18s ease",
-                boxShadow: isActive ? `0 0 0 3px ${color}22, 0 2px 8px ${color}22` : "none",
-                transform: isActive ? "translateY(-1px)" : "none",
-                position: "relative",
-              }}
-            >
-              {isActive && (
-                <div style={{
-                  position: "absolute", top: 6, right: 8,
-                  width: 7, height: 7, borderRadius: "50%",
-                  background: color, animation: "pulse 1.5s infinite",
-                }} />
-              )}
+                cursor: "pointer", transition: "all 0.18s ease",
+                boxShadow: isActive ? `0 0 0 3px ${color}22` : "none",
+                transform: isActive ? "translateY(-1px)" : "none", position: "relative",
+              }}>
+              {isActive && <div style={{ position: "absolute", top: 6, right: 8, width: 7, height: 7, borderRadius: "50%", background: color, animation: "pulse 1.5s infinite" }} />}
               <div style={{ fontSize: 18, fontWeight: 800, color }}>{value}</div>
               <div style={{ fontSize: 10, color: isActive ? color : "#6b7280", fontWeight: isActive ? 700 : 600 }}>{label}</div>
-              {isActive && (
-                <div style={{ fontSize: 8, color, fontWeight: 700, marginTop: 2, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                  ● Filtering
-                </div>
-              )}
             </div>
           );
         })}
       </div>
 
-      {/* ── Active filter banner ── */}
-      {activeFilter !== FILTER_ALL && (
-        <div style={{
-          background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 10,
-          padding: "8px 14px", marginBottom: 14,
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-        }}>
-          <span style={{ fontSize: 12, color: "#0369a1", fontWeight: 600 }}>
-            Showing <strong>{filteredJobs.length}</strong> job{filteredJobs.length !== 1 ? "s" : ""} for filter: <strong>{summaryItems.find((s) => s.key === activeFilter)?.label}</strong>
-          </span>
-          <Button size="small" onClick={() => setActiveFilter(FILTER_ALL)}
-            style={{ fontSize: 11, height: 24, borderRadius: 6, color: "#0369a1", borderColor: "#bae6fd" }}>
-            Clear Filter ×
-          </Button>
-        </div>
-      )}
-
-      {/* ── Privacy notice for designers ── */}
       {!isSuperAdmin && (
         <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 10, padding: "10px 14px", marginBottom: 16, display: "flex", alignItems: "flex-start", gap: 10 }}>
           <LockOutlined style={{ color: "#0369a1", fontSize: 16, marginTop: 1, flexShrink: 0 }} />
           <div style={{ fontSize: 12, color: "#0c4a6e" }}>
-            <strong>Privacy Policy:</strong> Customer names and phone numbers are hidden by default.
-            To view contact details for a specific job, click <strong>"Request Info"</strong> on the job card.
-            An admin will review and grant access within your work session.
+            <strong>Privacy Policy:</strong> Customer names and phone numbers are hidden by default. Click <strong>"Request Info"</strong> to get access.
           </div>
         </div>
       )}
 
-      {/* ── Job Grid ── */}
       <Spin spinning={loading}>
         {filteredJobs.length === 0 && !loading ? (
           <div style={{ background: "#fff", borderRadius: 14, padding: "60px 20px", textAlign: "center", border: "1px solid #e5e7eb" }}>
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 15, color: "#374151", marginBottom: 4 }}>
-                  {activeFilter === FILTER_ALL ? "No jobs assigned" : `No jobs match this filter`}
-                </div>
-                <div style={{ fontSize: 13, color: "#6b7280" }}>
-                  {activeFilter === FILTER_ALL
-                    ? "Jobs assigned to you that are pending design work will appear here."
-                    : `No jobs currently in "${summaryItems.find((s) => s.key === activeFilter)?.label}" state.`}
-                </div>
-                {activeFilter !== FILTER_ALL && (
-                  <Button size="small" onClick={() => setActiveFilter(FILTER_ALL)} style={{ marginTop: 10, borderRadius: 8 }}>Show All Jobs</Button>
-                )}
-              </div>
-            } />
+            <Empty description="No jobs match this filter" />
           </div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(310px,1fr))", gap: 14 }}>
             {filteredJobs.map((job) => {
-              const sessData = sessionMap[job._id];
+              const sessData    = sessionMap[job._id];
               const displaySess = sessData ? { ...sessData, total_duration_seconds: getLiveDisplaySecs(job._id) } : null;
-              const reqInfo = infoRequestMap[job._id] || { status: "none", has_access: false };
+              const reqInfo     = infoRequestMap[job._id] || { status: "none", has_access: false };
               return (
                 <JobCard key={job._id} job={job} sessionData={displaySess}
                   infoRequestStatus={reqInfo.status} hasInfoAccess={reqInfo.has_access}
@@ -988,58 +1139,23 @@ const DesignerJobDashboard = () => {
 
       {/* ════ REQUEST INFO MODAL ════ */}
       <Modal open={requestModal} onCancel={() => !submittingReq && setRequestModal(false)}
-        title={
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <InfoCircleOutlined style={{ color: "#0369a1" }} />
-            <span style={{ fontWeight: 700 }}>Request Customer Info Access</span>
-            {requestJob && <Tag color="blue" style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 11 }}>{requestJob.job_no}</Tag>}
-          </div>
-        }
+        title={<div style={{ display: "flex", alignItems: "center", gap: 8 }}><InfoCircleOutlined style={{ color: "#0369a1" }} /><span style={{ fontWeight: 700 }}>Request Customer Info Access</span></div>}
         footer={[
           <Button key="c" onClick={() => setRequestModal(false)} disabled={submittingReq}>Cancel</Button>,
           <Button key="ok" type="primary" loading={submittingReq} onClick={submitInfoRequest} style={{ background: "#0369a1", border: "none" }}>Send Request</Button>,
         ]}
         width={440} destroyOnClose>
-        <div>
-          <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-              <LockOutlined style={{ color: "#0369a1", fontSize: 14 }} />
-              <span style={{ fontWeight: 700, color: "#0c4a6e", fontSize: 13 }}>Why is this required?</span>
-            </div>
-            <p style={{ margin: 0, fontSize: 12, color: "#0c4a6e", lineHeight: 1.6 }}>
-              Customer contact details are protected to safeguard privacy. Your request will be reviewed by an admin. Once approved, you'll be able to see the customer's name and phone number for this job.
-            </p>
-          </div>
-          {requestJob && (
-            <div style={{ background: "#f8fafc", border: "1px solid #e5e7eb", borderRadius: 8, padding: "10px 12px", marginBottom: 14 }}>
-              <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Requesting access for:</div>
-              <div style={{ fontWeight: 700, color: "#111827", fontSize: 14 }}>{requestJob.job_no}</div>
-              <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>{(requestJob.cart_items || []).map((i) => i.product_name).join(", ")}</div>
-            </div>
-          )}
-          <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#6b7280", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-            Reason for Request (optional)
-          </label>
-          <TextArea rows={3} placeholder="e.g. Need to coordinate delivery timing with customer…" value={requestReason} onChange={(e) => setRequestReason(e.target.value)} style={{ borderRadius: 8 }} />
-          <div style={{ marginTop: 10, fontSize: 11, color: "#6b7280" }}>
-            <HourglassOutlined style={{ marginRight: 4 }} />An admin will review your request. You'll see the status update on the job card.
-          </div>
-        </div>
+        <TextArea rows={3} placeholder="Reason for request (optional)…" value={requestReason} onChange={(e) => setRequestReason(e.target.value)} style={{ borderRadius: 8, marginTop: 12 }} />
       </Modal>
 
       {/* ════ SESSION NOTES MODAL ════ */}
       <Modal open={notesModal} onCancel={() => !actioning && setNotesModal(false)}
-        title={
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {pendingAction?.action === "open" ? <PlayCircleOutlined style={{ color: "#1e40af" }} /> : pendingAction?.action === "on_hold" ? <PauseCircleOutlined style={{ color: "#f97316" }} /> : <CheckCircleOutlined style={{ color: "#16a34a" }} />}
-            <span style={{ fontWeight: 700 }}>
-              {pendingAction?.action === "open" && "Start / Resume Session"}
-              {pendingAction?.action === "on_hold" && "Pause Session (On Hold)"}
-              {pendingAction?.action === "completed" && "Complete Design Stage"}
-            </span>
-            {pendingAction?.job && <Tag color="blue" style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 11 }}>{pendingAction.job.job_no}</Tag>}
-          </div>
-        }
+        title={<span style={{ fontWeight: 700 }}>
+          {pendingAction?.action === "open" && "Start / Resume Session"}
+          {pendingAction?.action === "on_hold" && "Pause Session"}
+          {pendingAction?.action === "completed" && "Complete Design Stage"}
+          {pendingAction?.job && <Tag color="blue" style={{ marginLeft: 8, fontFamily: "monospace", fontWeight: 700, fontSize: 11 }}>{pendingAction.job.job_no}</Tag>}
+        </span>}
         footer={[
           <Button key="c" onClick={() => setNotesModal(false)} disabled={actioning}>Cancel</Button>,
           <Button key="ok" type="primary" loading={actioning} onClick={handleConfirmAction}
@@ -1048,44 +1164,13 @@ const DesignerJobDashboard = () => {
           </Button>,
         ]}
         width={440} destroyOnClose>
-        {pendingAction?.job && (() => {
-          const sessData = sessionMap[pendingAction.job._id];
-          return (
-            <div>
-              <div style={{ background: "#f8fafc", borderRadius: 8, padding: "10px 12px", marginBottom: 14, border: "1px solid #e5e7eb" }}>
-                <div style={{ fontWeight: 700, color: "#111827" }}>{pendingAction.job.job_no}</div>
-                <div style={{ fontSize: 12, color: "#6b7280" }}>Stage: <strong>{pendingAction.job.current_stage?.stage_label || "Design"}</strong></div>
-              </div>
-              {(pendingAction.action === "on_hold" || pendingAction.action === "completed") && sessData && (
-                <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "10px 12px", marginBottom: 14 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "#0369a1", marginBottom: 6 }}><ClockCircleOutlined style={{ marginRight: 4 }} />Time Logged So Far</div>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: "#1e40af", fontFamily: "monospace" }}>{fmtSecs(getLiveDisplaySecs(pendingAction.job._id))}</div>
-                  {sessData.worked_days > 0 && (
-                    <div style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>{sessData.worked_days} day{sessData.worked_days !== 1 ? "s" : ""} worked · {sessData.closed_sessions} session{sessData.closed_sessions !== 1 ? "s" : ""} closed</div>
-                  )}
-                  {sessData.daily_summary?.length > 0 && (
-                    <div style={{ marginTop: 8 }}>
-                      {sessData.daily_summary.map((d, i) => (
-                        <div key={d.date} style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#374151", padding: "2px 0", borderTop: i > 0 ? "1px solid #e0f2fe" : undefined }}>
-                          <span>Day {i + 1} — {dayjs(d.date).format("DD MMM")}</span>
-                          <span style={{ fontWeight: 700, color: "#0369a1" }}>{d.display}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-              <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#6b7280", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>Notes (optional)</label>
-              <TextArea rows={3}
-                placeholder={pendingAction.action === "open" ? "Starting Day 1 / resuming work…" : pendingAction.action === "on_hold" ? "Done for today, resuming tomorrow…" : "Final notes for design completion…"}
-                value={actionNotes} onChange={(e) => setActionNotes(e.target.value)} style={{ borderRadius: 8 }} />
-            </div>
-          );
-        })()}
+        <TextArea rows={3} placeholder="Notes (optional)…" value={actionNotes} onChange={(e) => setActionNotes(e.target.value)} style={{ borderRadius: 8, marginTop: 12 }} />
       </Modal>
 
-      {/* ════ DESIGN UPLOAD + REVIEW MODAL ════ */}
-      <Modal open={designModal} onCancel={closeDesignModal}
+      {/* ════ DESIGN WORKSPACE MODAL ════ */}
+      <Modal
+        open={designModal}
+        onCancel={closeDesignModal}
         title={
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <FileImageOutlined style={{ color: "#7c3aed" }} />
@@ -1093,14 +1178,19 @@ const DesignerJobDashboard = () => {
             {designJob && <Tag color="purple" style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 11 }}>{designJob.job_no}</Tag>}
           </div>
         }
-        footer={null} width={600} destroyOnClose styles={{ body: { maxHeight: "82vh", overflowY: "auto", padding: "16px 20px" } }}>
+        footer={null}
+        width={620}
+        destroyOnClose
+        styles={{ body: { maxHeight: "84vh", overflowY: "auto", padding: "16px 20px" } }}>
+
         {designJob && (
           <div>
+            {/* Job info */}
             <div style={{ background: "linear-gradient(135deg,#f5f3ff,#eff6ff)", borderRadius: 10, padding: "12px 14px", marginBottom: 14, border: "1px solid #ddd6fe" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                 <div>
                   <div style={{ fontWeight: 800, fontSize: 14, color: "#111827" }}>{designJob.job_no}</div>
-                  <div style={{ fontSize: 14, color: "#6b7280", marginTop: 2 }}>Created by: <strong>{designJob.created_by || "—"}</strong></div>
+                  <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>Created by: <strong>{designJob.created_by || "—"}</strong></div>
                   {(isSuperAdmin || infoRequestMap[designJob._id]?.has_access || user?.email === "hari@dmedia.in") && (
                     <div style={{ fontSize: 14, color: "#374151", marginTop: 4 }}>
                       <UserOutlined style={{ marginRight: 4 }} /><strong>{designJob.customer_name}</strong>
@@ -1113,109 +1203,132 @@ const DesignerJobDashboard = () => {
               <div style={{ marginTop: 10 }}>
                 {(designJob.cart_items || []).map((item, i) => (
                   <div key={i} style={{ fontSize: 12, color: "#374151", display: "flex", justifyContent: "space-between", padding: "3px 0", borderTop: i > 0 ? "1px solid #e9d5ff" : undefined }}>
-                    <span><strong>{item.product_name}</strong>{item.size && <span style={{ color: "#9ca3af" }}> · {item.size}</span>}{item.notes && <span style={{ color: "#7c3aed" }}> · {item.notes}</span>}</span>
+                    <span><strong>{item.product_name}</strong>{item.size && <span style={{ color: "#9ca3af" }}> · {item.size}</span>}</span>
                     <span style={{ fontWeight: 700, color: "#1e40af" }}>₹{item.price}</span>
                   </div>
                 ))}
               </div>
             </div>
 
+            {/* Timer */}
             <div style={{ background: liveTimers[designJob._id] ? "#eff6ff" : "#f9fafb", border: `1px solid ${liveTimers[designJob._id] ? "#bfdbfe" : "#e5e7eb"}`, borderRadius: 10, padding: "12px 14px", marginBottom: 14 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
-                <ClockCircleOutlined style={{ marginRight: 4 }} />Accumulated Design Time
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
+                <ClockCircleOutlined style={{ marginRight: 4 }} />Design Time
                 {liveTimers[designJob._id] && <span style={{ marginLeft: 8, color: "#16a34a", background: "#dcfce7", padding: "1px 6px", borderRadius: 8, fontSize: 10 }}>● LIVE</span>}
               </div>
-              <div style={{ fontFamily: "monospace", fontSize: 28, fontWeight: 800, color: liveTimers[designJob._id] ? "#1e40af" : "#9ca3af", letterSpacing: "0.08em" }}>{fmtSecs(designLiveSecs)}</div>
-              {designSessData && (
-                <div style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>
-                  {designSessData.worked_days || 0} day{(designSessData.worked_days || 0) !== 1 ? "s" : ""} · {designSessData.closed_sessions || 0} session{(designSessData.closed_sessions || 0) !== 1 ? "s" : ""} closed
-                </div>
-              )}
+              <div style={{ fontFamily: "monospace", fontSize: 28, fontWeight: 800, color: liveTimers[designJob._id] ? "#1e40af" : "#9ca3af" }}>{fmtSecs(designLiveSecs)}</div>
             </div>
 
             {designSessData?.daily_summary?.length > 0 && (
               <DailySummaryBar dailySummary={designSessData.daily_summary} totalSecs={designLiveSecs} workedDays={designSessData.worked_days || 0} />
             )}
 
-            {(designJob.cart_items || []).some((i) => i.design_file) && (
-              <>
-                <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
-                  <EyeOutlined style={{ marginRight: 4 }} />Reference Design(s) from Order
-                </div>
-                {(designJob.cart_items || []).filter((i) => i.design_file).map((item, idx) => (
-                  <DesignFilePreview key={idx} fileUrl={item.design_file} label={`${item.product_name} — Reference`} />
+            <Divider style={{ margin: "4px 0 14px" }}>
+              <span style={{ fontSize: 11, color: "#6b7280", fontWeight: 600 }}>Upload Design Files</span>
+            </Divider>
+
+            {/* Format badge strip */}
+            <div style={{ background: "#faf5ff", border: "1px solid #e9d5ff", borderRadius: 10, padding: "10px 12px", marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#7c3aed", marginBottom: 6 }}>
+                <PictureOutlined style={{ marginRight: 6 }} />Supported Formats
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {[
+                  { fmt: "JPEG", desc: "Photo files", icon: "🖼" },
+                  { fmt: "PNG",  desc: "Transparent bg", icon: "🖼" },
+                  { fmt: "WEBP", desc: "Web images", icon: "🖼" },
+                  { fmt: "PDF",  desc: "Documents", icon: "📄" },
+                  { fmt: "CDR",  desc: "CorelDRAW", icon: "✏️" },
+                  { fmt: "DXF",  desc: "CAD files", icon: "📐" },
+                ].map(({ fmt, desc, icon }) => (
+                  <Tooltip key={fmt} title={desc}>
+                    <div style={{
+                      padding: "4px 10px", borderRadius: 8, cursor: "default",
+                      background: ["JPEG","PNG","WEBP"].includes(fmt) ? "#ede9fe" : "#f0fdf4",
+                      border: `1px solid ${["JPEG","PNG","WEBP"].includes(fmt) ? "#c4b5fd" : "#86efac"}`,
+                      fontSize: 11, fontWeight: 700,
+                      color: ["JPEG","PNG","WEBP"].includes(fmt) ? "#6d28d9" : "#166534",
+                    }}>
+                      {icon} {fmt}
+                      {["JPEG","PNG","WEBP"].includes(fmt) && (
+                        <span style={{ fontSize: 9, color: "#8b5cf6", marginLeft: 4 }}>auto-compressed</span>
+                      )}
+                    </div>
+                  </Tooltip>
                 ))}
-              </>
-            )}
-
-            <Divider style={{ margin: "4px 0 14px" }}><span style={{ fontSize: 11, color: "#6b7280", fontWeight: 600 }}>Design Upload</span></Divider>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
-              <div style={{ background: "#f5f3ff", border: "1px solid #c4b5fd", borderRadius: 8, padding: "8px 10px", fontSize: 11, color: "#5b21b6" }}>
-                <strong style={{ display: "block", marginBottom: 3 }}><PictureOutlined style={{ marginRight: 4 }} />Sample (stored in system)</strong>
-                Compressed JPEG ≤ 1 MB for quick preview inside the app.
               </div>
-              <div style={{ background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 8, padding: "8px 10px", fontSize: 11, color: "#78350f" }}>
-                <strong style={{ display: "block", marginBottom: 3 }}><CloudUploadOutlined style={{ marginRight: 4 }} />Original (Google Drive)</strong>
-                Full-quality file on Drive. Auto-deleted after 48 hrs.
+              <div style={{ marginTop: 8, fontSize: 10, color: "#9ca3af", fontStyle: "italic" }}>
+                📸 Image files (JPEG, PNG, WEBP) are automatically compressed to ≤ 500 KB · PDFs, CDR, DXF uploaded as-is
               </div>
             </div>
 
-            <div style={{ marginBottom: 6 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
-                <PictureOutlined style={{ marginRight: 4 }} />{existingDesignFile ? "Update Sample File" : "Upload Sample File"} (auto-compressed ≤ 1 MB)
-              </div>
-              {existingDesignFile && !samplePreviewUrl && <DesignFilePreview fileUrl={existingDesignFile} label="Current Sample" isSample />}
-              {samplePreviewUrl && <DesignFilePreview fileUrl={samplePreviewUrl} label="New Sample Preview" isSample />}
-              <SampleUploadPanel onSampleReady={handleSampleReady} onFileSelected={setOriginalFile} sampleInfo={sampleInfo} />
-              <div style={{ marginBottom: 8 }}>
-                <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4, fontStyle: "italic" }}>After selecting your file above, use the uploader below to save the sample to the server:</div>
-                <UploadHelper setImagePath={(path) => setDesignFilePath(path)} image_path={designFilePath} />
-              </div>
-              <div style={{ marginTop: 6 }}>
-                <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Upload Notes</label>
-                <TextArea rows={2} placeholder="Describe the design, version notes…" value={designNotes} onChange={(e) => setDesignNotes(e.target.value)} style={{ borderRadius: 8 }} />
-              </div>
-              <Button type="primary" icon={<UploadOutlined />} loading={uploading} disabled={!designFilePath && !samplePreviewUrl} onClick={handleUploadDesign}
-                style={{ marginTop: 10, width: "100%", height: 38, background: "#7c3aed", border: "none", borderRadius: 8, fontWeight: 600 }}>
-                {existingDesignFile ? "Update Sample" : "Save Sample"}{designLiveSecs > 0 && ` (${fmtSecs(designLiveSecs)} logged)`}
-              </Button>
+            {/* Multi-file uploader */}
+            <MultiFileUploadPanel
+              files={designFiles}
+              onFilesAdded={handleFilesAdded}
+              onRemoveFile={handleRemoveFile}
+              uploading={processingFiles}
+            />
+
+            {/* Notes */}
+            <div style={{ marginTop: 12, marginBottom: 14 }}>
+              <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "#6b7280", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                Upload Notes
+              </label>
+              <TextArea rows={2} placeholder="Describe the design, version notes…" value={designNotes} onChange={(e) => setDesignNotes(e.target.value)} style={{ borderRadius: 8 }} />
             </div>
 
-            <div style={{ marginTop: 16 }}>
-              <DriveUploadSection jobNo={designJob.job_no} driveLinkValue={driveLink} onDriveLinkChange={setDriveLink} />
-            </div>
+            {/* Save button */}
+            <Button
+              type="primary"
+              icon={submittingDesign ? <LoadingOutlined /> : <UploadOutlined />}
+              loading={submittingDesign}
+              disabled={(!designFiles.length && !driveLink) || hasUploading}
+              onClick={handleSubmitDesign}
+              style={{ width: "100%", height: 42, background: "#7c3aed", border: "none", borderRadius: 10, fontWeight: 700, fontSize: 13, marginBottom: 16 }}>
+              {submittingDesign
+                ? "Uploading…"
+                : allUploaded
+                  ? `Update Design (${designFiles.length} file${designFiles.length > 1 ? "s" : ""})`
+                  : `Save Design${designFiles.length ? ` (${designFiles.length} file${designFiles.length > 1 ? "s" : ""})` : ""}`}
+              {designLiveSecs > 0 && ` · ${fmtSecs(designLiveSecs)}`}
+            </Button>
 
-            {driveLink && existingDesignFile && (
-              <Button icon={<LinkOutlined />}
-                onClick={async () => {
-                  try {
-                    const res = await fetch(`${BASE}/${designJob._id}/upload_design`, {
-                      method: "POST", headers: jsonHeader(),
-                      body: JSON.stringify({ design_file: designJob.design_file, design_drive_link: driveLink, handled_by: { user_id: userId, name: userName }, stage: designJob.current_stage?.stage || "design" }),
-                    });
-                    const data = await res.json();
-                    if (!res.ok || !data.success) throw new Error(data.message);
-                    message.success("Drive link saved!"); loadJobs();
-                  } catch (err) { message.error(err.message); }
-                }}
-                style={{ width: "100%", height: 34, marginBottom: 14, borderRadius: 8, fontWeight: 600, fontSize: 12, color: "#d97706", borderColor: "#fcd34d", background: "#fffbeb" }}>
-                Save Drive Link (without re-uploading sample)
-              </Button>
-            )}
+            {/* Drive section */}
+            <DriveUploadSection jobNo={designJob.job_no} driveLinkValue={driveLink} onDriveLinkChange={setDriveLink} />
 
+            {/* Design review (super admin) */}
             {hasExistingDesign && (
               <>
-                <Divider style={{ margin: "12px 0" }}><span style={{ fontSize: 11, color: "#6b7280", fontWeight: 600 }}>Design Review</span></Divider>
+                <Divider style={{ margin: "12px 0" }}>
+                  <span style={{ fontSize: 11, color: "#6b7280", fontWeight: 600 }}>Design Review</span>
+                </Divider>
+
+                {designJob.design_file && (
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Current Design File</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#f5f3ff", border: "1px solid #c4b5fd", borderRadius: 8, padding: "8px 10px" }}>
+                      <FileImageOutlined style={{ color: "#7c3aed", fontSize: 18 }} />
+                      <span style={{ fontSize: 12, color: "#374151", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {designJob.design_file.split("/").pop() || "design file"}
+                      </span>
+                      <a href={designJob.design_file} target="_blank" rel="noopener noreferrer">
+                        <Button size="small" icon={<EyeOutlined />} style={{ borderRadius: 6, color: "#7c3aed", borderColor: "#c4b5fd" }}>View</Button>
+                      </a>
+                    </div>
+                  </div>
+                )}
+
                 <div style={{ background: "#fefce8", border: "1px solid #fde68a", borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 12, color: "#92400e" }}>
-                   A design file has been uploaded. You can approve or reject it below.
+                  A design has been uploaded. You can approve or reject it below.
                   {designJob.design_status === "rejected" && designJob.design_rejection_reason && (
                     <div style={{ marginTop: 6, color: "#ef4444", fontWeight: 600 }}>⚠ Previously rejected: "{designJob.design_rejection_reason}"</div>
                   )}
                 </div>
+
                 {!showRejectInput ? (
                   <div style={{ display: "flex", gap: 10 }}>
-                    <Popconfirm title="Approve this design?" description="This will mark the design as approved and move the job forward." onConfirm={handleApproveDesign} okText="Approve" okButtonProps={{ style: { background: "#16a34a", border: "none" } }}>
+                    <Popconfirm title="Approve this design?" onConfirm={handleApproveDesign} okText="Approve" okButtonProps={{ style: { background: "#16a34a", border: "none" } }}>
                       <Button type="primary" icon={<CheckCircleOutlined />} loading={approving}
                         style={{ flex: 1, height: 38, background: "#16a34a", border: "none", borderRadius: 8, fontWeight: 600 }}>Approve Design</Button>
                     </Popconfirm>
@@ -1224,9 +1337,6 @@ const DesignerJobDashboard = () => {
                   </div>
                 ) : (
                   <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 10, padding: "12px" }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: "#ef4444", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                      Rejection Reason <span style={{ color: "#ef4444" }}>*</span>
-                    </div>
                     <TextArea rows={3} placeholder="Explain what needs to be fixed…" value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} style={{ borderRadius: 8, borderColor: "#fca5a5", marginBottom: 10 }} />
                     <div style={{ display: "flex", gap: 8 }}>
                       <Button danger icon={<CloseCircleOutlined />} loading={rejecting} onClick={handleRejectDesign} style={{ flex: 1, borderRadius: 8, fontWeight: 600 }}>Confirm Reject</Button>
@@ -1244,4 +1354,3 @@ const DesignerJobDashboard = () => {
 };
 
 export default DesignerJobDashboard;
-
