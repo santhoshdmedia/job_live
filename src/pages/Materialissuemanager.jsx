@@ -1550,7 +1550,7 @@ const IssuePanel = ({
                 <div className="space-y-4">
                   <div>
                     <p className="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">
-                      Print Dimensions (ft)
+                      Media Dimensions (ft)
                     </p>
                     <div className="grid grid-cols-2 gap-3">
                       <NumberInput

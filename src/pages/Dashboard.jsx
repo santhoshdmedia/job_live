@@ -11,6 +11,12 @@ import { Spin, Empty, notification } from "antd";
 import { useSelector } from "react-redux";
 
 // ═══════════════════════════════════════════════════════════════════
+// Super Admin Email Whitelist
+// ═══════════════════════════════════════════════════════════════════
+
+const SUPER_ADMIN_EMAILS = ["hari@dmedia.in", "admin@dmedia.in"];
+
+// ═══════════════════════════════════════════════════════════════════
 // API Layer
 // ═══════════════════════════════════════════════════════════════════
 
@@ -45,11 +51,11 @@ const fetchDashboardData = async ({ baseURL, token, userId, user, isSuperAdmin }
   // For regular users: get ALL jobs first, then filter by creator
   const allData = await apiGet(allEndpoint, token);
   const allJobs = allData?.data?.jobs || [];
-  
+
   // Filter jobs created by the logged-in user
   const myJobs = allJobs.filter(job => {
     if (!job.created_by) return false;
-    
+
     // Handle different possible formats of created_by
     if (typeof job.created_by === 'object' && job.created_by !== null) {
       // If created_by is an object with name or _id
@@ -58,11 +64,11 @@ const fetchDashboardData = async ({ baseURL, token, userId, user, isSuperAdmin }
     // If created_by is a string (name or ID)
     return job.created_by === user.name || job.created_by === userId;
   });
-  
+
   const expiryToday = allJobs.filter(
     (j) => j.valid_until && j.valid_until.slice(0, 10) === todayStr
   );
-  
+
   return { allJobs, myJobs, expiryToday };
 };
 
@@ -200,10 +206,9 @@ const ViewModal = ({ job, onClose }) => {
       }}
     >
       <div
-      className="text-black bg-white"
+        className="text-black bg-white"
         onClick={e => e.stopPropagation()}
         style={{
-          
           borderRadius: 18, width: "100%", maxWidth: 680,
           maxHeight: "90vh", overflowY: "auto",
           boxShadow: "0 24px 64px rgba(0,0,0,0.2)",
@@ -680,7 +685,11 @@ export default function Dashboard() {
   const token   = localStorage.getItem("admintoken") || "";
   const baseURL = "https://api.dmedia.in/api";
   const { user } = useSelector((state) => state.authSlice);
-  const isSuperAdmin = user.role === "super admin";
+
+  // ── Super admin check: role-based OR email-based ────────────────
+  const isSuperAdmin =
+    user.role === "super admin" ||
+    SUPER_ADMIN_EMAILS.includes(user.email?.toLowerCase().trim());
 
   const [data, setData]         = useState(null);
   const [loading, setLoading]   = useState(true);
@@ -739,24 +748,24 @@ export default function Dashboard() {
   const expiryToday = data?.expiryToday || [];
   const expiryIds   = new Set(expiryToday.map(j => j._id));
 
-  const todayCreated  = myJobs.filter(j => j.createdAt?.slice(0, 10) === todayStr);
-  const designJobs    = (isSuperAdmin ? allJobs : myJobs).filter(j => j.job_status === "design");
+  const todayCreated   = myJobs.filter(j => j.createdAt?.slice(0, 10) === todayStr);
+  const designJobs     = (isSuperAdmin ? allJobs : myJobs).filter(j => j.job_status === "design");
   const productionJobs = (isSuperAdmin ? allJobs : myJobs).filter(j => j.job_status === "production");
-  const qcJobs        = (isSuperAdmin ? allJobs : myJobs).filter(j => j.job_status === "quality_check");
-  const deliveryJobs  = (isSuperAdmin ? allJobs : myJobs).filter(j => j.job_status === "delivery");
-  const completedJobs = (isSuperAdmin ? allJobs : myJobs).filter(j => j.job_status === "completed");
-  const inProgress    = (isSuperAdmin ? allJobs : myJobs).filter(j => j.job_status === "in_progress");
-  const onHold        = (isSuperAdmin ? allJobs : myJobs).filter(j => j.job_status === "on_hold");
+  const qcJobs         = (isSuperAdmin ? allJobs : myJobs).filter(j => j.job_status === "quality_check");
+  const deliveryJobs   = (isSuperAdmin ? allJobs : myJobs).filter(j => j.job_status === "delivery");
+  const completedJobs  = (isSuperAdmin ? allJobs : myJobs).filter(j => j.job_status === "completed");
+  const inProgress     = (isSuperAdmin ? allJobs : myJobs).filter(j => j.job_status === "in_progress");
+  const onHold         = (isSuperAdmin ? allJobs : myJobs).filter(j => j.job_status === "on_hold");
 
   const STATS = [
-    { key: "all",           accent: "#378ADD", icon: <FiBriefcase    size={18} />, label: isSuperAdmin ? "Total jobs" : "My jobs",  value: isSuperAdmin ? allJobs.length : myJobs.length },
-    { key: "today",         accent: "#534AB7", icon: <FiCalendar     size={18} />, label: "Created today",   value: todayCreated.length    },
-    { key: "design",        accent: "#7C3AED", icon: <FiEdit3        size={18} />, label: "Design",          value: designJobs.length      },
-    { key: "production",    accent: "#0369A1", icon: <FiPackage      size={18} />, label: "Production",      value: productionJobs.length  },
-    { key: "quality_check", accent: "#B45309", icon: <FiShield       size={18} />, label: "Quality Check",   value: qcJobs.length          },
-    { key: "delivery",      accent: "#0F6E56", icon: <FiTruck        size={18} />, label: "Delivery",        value: deliveryJobs.length    },
-    { key: "completed",     accent: "#047857", icon: <FiCheckCircle  size={18} />, label: "Completed",       value: completedJobs.length   },
-    { key: "expiry",        accent: "#993C1D", icon: <FiAlertTriangle size={18} />, label: "Expiring today", value: expiryToday.filter(j => myJobs.some(mj => mj._id === j._id)).length },
+    { key: "all",           accent: "#378ADD", icon: <FiBriefcase     size={18} />, label: isSuperAdmin ? "Total jobs" : "My jobs",  value: isSuperAdmin ? allJobs.length : myJobs.length },
+    { key: "today",         accent: "#534AB7", icon: <FiCalendar      size={18} />, label: "Created today",   value: todayCreated.length    },
+    { key: "design",        accent: "#7C3AED", icon: <FiEdit3         size={18} />, label: "Design",          value: designJobs.length      },
+    { key: "production",    accent: "#0369A1", icon: <FiPackage       size={18} />, label: "Production",      value: productionJobs.length  },
+    { key: "quality_check", accent: "#B45309", icon: <FiShield        size={18} />, label: "Quality Check",   value: qcJobs.length          },
+    { key: "delivery",      accent: "#0F6E56", icon: <FiTruck         size={18} />, label: "Delivery",        value: deliveryJobs.length    },
+    { key: "completed",     accent: "#047857", icon: <FiCheckCircle   size={18} />, label: "Completed",       value: completedJobs.length   },
+    { key: "expiry",        accent: "#993C1D", icon: <FiAlertTriangle size={18} />, label: "Expiring today",  value: expiryToday.filter(j => myJobs.some(mj => mj._id === j._id)).length },
   ];
 
   // ── Filter → search → sort ──────────────────────────────────────
@@ -839,7 +848,7 @@ export default function Dashboard() {
       {/* Error banner */}
       {error && <ErrorBanner message={error} onRetry={() => load()} />}
 
-      {/* Expiry banner - only for user's own expiring jobs */}
+      {/* Expiry banner */}
       {!loading && expiryToday.filter(j => myJobs.some(mj => mj._id === j._id)).length > 0 && (
         <div style={{
           display: "flex", alignItems: "center", gap: 10,
@@ -1011,7 +1020,7 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Stage breakdown — super admin */}
+      {/* Stage breakdown — super admin only */}
       {isSuperAdmin && !loading && data && <StageBreakdown allJobs={allJobs} />}
 
       {/* View Modal */}
