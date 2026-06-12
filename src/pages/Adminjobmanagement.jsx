@@ -34,9 +34,10 @@ import {
   DeleteOutlined,
   SaveOutlined,
   PhoneOutlined,
-  PercentageOutlined,
   WalletOutlined,
-  BankOutlined,InfoCircleOutlined,
+  BankOutlined,
+  InfoCircleOutlined,
+  ExclamationCircleOutlined,
 } from "@ant-design/icons";
 import CustomTable from "../components/CustomTable";
 import UploadHelper from "../helper/UploadHelper";
@@ -70,6 +71,116 @@ const useBreakpoint = () => {
     isTablet: bp === "md",
     isDesktop: bp === "lg",
   };
+};
+
+// ─── Overdue Helper ───────────────────────────────────────────────────────────
+/**
+ * Returns the overdue info for a job's estimated_delivery_date.
+ *
+ * - Negative  → days until delivery (early / future)
+ * - 0         → due today
+ * - Positive  → days past due (overdue)
+ *
+ * We compare calendar-day differences (ignoring time) so the badge is
+ * human-readable ("today", "tomorrow", "yesterday", etc.)
+ *
+ * Returns: { diff: number, label: string, color: string, bg: string, isOverdue: boolean }
+ */
+const getOverdueInfo = (estimated_delivery_date) => {
+  if (!estimated_delivery_date) return null;
+
+  const today = dayjs().startOf("day");
+  const due = dayjs(estimated_delivery_date).startOf("day");
+  const diff = today.diff(due, "day"); // positive = past due, negative = future
+
+  if (diff === 0) {
+    return {
+      diff: 0,
+      label: "Today",
+      badge: "0",
+      color: "#92400e",
+      bg: "#fef3c7",
+      border: "#fcd34d",
+      isOverdue: false,
+      isDueToday: true,
+    };
+  }
+
+  if (diff < 0) {
+    // Future: diff is negative (e.g. -1 = tomorrow, -2 = day after tomorrow)
+    return {
+      diff,
+      label: diff === -1 ? "Due Tomorrow" : `Due in ${Math.abs(diff)}d`,
+      badge: `${diff}`, // shows -1, -2, etc.
+      color: "#065f46",
+      bg: "#d1fae5",
+      border: "#6ee7b7",
+      isOverdue: false,
+      isDueToday: false,
+    };
+  }
+
+  // Past due
+  return {
+    diff,
+    label: diff === 1 ? "Overdue by 1 day" : `Overdue by ${diff} days`,
+    badge: `+${diff}`,
+    color: "#991b1b",
+    bg: "#fee2e2",
+    border: "#fca5a5",
+    isOverdue: true,
+    isDueToday: false,
+  };
+};
+
+/**
+ * Small badge rendered above the Job No tag in the table.
+ * Shows: red "+N" for overdue, yellow "0" for today, green "-N" for future.
+ */
+const OverdueBadge = ({ estimated_delivery_date }) => {
+  const info = getOverdueInfo(estimated_delivery_date);
+  if (!info) return null;
+
+  // Only show a badge if overdue OR due today. Future jobs get a subtle chip.
+  const showAlways = info.isOverdue || info.isDueToday;
+  if (!showAlways && info.diff < -3) return null; // hide if more than 3 days away
+
+  return (
+    <Tooltip
+      title={
+        <span style={{ fontSize: 12 }}>
+          {info.label} · Est. delivery:{" "}
+          {dayjs(estimated_delivery_date).format("DD MMM YYYY")}
+        </span>
+      }
+      placement="top"
+    >
+      <span
+        style={{
+          display: "inline-block",
+          fontSize: 10,
+          fontWeight: 800,
+          lineHeight: 1,
+          padding: "2px 6px",
+          borderRadius: 10,
+          border: `1px solid ${info.border}`,
+          background: info.bg,
+          color: info.color,
+          letterSpacing: "0.02em",
+          cursor: "default",
+          fontFamily: "monospace",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {info.isOverdue && (
+          <ExclamationCircleOutlined
+            style={{ fontSize: 9, marginRight: 2, verticalAlign: "middle" }}
+          />
+        )}
+        {info.badge}d
+      </span>
+    </Tooltip>
+  );
 };
 
 // ─── Static Configs ───────────────────────────────────────────────────────────
@@ -180,7 +291,6 @@ const calcItemTotals = (it) => {
 };
 
 // ─── Job-level totals for VIEW modal ──────────────────────────────────────────
-// Supports both old (discount_percentage) and new (discount_amount) data from API
 const calcJobTotals = (job) => {
   const cartItems = job.cart_items || [];
   let subtotal = 0;
@@ -192,11 +302,9 @@ const calcJobTotals = (job) => {
     taxAmount += gstAmt;
   });
 
-  // ── FIXED: support flat discount_amount; fall back to old percentage field ──
   let discountAmt = parseFloat(job.discount_amount) || 0;
   let discountPct = 0;
   if (!discountAmt && job.discount_percentage) {
-    // legacy records stored as percentage — convert for display only
     discountPct = parseFloat(job.discount_percentage) || 0;
     discountAmt = subtotal * (discountPct / 100);
   }
@@ -239,7 +347,6 @@ const EMPTY_ITEM = {
   notes: "",
 };
 
-// ── FIXED: discount_amount (flat ₹) replaces discount_percentage ──
 const DEFAULT_EDIT_FORM = {
   customer_name: "",
   customer_phone: "",
@@ -255,7 +362,7 @@ const DEFAULT_EDIT_FORM = {
   delivery_charges: 0,
   free_delivery: false,
   design_charges: 0,
-  discount_amount: 0, // ← CHANGED from discount_percentage
+  discount_amount: 0,
   payment_mode: "",
   payment_amount: "",
   notes: "",
@@ -1014,13 +1121,11 @@ const AdminJobManagement = () => {
       const adminId = profile._id || null;
       const adminName = profile.name || null;
 
-      // Check if it's the static "Customer Designed" option
       const isCustomerDesigned = selectedDesigner._id === "customer_designed";
 
       let response;
 
       if (isCustomerDesigned) {
-        // For customer designed, approve without assigning to internal designer
         response = await fetch(
           `https://api.dmedia.in/api/jobs/${approvingJob._id}/approve`,
           {
@@ -1034,12 +1139,10 @@ const AdminJobManagement = () => {
               approved_by: adminName,
               approved_by_admin_id: adminId,
               is_customer_designed: true,
-              // No assign_to for customer designed
             }),
           },
         );
       } else {
-        // Normal designer assignment
         const designerName =
           selectedDesigner.name ||
           selectedDesigner.fullName ||
@@ -1086,6 +1189,7 @@ const AdminJobManagement = () => {
       setApproving(false);
     }
   };
+
   const closeApproveModal = () => {
     if (approving) return;
     setApproveModalOpen(false);
@@ -1104,10 +1208,8 @@ const AdminJobManagement = () => {
     const address_line1 = streetParts[0] || "";
     const address_line2 = streetParts.slice(1).join(", ") || "";
 
-    // ── FIXED: load discount_amount from record; fall back from old % field ──
     const storedDiscountAmt = parseFloat(record.discount_amount) || 0;
     const legacyDiscountPct = parseFloat(record.discount_percentage) || 0;
-    // Compute cart subtotal to convert legacy % → ₹ if needed
     let legacyDiscountAmt = 0;
     if (!storedDiscountAmt && legacyDiscountPct > 0) {
       const cartSub = (record.cart_items || []).reduce((acc, it) => {
@@ -1134,7 +1236,6 @@ const AdminJobManagement = () => {
       delivery_charges: record.delivery_charges ?? 0,
       free_delivery: record.free_delivery ?? false,
       design_charges: record.design_charges ?? 0,
-      // ── FIXED: use flat amount ──
       discount_amount: storedDiscountAmt || legacyDiscountAmt || 0,
       payment_mode: record.payment_mode || "",
       payment_amount: record.payment_amount || "",
@@ -1202,7 +1303,7 @@ const AdminJobManagement = () => {
   const removeEditItem = (i) =>
     setEditItems((p) => p.filter((_, j) => j !== i));
 
-  // ── FIXED: Edit totals — discount is a flat ₹ amount now ──────────────────
+  // ── Edit totals ───────────────────────────────────────────────────────────
   const editTotals = useMemo(() => {
     let subtotal = 0;
     let taxAmount = 0;
@@ -1213,7 +1314,6 @@ const AdminJobManagement = () => {
       taxAmount += gstAmt;
     });
 
-    // Flat discount amount, clamped so it never exceeds subtotal
     const discountAmt = Math.min(
       parseFloat(editForm.discount_amount) || 0,
       subtotal,
@@ -1231,7 +1331,7 @@ const AdminJobManagement = () => {
     return {
       subtotal,
       taxAmount,
-      discountAmt, // flat ₹ value
+      discountAmt,
       taxableAmount,
       designCharges,
       deliveryCharges,
@@ -1280,7 +1380,6 @@ const AdminJobManagement = () => {
           pincode: editForm.pincode,
           country: editForm.country,
         },
-
         cart_items: valid.map((it) => {
           const isSqFt = it.quantity_type === "sq.ft";
           return {
@@ -1304,21 +1403,16 @@ const AdminJobManagement = () => {
                 : "",
           };
         }),
-
         gst_no: editForm.gst_no.trim(),
         delivery_charges: editTotals.deliveryCharges,
         free_delivery: editForm.free_delivery,
         design_charges: editTotals.designCharges,
-
-        // ── FIXED: send flat discount amount; percentage becomes 0 ──
         discount_amount: parseFloat(editTotals.discountAmt.toFixed(2)),
-        discount_percentage: 0, // deprecated — kept for API backward-compat
-
+        discount_percentage: 0,
         subtotal: parseFloat(editTotals.subtotal.toFixed(2)),
         taxable_amount: parseFloat(editTotals.taxableAmount.toFixed(2)),
         tax_amount: parseFloat(editTotals.taxAmount.toFixed(2)),
         total_amount: parseFloat(editTotals.grandTotal.toFixed(2)),
-
         payment_mode: editForm.payment_mode || "",
         payment_amount: parseFloat(editForm.payment_amount) || 0,
         balance_amount: parseFloat(editTotals.balance.toFixed(2)),
@@ -1354,7 +1448,7 @@ const AdminJobManagement = () => {
   const c2 = isMobile ? "1fr" : "1fr 1fr";
   const c3 = isMobile ? "1fr" : isTablet ? "1fr 1fr" : "1fr 1fr 1fr";
   const c4 = isMobile ? "1fr 1fr" : isTablet ? "1fr 1fr" : "repeat(4,1fr)";
-  const c5 = isMobile ? "1fr 1fr" : isTablet ? "1fr 1fr 1fr" : "repeat(4,1fr)"; // 4 cols now (removed 1 %)
+  const c5 = isMobile ? "1fr 1fr" : isTablet ? "1fr 1fr 1fr" : "repeat(4,1fr)";
 
   const formatCountdown = (secs) => {
     const m = Math.floor(secs / 60);
@@ -1394,13 +1488,17 @@ const AdminJobManagement = () => {
     {
       title: "Job No",
       dataIndex: "job_no",
-      render: (n) => (
-        <Tag
-          color="blue"
-          style={{ fontFamily: "monospace", fontWeight: 600, fontSize: 11 }}
-        >
-          {n || "—"}
-        </Tag>
+      render: (n, record) => (
+        <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-start" }}>
+          {/* ── Overdue badge sits above the Job No tag ── */}
+          <OverdueBadge estimated_delivery_date={record.estimated_delivery_date} />
+          <Tag
+            color="blue"
+            style={{ fontFamily: "monospace", fontWeight: 600, fontSize: 11, margin: 0 }}
+          >
+            {n || "—"}
+          </Tag>
+        </div>
       ),
     },
     {
@@ -1446,15 +1544,35 @@ const AdminJobManagement = () => {
     ...(!isMobile
       ? [
           {
-            title: "Date",
-            dataIndex: "order_date",
-            render: (d) => (
-              <span
-                style={{ fontSize: 12, color: "#374151", whiteSpace: "nowrap" }}
-              >
-                {d ? dayjs(d).format("DD MMM YY") : "—"}
-              </span>
-            ),
+            title: "Est. Delivery",
+            dataIndex: "estimated_delivery_date",
+            render: (d, record) => {
+              if (!d) return <span style={{ color: "#9ca3af", fontSize: 12 }}>—</span>;
+              const info = getOverdueInfo(d);
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <span style={{ fontSize: 12, color: "#374151", whiteSpace: "nowrap" }}>
+                    {dayjs(d).format("DD MMM YY")}
+                  </span>
+                  {info && (
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 600,
+                        color: info.color,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {info.isDueToday
+                        ? "⚡ Due today"
+                        : info.isOverdue
+                          ? `⚠ ${info.label}`
+                          : info.label}
+                    </span>
+                  )}
+                </div>
+              );
+            },
           },
         ]
       : []),
@@ -1783,6 +1901,12 @@ const AdminJobManagement = () => {
                 {viewJob.job_no}
               </Tag>
             )}
+            {/* ── Overdue badge in modal title ── */}
+            {viewJob?.estimated_delivery_date && (
+              <OverdueBadge
+                estimated_delivery_date={viewJob.estimated_delivery_date}
+              />
+            )}
           </div>
         }
         width={isMobile ? "100vw" : "min(96vw, 760px)"}
@@ -1805,6 +1929,7 @@ const AdminJobManagement = () => {
             const addr = viewJob.delivery_address || {};
             const totals = calcJobTotals(viewJob);
             const cartItems = viewJob.cart_items || [];
+            const overdueInfo = getOverdueInfo(viewJob.estimated_delivery_date);
 
             const fullAddress = [
               addr.street,
@@ -1822,6 +1947,36 @@ const AdminJobManagement = () => {
               <div
                 style={{ display: "flex", flexDirection: "column", gap: 14 }}
               >
+                {/* ── Overdue Alert Banner (show for overdue and due-today) ── */}
+                {overdueInfo && (overdueInfo.isOverdue || overdueInfo.isDueToday) && (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "10px 14px",
+                      borderRadius: 8,
+                      background: overdueInfo.bg,
+                      border: `1px solid ${overdueInfo.border}`,
+                    }}
+                  >
+                    <ExclamationCircleOutlined
+                      style={{ color: overdueInfo.color, fontSize: 16, flexShrink: 0 }}
+                    />
+                    <div>
+                      <div style={{ fontWeight: 700, color: overdueInfo.color, fontSize: 13 }}>
+                        {overdueInfo.isDueToday
+                          ? "⚡ Delivery due today!"
+                          : `⚠ ${overdueInfo.label}`}
+                      </div>
+                      <div style={{ fontSize: 11, color: overdueInfo.color, opacity: 0.85 }}>
+                        Est. delivery was{" "}
+                        {dayjs(viewJob.estimated_delivery_date).format("DD MMM YYYY")}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* ── Status & Meta ── */}
                 <div
                   style={{
@@ -2490,7 +2645,7 @@ const AdminJobManagement = () => {
           >
             <EditOutlined style={{ color: "#2563eb" }} />
             <span style={{ fontWeight: 700, fontSize: isMobile ? 14 : 15 }}>
-              Edit Job{" "}
+              Edit Job
             </span>
             {editJob && (
               <Tag
@@ -2712,7 +2867,6 @@ const AdminJobManagement = () => {
               marginBottom: 14,
             }}
           >
-            {/* ── FIXED: Discount (₹) — flat amount input, no % ── */}
             <FormField label="Discount (₹)">
               <InputNumber
                 min={0}
@@ -2886,7 +3040,6 @@ const AdminJobManagement = () => {
               label="Subtotal (items base)"
               value={`₹${editTotals.subtotal.toFixed(2)}`}
             />
-            {/* ── FIXED: show flat discount amount, not percentage ── */}
             {editTotals.discountAmt > 0 && (
               <SummaryRow
                 label="Discount"
@@ -3115,7 +3268,6 @@ const AdminJobManagement = () => {
                   designersLoading ? "Loading…" : "No designers found"
                 }
               >
-                {/* Static option for "Designed By Customer" */}
                 <Option value="customer_designed">
                   <div
                     style={{ display: "flex", alignItems: "center", gap: 8 }}
@@ -3130,7 +3282,6 @@ const AdminJobManagement = () => {
                   </div>
                 </Option>
 
-                {/* Divider */}
                 {designers.length > 0 && (
                   <Option disabled value="divider">
                     <Divider style={{ margin: 8 }} orientation="left" plain>
@@ -3141,7 +3292,6 @@ const AdminJobManagement = () => {
                   </Option>
                 )}
 
-                {/* Dynamic designers list */}
                 {designers.map((d) => (
                   <Option key={d._id} value={d._id}>
                     <div
@@ -3156,7 +3306,6 @@ const AdminJobManagement = () => {
                 ))}
               </Select>
 
-              {/* Info message when customer designed is selected */}
               {selectedDesigner?._id === "customer_designed" && (
                 <div
                   style={{
@@ -3221,7 +3370,7 @@ const AdminJobManagement = () => {
         @keyframes pulse {
           0%, 100% { opacity: 1; }
           50%       { opacity: 0.4; }
-        }
+        } 
       `}</style>
     </div>
   );

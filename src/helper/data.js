@@ -8,7 +8,29 @@ export const MENU_DATA = [
     icon: ICON_HELPER.HOME_ICON,
     to: "/dashboard",
     special: ["dashboard"],
-    for: ["super admin", "accounting team", "designing team", "production team", "delivery team","Frontend admin"],
+    for: [
+      "super admin",
+      "accounting team",
+      "designing team",
+      "production team",
+      "delivery team",
+      "Frontend admin",
+    ],
+  },
+  {
+    id: 0,
+    name: "site visit dashboard",
+    icon: ICON_HELPER.HOME_ICON,
+    to: "/site-visit-dashboard",
+    special: ["site-visit-dashboard"],
+    for: [
+      "super admin",
+      "accounting team",
+      "designing team",
+      "production team",
+      "delivery team",
+      "Frontend admin",
+    ],
   },
   {
     id: 3,
@@ -16,7 +38,15 @@ export const MENU_DATA = [
     icon: ICON_HELPER.ORDERS_ICON,
     to: "/my-jobs",
     special: ["my-jobs"],
-    for: ["super admin", "accounting team", "designing team", "production team", "delivery team","quality check","packing team"],
+    for: [
+      "super admin",
+      "accounting team",
+      "designing team",
+      "production team",
+      "delivery team",
+      "quality check",
+      "packing team",
+    ],
   },
 
   {
@@ -41,10 +71,25 @@ export const MENU_DATA = [
     icon: ICON_HELPER.PRODUCT_ICON,
     to: "/material-issue-manager",
     special: ["material-issue-manager"],
-    for: ["super admin","store manager"],
+    for: ["super admin", "store manager"],
   },
   {
-    id:7,
+    id: 21,
+    name: "Pick up",
+    icon: ICON_HELPER.HOME_ICON,
+    to: "/pickup-dashboard",
+    special: ["pickup-dashboard"],
+    for: [
+      "super admin",
+      "accounting team",
+      "designing team",
+      "production team",
+      "delivery team",
+      "Frontend admin",
+    ],
+  },
+  {
+    id: 7,
     name: "Production Panel",
     icon: ICON_HELPER.BANNER_ICON,
     to: "/production-panel",
@@ -84,8 +129,6 @@ export const MENU_DATA = [
     special: ["erection-panel"],
     for: ["super admin"],
   },
-
- 
 ];
 
 export const GET_DASHBOARD_COUNTS = (name, allCounts, others) => {

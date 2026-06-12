@@ -13,6 +13,8 @@ import MyJobs from "../pages/Myjobs";
 import QualityCheckDashboard from "../pages/QualityCheckDashboard";
 import ErectionPanel from "../pages/Erectionpanel";
 import AddProduct from "../pages/AddProduct";
+import SiteVisitDashboard from "../pages/Sitevisitdashboard";
+import PickupDashboard from "../pages/PickupDashboard";
 
 const ProtectedRoute = ({ children, pageName }) => (
   <PermissionGuard pageName={pageName}>{children}</PermissionGuard>
@@ -53,6 +55,15 @@ export const router = createBrowserRouter([
         ),
       },
       {
+        path: "site-visit-dashboard",
+        element: (
+          <ProtectedRoute pageName="site-visit-dashboard">
+            <SiteVisitDashboard />
+          </ProtectedRoute>
+        ),
+      },
+        
+      {
         path: "my-jobs",
         element: (
           <ProtectedRoute pageName="my-jobs">
@@ -89,6 +100,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute pageName="quality-check-dashboard">
             <QualityCheckDashboard />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "pickup-dashboard",
+        element: (
+          <ProtectedRoute pageName="pickup-dashboard">
+            <PickupDashboard />
           </ProtectedRoute>
         ),
       },
