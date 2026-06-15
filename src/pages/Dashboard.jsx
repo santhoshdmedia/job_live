@@ -6,6 +6,7 @@ import {
   FiWifi, FiWifiOff, FiChevronDown, FiChevronUp, FiSearch,
   FiEye, FiX, FiPackage, FiTruck, FiShield, FiPhone,
   FiMapPin, FiClock, FiDollarSign, FiFileText, FiImage,
+  FiSlash, FiActivity,
 } from "react-icons/fi";
 import { Spin, Empty, notification } from "antd";
 import { useSelector } from "react-redux";
@@ -39,34 +40,21 @@ const fetchDashboardData = async ({ baseURL, token, userId, user, isSuperAdmin }
   const todayStr = new Date().toISOString().slice(0, 10);
   const allEndpoint = `${baseURL}/jobs?page=1&limit=500&sort_by=createdAt&sort_order=desc`;
 
-  if (isSuperAdmin) {
-    const data = await apiGet(allEndpoint, token);
-    const allJobs = data?.data?.jobs || [];
-    const expiryToday = allJobs.filter(
-      (j) => j.valid_until && j.valid_until.slice(0, 10) === todayStr
-    );
-    return { allJobs, myJobs: allJobs, expiryToday };
-  }
-
-  // For regular users: get ALL jobs first, then filter by creator
   const allData = await apiGet(allEndpoint, token);
   const allJobs = allData?.data?.jobs || [];
 
-  // Filter jobs created by the logged-in user
-  const myJobs = allJobs.filter(job => {
-    if (!job.created_by) return false;
-
-    // Handle different possible formats of created_by
-    if (typeof job.created_by === 'object' && job.created_by !== null) {
-      // If created_by is an object with name or _id
-      return job.created_by.name === user.name || job.created_by._id === userId;
-    }
-    // If created_by is a string (name or ID)
-    return job.created_by === user.name || job.created_by === userId;
-  });
+  const myJobs = isSuperAdmin
+    ? allJobs
+    : allJobs.filter(job => {
+        if (!job.created_by) return false;
+        if (typeof job.created_by === "object" && job.created_by !== null) {
+          return job.created_by.name === user.name || job.created_by._id === userId;
+        }
+        return job.created_by === user.name || job.created_by === userId;
+      });
 
   const expiryToday = allJobs.filter(
-    (j) => j.valid_until && j.valid_until.slice(0, 10) === todayStr
+    j => j.valid_until && j.valid_until.slice(0, 10) === todayStr
   );
 
   return { allJobs, myJobs, expiryToday };
@@ -77,24 +65,26 @@ const fetchDashboardData = async ({ baseURL, token, userId, user, isSuperAdmin }
 // ═══════════════════════════════════════════════════════════════════
 
 const STATUS_CONFIG = {
-  draft:         { label: "Draft",          color: "#5F5E5A", bg: "#F1EFE8", icon: <FiEdit3       size={11} /> },
-  accepted:      { label: "Accepted",       color: "#185FA5", bg: "#E6F1FB", icon: <FiCheckCircle size={11} /> },
-  design:        { label: "Design",         color: "#7C3AED", bg: "#EDE9FE", icon: <FiEdit3       size={11} /> },
-  in_progress:   { label: "In Progress",    color: "#3B6D11", bg: "#EAF3DE", icon: <FiZap         size={11} /> },
-  production:    { label: "Production",     color: "#0369A1", bg: "#E0F2FE", icon: <FiPackage     size={11} /> },
-  quality_check: { label: "Quality Check",  color: "#B45309", bg: "#FEF3C7", icon: <FiShield      size={11} /> },
-  delivery:      { label: "Delivery",       color: "#0F6E56", bg: "#ECFDF5", icon: <FiTruck       size={11} /> },
-  on_hold:       { label: "On Hold",        color: "#BA7517", bg: "#FAEEDA", icon: <FiPauseCircle size={11} /> },
-  completed:     { label: "Completed",      color: "#047857", bg: "#D1FAE5", icon: <FiCheckCircle size={11} /> },
-  rejected:      { label: "Rejected",       color: "#A32D2D", bg: "#FCEBEB", icon: <FiXCircle     size={11} /> },
-  converted:     { label: "Converted",      color: "#534AB7", bg: "#EEEDFE", icon: <FiTrendingUp  size={11} /> },
-  expired:       { label: "Expired",        color: "#993C1D", bg: "#FAECE7", icon: <FiAlertCircle size={11} /> },
+  draft:         { label: "Draft",         color: "#5F5E5A", bg: "#F1EFE8", icon: <FiEdit3       size={11} /> },
+  accepted:      { label: "Accepted",      color: "#185FA5", bg: "#E6F1FB", icon: <FiCheckCircle size={11} /> },
+  design:        { label: "Design",        color: "#7C3AED", bg: "#EDE9FE", icon: <FiEdit3       size={11} /> },
+  in_progress:   { label: "In Progress",   color: "#3B6D11", bg: "#EAF3DE", icon: <FiZap         size={11} /> },
+  production:    { label: "Production",    color: "#0369A1", bg: "#E0F2FE", icon: <FiPackage     size={11} /> },
+  quality_check: { label: "Quality Check", color: "#B45309", bg: "#FEF3C7", icon: <FiShield      size={11} /> },
+  delivery:      { label: "Delivery",      color: "#0F6E56", bg: "#ECFDF5", icon: <FiTruck       size={11} /> },
+  on_hold:       { label: "On Hold",       color: "#BA7517", bg: "#FAEEDA", icon: <FiPauseCircle size={11} /> },
+  completed:     { label: "Completed",     color: "#047857", bg: "#D1FAE5", icon: <FiCheckCircle size={11} /> },
+  rejected:      { label: "Rejected",      color: "#A32D2D", bg: "#FCEBEB", icon: <FiXCircle     size={11} /> },
+  converted:     { label: "Converted",     color: "#534AB7", bg: "#EEEDFE", icon: <FiTrendingUp  size={11} /> },
+  expired:       { label: "Expired",       color: "#993C1D", bg: "#FAECE7", icon: <FiAlertCircle size={11} /> },
+  overdue:       { label: "Overdue",       color: "#9B1C1C", bg: "#FEE2E2", icon: <FiSlash       size={11} /> },
+  delayed:       { label: "Delayed",       color: "#92400E", bg: "#FEF3C7", icon: <FiAlertTriangle size={11} /> },
 };
 
 const getStatusCfg = (status) =>
   STATUS_CONFIG[status] || { label: status || "Unknown", color: "#888", bg: "#F3F4F6", icon: null };
 
-const StatusBadge = ({ status }) => {
+const StatusBadge = ({ status, customLabel }) => {
   const cfg = getStatusCfg(status);
   return (
     <span style={{
@@ -103,7 +93,7 @@ const StatusBadge = ({ status }) => {
       borderRadius: 20, background: cfg.bg, color: cfg.color,
       border: `1px solid ${cfg.color}33`, whiteSpace: "nowrap",
     }}>
-      {cfg.icon} {cfg.label}
+      {cfg.icon} {customLabel || cfg.label}
     </span>
   );
 };
@@ -118,11 +108,27 @@ const daysLeft = (validUntil) => {
   return { diff, label: diff <= 0 ? "Expired" : `${diff}d left` };
 };
 
+// A job is "overdue" when estimated_delivery_date is in the past and not completed/rejected/delivered
+const TERMINAL_STATUSES = new Set(["completed", "rejected", "converted", "delivery"]);
+
+const isJobOverdue = (job) => {
+  if (!job.estimated_delivery_date) return false;
+  if (TERMINAL_STATUSES.has(job.job_status)) return false;
+  return new Date(job.estimated_delivery_date) < new Date();
+};
+
+// A job is "delayed" when it's been in the same stage for more than 2 days (48 hrs)
+const DELAYED_HOURS = 48;
+const isJobDelayed = (job) => {
+  if (TERMINAL_STATUSES.has(job.job_status)) return false;
+  if (!job.current_stage?.since) return false;
+  const hoursInStage = (Date.now() - new Date(job.current_stage.since)) / 3_600_000;
+  return hoursInStage > DELAYED_HOURS;
+};
+
 const fmt = (dateStr) =>
   dateStr
-    ? new Date(dateStr).toLocaleDateString("en-IN", {
-        day: "2-digit", month: "short", year: "numeric",
-      })
+    ? new Date(dateStr).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
     : "—";
 
 const fmtDateTime = (dateStr) =>
@@ -133,16 +139,23 @@ const fmtDateTime = (dateStr) =>
       })
     : "—";
 
+const fmtHours = (since) => {
+  if (!since) return null;
+  const hrs = Math.floor((Date.now() - new Date(since)) / 3_600_000);
+  if (hrs < 24) return `${hrs}h in stage`;
+  return `${Math.floor(hrs / 24)}d ${hrs % 24}h in stage`;
+};
+
 // ═══════════════════════════════════════════════════════════════════
 // Stat Card
 // ═══════════════════════════════════════════════════════════════════
 
-const StatCard = ({ icon, label, value, accent, active, onClick, skeleton }) => (
+const StatCard = ({ icon, label, value, accent, active, onClick, skeleton, sublabel }) => (
   <button
     onClick={onClick}
     style={{
       all: "unset", cursor: "pointer", display: "flex", flexDirection: "column",
-      gap: 10, padding: "16px 18px", boxSizing: "border-box", width: "100%",
+      gap: 8, padding: "14px 16px", boxSizing: "border-box", width: "100%",
       background: active ? `${accent}14` : "var(--color-background-primary)",
       border: `1.5px solid ${active ? accent : "var(--color-border-tertiary)"}`,
       borderRadius: 14, transition: "border-color 0.15s, background 0.15s",
@@ -151,7 +164,7 @@ const StatCard = ({ icon, label, value, accent, active, onClick, skeleton }) => 
     onMouseLeave={e => { if (!active) e.currentTarget.style.borderColor = "var(--color-border-tertiary)"; }}
   >
     <div style={{
-      width: 36, height: 36, borderRadius: 10,
+      width: 34, height: 34, borderRadius: 10,
       background: `${accent}22`, color: accent,
       display: "flex", alignItems: "center", justifyContent: "center",
     }}>
@@ -159,10 +172,13 @@ const StatCard = ({ icon, label, value, accent, active, onClick, skeleton }) => 
     </div>
     <div>
       {skeleton
-        ? <div style={{ width: 40, height: 26, background: "var(--color-background-secondary)", borderRadius: 6, marginBottom: 4 }} />
-        : <p style={{ margin: 0, fontSize: 26, fontWeight: 700, color: "var(--color-text-primary)", lineHeight: 1 }}>{value}</p>
+        ? <div style={{ width: 40, height: 24, background: "var(--color-background-secondary)", borderRadius: 6, marginBottom: 4 }} />
+        : <p style={{ margin: 0, fontSize: 24, fontWeight: 700, color: "var(--color-text-primary)", lineHeight: 1 }}>{value}</p>
       }
-      <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>{label}</p>
+      <p style={{ margin: "3px 0 0", fontSize: 11, color: "var(--color-text-secondary)", lineHeight: 1.3 }}>{label}</p>
+      {sublabel && (
+        <p style={{ margin: "2px 0 0", fontSize: 10, color: accent, fontWeight: 600 }}>{sublabel}</p>
+      )}
     </div>
   </button>
 );
@@ -173,7 +189,10 @@ const StatCard = ({ icon, label, value, accent, active, onClick, skeleton }) => 
 
 const ViewModal = ({ job, onClose }) => {
   if (!job) return null;
-  const validity = daysLeft(job.valid_until);
+  const validity  = daysLeft(job.valid_until);
+  const overdue   = isJobOverdue(job);
+  const delayed   = isJobDelayed(job);
+  const stageTime = fmtHours(job.current_stage?.since);
 
   const Section = ({ title, children }) => (
     <div style={{ marginBottom: 20 }}>
@@ -209,7 +228,7 @@ const ViewModal = ({ job, onClose }) => {
         className="text-black bg-white"
         onClick={e => e.stopPropagation()}
         style={{
-          borderRadius: 18, width: "100%", maxWidth: 680,
+          borderRadius: 18, width: "100%", maxWidth: 700,
           maxHeight: "90vh", overflowY: "auto",
           boxShadow: "0 24px 64px rgba(0,0,0,0.2)",
           border: "0.5px solid var(--color-border-tertiary)",
@@ -218,16 +237,17 @@ const ViewModal = ({ job, onClose }) => {
         {/* Modal Header */}
         <div style={{
           display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "18px 22px", borderBottom: "0.5px solid var(--color-border-tertiary)",
+          padding: "16px 20px", borderBottom: "0.5px solid var(--color-border-tertiary)",
           position: "sticky", top: 0, background: "var(--color-background-primary)",
           zIndex: 1, borderRadius: "18px 18px 0 0",
         }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{
-              fontSize: 15, fontWeight: 700, fontFamily: "monospace",
-              color: "var(--color-text-primary)",
-            }}>{job.job_no}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 15, fontWeight: 700, fontFamily: "monospace", color: "var(--color-text-primary)" }}>
+              {job.job_no}
+            </span>
             <StatusBadge status={job.job_status} />
+            {overdue && <StatusBadge status="overdue" />}
+            {!overdue && delayed && <StatusBadge status="delayed" />}
           </div>
           <button
             onClick={onClose}
@@ -241,16 +261,33 @@ const ViewModal = ({ job, onClose }) => {
           </button>
         </div>
 
+        {/* Overdue / Delayed alert strip */}
+        {(overdue || delayed) && (
+          <div style={{
+            padding: "10px 20px",
+            background: overdue ? "#FEE2E2" : "#FEF3C7",
+            borderBottom: "0.5px solid var(--color-border-tertiary)",
+            display: "flex", alignItems: "center", gap: 8,
+          }}>
+            <FiAlertTriangle size={14} color={overdue ? "#9B1C1C" : "#92400E"} />
+            <span style={{ fontSize: 12, fontWeight: 600, color: overdue ? "#9B1C1C" : "#92400E" }}>
+              {overdue
+                ? `Overdue — delivery was due ${fmt(job.estimated_delivery_date)}`
+                : `Delayed — ${stageTime} (over ${DELAYED_HOURS}h threshold)`}
+            </span>
+          </div>
+        )}
+
         {/* Modal Body */}
-        <div style={{ padding: "20px 22px" }}>
+        <div style={{ padding: "20px 20px" }}>
 
           {/* Customer */}
           <Section title="Customer Details">
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
               <Field label="Customer Name" value={job.customer_name} />
               <Field label="Phone" value={job.customer_phone} />
-              <Field label="Created by" value={job.created_by} />
-              <Field label="Approved by" value={job.approved_by} />
+              <Field label="Created by" value={typeof job.created_by === "object" ? job.created_by?.name : job.created_by} />
+              <Field label="Company" value={job.company_name} />
             </div>
             {job.delivery_address && (
               <div style={{
@@ -283,13 +320,14 @@ const ViewModal = ({ job, onClose }) => {
                     <p style={{ margin: 0, fontSize: 12, color: "var(--color-text-secondary)", display: "flex", alignItems: "center", gap: 4 }}>
                       <FiUser size={11} /> {job.current_stage.assigned_to.name}
                       {job.current_stage.assigned_to.role && (
-                        <span style={{ color: "var(--color-text-tertiary)" }}>· {job.current_stage.assigned_to.role}</span>
+                        <span style={{ color: "var(--color-text-tertiary)" }}> · {job.current_stage.assigned_to.role}</span>
                       )}
                     </p>
                   )}
                   {job.current_stage.since && (
                     <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--color-text-tertiary)", display: "flex", alignItems: "center", gap: 4 }}>
                       <FiClock size={10} /> Since {fmtDateTime(job.current_stage.since)}
+                      {stageTime && <span style={{ color: delayed ? "#92400E" : "var(--color-text-tertiary)", fontWeight: delayed ? 700 : 400 }}> · {stageTime}</span>}
                     </p>
                   )}
                 </div>
@@ -306,39 +344,79 @@ const ViewModal = ({ job, onClose }) => {
 
           {/* Order Items */}
           {job.cart_items?.length > 0 && (
-            <Section title="Order Items">
+            <Section title={`Order Items (${job.cart_items.length})`}>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {job.cart_items.map((item, i) => (
-                  <div key={i} style={{
-                    padding: "10px 14px", borderRadius: 10,
-                    background: "var(--color-background-secondary)",
-                    border: "0.5px solid var(--color-border-tertiary)",
-                  }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                      <div>
-                        <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>
-                          {item.product_name}
-                        </p>
-                        <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--color-text-tertiary)" }}>
-                          {[item.variation, item.printing_type, item.size].filter(Boolean).join(" · ")}
-                        </p>
-                        {item.notes && (
-                          <p style={{ margin: "4px 0 0", fontSize: 11, color: "var(--color-text-secondary)" }}>
-                            Note: {item.notes}
+                {job.cart_items.map((item, i) => {
+                  const categoryLabel =
+                    item.item_category === "service_office" ? "Office Service" :
+                    item.item_category === "service_labour" ? "Labour" : "Product";
+                  const categoryColor =
+                    item.item_category === "service_office" ? "#92400E" :
+                    item.item_category === "service_labour" ? "#6B21A8" : "#1E40AF";
+                  const categoryBg =
+                    item.item_category === "service_office" ? "#FEF3C7" :
+                    item.item_category === "service_labour" ? "#F3E8FF" : "#EFF6FF";
+                  return (
+                    <div key={i} style={{
+                      padding: "10px 14px", borderRadius: 10,
+                      background: "var(--color-background-secondary)",
+                      border: "0.5px solid var(--color-border-tertiary)",
+                    }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 2 }}>
+                            <span style={{ fontSize: 10, fontWeight: 700, color: categoryColor, background: categoryBg, padding: "1px 7px", borderRadius: 12 }}>
+                              {categoryLabel}
+                            </span>
+                            {item.office_type && (
+                              <span style={{ fontSize: 10, color: "var(--color-text-tertiary)" }}>
+                                {item.office_type.replace(/_/g, " ")}
+                              </span>
+                            )}
+                          </div>
+                          <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>
+                            {item.product_name || "—"}
                           </p>
-                        )}
-                      </div>
-                      <div style={{ textAlign: "right" }}>
-                        <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>
-                          ₹{(item.price || 0).toLocaleString("en-IN")}
-                        </p>
-                        <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--color-text-tertiary)" }}>
-                          Qty: {item.quantity}
-                        </p>
+                          <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                            {[item.variation, item.printing_type, item.size].filter(Boolean).join(" · ")}
+                          </p>
+                          {item.item_category === "service_office" && (
+                            <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                              {item.days ? `${item.days} days` : ""}
+                              {item.hours ? `${item.hours} hrs` : ""}
+                              {item.reels_count ? `${item.reels_count} reels` : ""}
+                              {item.post_count ? ` + ${item.post_count} posts` : ""}
+                            </p>
+                          )}
+                          {item.item_category === "service_labour" && (
+                            <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                              {item.sq_ft ? `${item.sq_ft} ft²` : ""}
+                              {item.hours ? ` · ${item.hours} hrs` : ""}
+                            </p>
+                          )}
+                          {item.notes && (
+                            <p style={{ margin: "4px 0 0", fontSize: 11, color: "var(--color-text-secondary)" }}>
+                              {item.notes}
+                            </p>
+                          )}
+                        </div>
+                        <div style={{ textAlign: "right", marginLeft: 12 }}>
+                          <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>
+                            ₹{(item.line_total || 0).toLocaleString("en-IN")}
+                          </p>
+                          <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                            {item.quantity_type === "sq.ft" && item.sq_ft > 0
+                              ? `${item.quantity} × ${item.sq_ft} ft²`
+                              : `Qty: ${item.quantity}`}
+                          </p>
+                          {item.gst_percentage > 0 && (
+                            <p style={{ margin: "2px 0 0", fontSize: 10, color: "#D97706" }}>GST {item.gst_percentage}%</p>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </Section>
           )}
@@ -347,23 +425,18 @@ const ViewModal = ({ job, onClose }) => {
           <Section title="Workflow Progress">
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
               {[
-                { label: "Design", status: job.design_status, by: job.design_uploaded_by, at: job.design_approved_at, duration: job.design_duration_display },
-                { label: "Production", status: job.production_status, by: job.production_approved_by, at: job.production_approved_at },
-                { label: "QC", status: job.qc_status, by: job.qc_inspected_by, at: null, notes: job.qc_notes, duration: job.qc_duration_display },
+                { label: "Design",     status: job.design_status,     by: job.design_uploaded_by,    at: job.design_approved_at,    duration: job.design_duration_display },
+                { label: "Production", status: job.production_status,  by: null,                      at: job.production_approved_at },
+                { label: "QC",         status: job.qc_status,          by: job.qc_inspected_by,       at: null, notes: job.qc_notes, duration: job.qc_duration_display },
               ].map(({ label, status, by, at, notes, duration }) => {
-                const isOk = status === "approved" || status === "production_completed";
+                const isOk      = status === "approved" || status === "production_completed";
                 const isPending = status === "pending" || !status;
-                const color = isOk ? "#047857" : isPending ? "#BA7517" : "#A32D2D";
-                const bg    = isOk ? "#D1FAE5" : isPending ? "#FEF3C7" : "#FCEBEB";
+                const color     = isOk ? "#047857" : isPending ? "#BA7517" : "#A32D2D";
+                const bg        = isOk ? "#D1FAE5" : isPending ? "#FEF3C7" : "#FCEBEB";
                 return (
-                  <div key={label} style={{
-                    padding: "10px 12px", borderRadius: 10,
-                    background: bg, border: `1px solid ${color}22`,
-                  }}>
+                  <div key={label} style={{ padding: "10px 12px", borderRadius: 10, background: bg, border: `1px solid ${color}22` }}>
                     <p style={{ margin: "0 0 4px", fontSize: 10, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</p>
-                    <p style={{ margin: 0, fontSize: 11, fontWeight: 600, color }}>
-                      {status?.replace(/_/g, " ") || "—"}
-                    </p>
+                    <p style={{ margin: 0, fontSize: 11, fontWeight: 600, color }}>{status?.replace(/_/g, " ") || "—"}</p>
                     {by && <p style={{ margin: "2px 0 0", fontSize: 10, color }}>{by}</p>}
                     {at && <p style={{ margin: "2px 0 0", fontSize: 10, color: `${color}99` }}>{fmt(at)}</p>}
                     {duration && duration !== "00:00:00" && (
@@ -377,7 +450,7 @@ const ViewModal = ({ job, onClose }) => {
           </Section>
 
           {/* Media Files */}
-          {(job.design_file || job.productionimg) && (
+          {(job.design_file || job.design_drive_link || job.productionimg) && (
             <Section title="Uploaded Files">
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                 {job.design_file && (
@@ -414,15 +487,21 @@ const ViewModal = ({ job, onClose }) => {
             </Section>
           )}
 
-          {/* Payment & Financials */}
+          {/* Payment */}
           <Section title="Payment Details">
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "6px 16px" }}>
-              <Field label="Subtotal" value={`₹${(job.subtotal || 0).toLocaleString("en-IN")}`} />
-              <Field label="Total Amount" value={`₹${(job.total_amount || 0).toLocaleString("en-IN")}`} />
-              <Field label="Discount" value={job.discount_amount ? `₹${job.discount_amount.toLocaleString("en-IN")} (${job.discount_percentage}%)` : "No discount"} />
-              <Field label="Tax" value={job.tax_amount ? `₹${job.tax_amount.toLocaleString("en-IN")}` : "No tax"} />
-              <Field label="Payment Mode" value={job.payment_mode} />
-              <Field label="Payment Received" value={job.payment_amount ? `₹${job.payment_amount}` : "—"} />
+              <Field label="Subtotal"          value={`₹${(job.subtotal || 0).toLocaleString("en-IN")}`} />
+              <Field label="Grand Total"        value={`₹${(job.total_amount || 0).toLocaleString("en-IN")}`} />
+              <Field label="Discount"           value={job.discount_amount ? `₹${job.discount_amount.toLocaleString("en-IN")} (${job.discount_percentage}%)` : "No discount"} />
+              <Field label="Tax"                value={job.tax_amount ? `₹${job.tax_amount.toLocaleString("en-IN")}` : "No tax"} />
+              <Field label="Payment Mode"       value={job.payment_mode} />
+              <Field label="Amount Received"    value={job.payment_amount ? `₹${Number(job.payment_amount).toLocaleString("en-IN")}` : "—"} />
+              {job.balance_amount > 0 && (
+                <Field label="Balance Due" value={`₹${Number(job.balance_amount).toLocaleString("en-IN")}`} />
+              )}
+              {job.next_due_date && (
+                <Field label="Next Due Date" value={fmt(job.next_due_date)} />
+              )}
               {job.gst_no && <Field label="GST No." value={job.gst_no} />}
             </div>
           </Section>
@@ -430,9 +509,13 @@ const ViewModal = ({ job, onClose }) => {
           {/* Dates */}
           <Section title="Dates">
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "6px 16px" }}>
-              <Field label="Order Date" value={fmtDateTime(job.order_date)} />
-              <Field label="Created At" value={fmtDateTime(job.createdAt)} />
-              <Field label="Est. Delivery" value={fmt(job.estimated_delivery_date)} />
+              <Field label="Order Date"    value={fmtDateTime(job.order_date)} />
+              <Field label="Created At"   value={fmtDateTime(job.createdAt)} />
+              <Field label="Est. Delivery" value={
+                <span style={{ color: isJobOverdue(job) ? "#9B1C1C" : "var(--color-text-primary)", fontWeight: isJobOverdue(job) ? 700 : 500 }}>
+                  {fmt(job.estimated_delivery_date)}{isJobOverdue(job) ? " ⚠ Overdue" : ""}
+                </span>
+              } />
               <Field label="Valid Until" value={
                 validity
                   ? `${fmt(job.valid_until)} (${validity.label})`
@@ -459,11 +542,17 @@ const ViewModal = ({ job, onClose }) => {
 // Desktop table row
 // ═══════════════════════════════════════════════════════════════════
 
-const COLS = "100px 1fr 120px 120px 90px 72px 40px";
+const COLS = "100px 1fr 120px 130px 90px 72px 40px";
 
-const JobRow = ({ job, isExpiring, onView }) => {
+const JobRow = ({ job, onView }) => {
   const stage    = job.current_stage;
   const validity = daysLeft(job.valid_until);
+  const overdue  = isJobOverdue(job);
+  const delayed  = isJobDelayed(job);
+  const stageTime = fmtHours(job.current_stage?.since);
+
+  const rowBg = overdue ? "#FFF5F5" : delayed ? "#FFFBEB" : "transparent";
+
   return (
     <div
       style={{
@@ -471,34 +560,56 @@ const JobRow = ({ job, isExpiring, onView }) => {
         alignItems: "center", gap: 8, padding: "11px 16px",
         borderBottom: "0.5px solid var(--color-border-tertiary)",
         transition: "background 0.1s", cursor: "default",
+        background: rowBg,
+        borderLeft: overdue ? "3px solid #9B1C1C" : delayed ? "3px solid #92400E" : "3px solid transparent",
       }}
-      onMouseEnter={e => e.currentTarget.style.background = "var(--color-background-secondary)"}
-      onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+      onMouseEnter={e => e.currentTarget.style.background = overdue ? "#FEE2E2" : delayed ? "#FEF3C7" : "var(--color-background-secondary)"}
+      onMouseLeave={e => e.currentTarget.style.background = rowBg}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-        {isExpiring && <FiAlertTriangle size={12} color="#BA7517" style={{ flexShrink: 0 }} />}
+        {(overdue || delayed) && (
+          <FiAlertTriangle size={12} color={overdue ? "#9B1C1C" : "#92400E"} style={{ flexShrink: 0 }} />
+        )}
         <span style={{ fontSize: 12, fontWeight: 700, fontFamily: "monospace", color: "var(--color-text-primary)" }}>
           {job.job_no}
         </span>
       </div>
+
       <div style={{ minWidth: 0 }}>
         <p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {job.customer_name || "—"}
         </p>
         <p style={{ margin: 0, fontSize: 10, color: "var(--color-text-tertiary)" }}>
-          Created by: {typeof job.created_by === 'object' ? job.created_by?.name : job.created_by || "—"}
+          By: {typeof job.created_by === "object" ? job.created_by?.name : job.created_by || "—"}
         </p>
       </div>
+
       <div>
         {stage?.stage_label
-          ? <StatusBadge status={stage.stage} />
+          ? (
+            <div>
+              <StatusBadge status={stage.stage} />
+              {stageTime && (
+                <p style={{ margin: "2px 0 0", fontSize: 9, color: delayed ? "#92400E" : "var(--color-text-tertiary)", fontWeight: delayed ? 700 : 400 }}>
+                  {stageTime}
+                </p>
+              )}
+            </div>
+          )
           : <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>—</span>
         }
       </div>
-      <StatusBadge status={job.job_status} />
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        <StatusBadge status={job.job_status} />
+        {overdue && <StatusBadge status="overdue" />}
+        {!overdue && delayed && <StatusBadge status="delayed" />}
+      </div>
+
       <span style={{ fontSize: 12, color: "var(--color-text-secondary)", textAlign: "right" }}>
         ₹{(job.total_amount || 0).toLocaleString("en-IN")}
       </span>
+
       <span style={{
         fontSize: 11, fontWeight: 500, textAlign: "right",
         color: !validity ? "var(--color-text-tertiary)"
@@ -508,6 +619,7 @@ const JobRow = ({ job, isExpiring, onView }) => {
       }}>
         {validity?.label || "—"}
       </span>
+
       <button
         onClick={() => onView(job)}
         title="View details"
@@ -538,19 +650,25 @@ const JobRow = ({ job, isExpiring, onView }) => {
 // Mobile card
 // ═══════════════════════════════════════════════════════════════════
 
-const JobCard = ({ job, isExpiring, onView }) => {
+const JobCard = ({ job, onView }) => {
   const stage    = job.current_stage;
   const validity = daysLeft(job.valid_until);
+  const overdue  = isJobOverdue(job);
+  const delayed  = isJobDelayed(job);
+  const stageTime = fmtHours(job.current_stage?.since);
+
   return (
     <div style={{
-      background: "var(--color-background-primary)",
-      border: `0.5px solid ${isExpiring ? "#BA751750" : "var(--color-border-tertiary)"}`,
-      borderLeft: `3px solid ${isExpiring ? "#BA7517" : "transparent"}`,
+      background: overdue ? "#FFF5F5" : delayed ? "#FFFBEB" : "var(--color-background-primary)",
+      border: `0.5px solid ${overdue ? "#9B1C1C50" : delayed ? "#92400E50" : "var(--color-border-tertiary)"}`,
+      borderLeft: `3px solid ${overdue ? "#9B1C1C" : delayed ? "#92400E" : "transparent"}`,
       borderRadius: 12, padding: "12px 14px", marginBottom: 10,
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-          {isExpiring && <FiAlertTriangle size={12} color="#BA7517" />}
+          {(overdue || delayed) && (
+            <FiAlertTriangle size={12} color={overdue ? "#9B1C1C" : "#92400E"} />
+          )}
           <span style={{ fontSize: 12, fontWeight: 700, fontFamily: "monospace", color: "var(--color-text-primary)" }}>
             {job.job_no}
           </span>
@@ -569,20 +687,32 @@ const JobCard = ({ job, isExpiring, onView }) => {
           </button>
         </div>
       </div>
-      <p style={{ margin: "0 0 8px", fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)" }}>
+
+      <p style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)" }}>
         {job.customer_name || "—"}
       </p>
-      <p style={{ margin: "0 0 4px", fontSize: 10, color: "var(--color-text-tertiary)" }}>
-        Created by: {typeof job.created_by === 'object' ? job.created_by?.name : job.created_by || "—"}
+      <p style={{ margin: "0 0 6px", fontSize: 10, color: "var(--color-text-tertiary)" }}>
+        By: {typeof job.created_by === "object" ? job.created_by?.name : job.created_by || "—"}
       </p>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
         {stage?.stage && <StatusBadge status={stage.stage} />}
-        {stage?.assigned_to?.name && (
-          <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", display: "flex", alignItems: "center", gap: 3 }}>
-            <FiUser size={10} /> {stage.assigned_to.name}
-          </span>
-        )}
+        {overdue && <StatusBadge status="overdue" />}
+        {!overdue && delayed && <StatusBadge status="delayed" />}
       </div>
+
+      {stageTime && (
+        <p style={{ margin: "4px 0 0", fontSize: 10, color: delayed ? "#92400E" : "var(--color-text-tertiary)", fontWeight: delayed ? 700 : 400 }}>
+          ⏱ {stageTime}
+        </p>
+      )}
+
+      {overdue && (
+        <p style={{ margin: "4px 0 0", fontSize: 10, color: "#9B1C1C", fontWeight: 600 }}>
+          ⚠ Delivery was due {fmt(job.estimated_delivery_date)}
+        </p>
+      )}
+
       <div style={{
         marginTop: 10, paddingTop: 8,
         borderTop: "0.5px solid var(--color-border-tertiary)",
@@ -686,7 +816,6 @@ export default function Dashboard() {
   const baseURL = "https://api.dmedia.in/api";
   const { user } = useSelector((state) => state.authSlice);
 
-  // ── Super admin check: role-based OR email-based ────────────────
   const isSuperAdmin =
     user.role === "super admin" ||
     SUPER_ADMIN_EMAILS.includes(user.email?.toLowerCase().trim());
@@ -734,7 +863,6 @@ export default function Dashboard() {
     return () => clearInterval(intervalRef.current);
   }, [load]);
 
-  // Close modal on Escape
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") setViewJob(null); };
     window.addEventListener("keydown", onKey);
@@ -746,42 +874,84 @@ export default function Dashboard() {
   const allJobs     = data?.allJobs     || [];
   const myJobs      = data?.myJobs      || [];
   const expiryToday = data?.expiryToday || [];
-  const expiryIds   = new Set(expiryToday.map(j => j._id));
+
+  const pool = isSuperAdmin ? allJobs : myJobs;
 
   const todayCreated   = myJobs.filter(j => j.createdAt?.slice(0, 10) === todayStr);
-  const designJobs     = (isSuperAdmin ? allJobs : myJobs).filter(j => j.job_status === "design");
-  const productionJobs = (isSuperAdmin ? allJobs : myJobs).filter(j => j.job_status === "production");
-  const qcJobs         = (isSuperAdmin ? allJobs : myJobs).filter(j => j.job_status === "quality_check");
-  const deliveryJobs   = (isSuperAdmin ? allJobs : myJobs).filter(j => j.job_status === "delivery");
-  const completedJobs  = (isSuperAdmin ? allJobs : myJobs).filter(j => j.job_status === "completed");
-  const inProgress     = (isSuperAdmin ? allJobs : myJobs).filter(j => j.job_status === "in_progress");
-  const onHold         = (isSuperAdmin ? allJobs : myJobs).filter(j => j.job_status === "on_hold");
+  const designJobs     = pool.filter(j => j.job_status === "design");
+  const productionJobs = pool.filter(j => j.job_status === "production");
+  const qcJobs         = pool.filter(j => j.job_status === "quality_check");
+  const deliveryJobs   = pool.filter(j => j.job_status === "delivery");
+  const completedJobs  = pool.filter(j => j.job_status === "completed");
+  const inProgressJobs = pool.filter(j => j.job_status === "in_progress");
+  const onHoldJobs     = pool.filter(j => j.job_status === "on_hold");
+  const overdueJobs    = pool.filter(isJobOverdue);
+  const delayedJobs    = pool.filter(j => !isJobOverdue(j) && isJobDelayed(j)); // delayed but not overdue
 
-  const STATS = [
-    { key: "all",           accent: "#378ADD", icon: <FiBriefcase     size={18} />, label: isSuperAdmin ? "Total jobs" : "My jobs",  value: isSuperAdmin ? allJobs.length : myJobs.length },
-    { key: "today",         accent: "#534AB7", icon: <FiCalendar      size={18} />, label: "Created today",   value: todayCreated.length    },
-    { key: "design",        accent: "#7C3AED", icon: <FiEdit3         size={18} />, label: "Design",          value: designJobs.length      },
-    { key: "production",    accent: "#0369A1", icon: <FiPackage       size={18} />, label: "Production",      value: productionJobs.length  },
-    { key: "quality_check", accent: "#B45309", icon: <FiShield        size={18} />, label: "Quality Check",   value: qcJobs.length          },
-    { key: "delivery",      accent: "#0F6E56", icon: <FiTruck         size={18} />, label: "Delivery",        value: deliveryJobs.length    },
-    { key: "completed",     accent: "#047857", icon: <FiCheckCircle   size={18} />, label: "Completed",       value: completedJobs.length   },
-    { key: "expiry",        accent: "#993C1D", icon: <FiAlertTriangle size={18} />, label: "Expiring today",  value: expiryToday.filter(j => myJobs.some(mj => mj._id === j._id)).length },
+  const expiryIds = new Set(expiryToday.map(j => j._id));
+  const myExpiryToday = expiryToday.filter(j => pool.some(pj => pj._id === j._id));
+
+  // Stats row 1: main pipeline
+  const STATS_PIPELINE = [
+    { key: "all",           accent: "#378ADD", icon: <FiBriefcase   size={17} />, label: isSuperAdmin ? "Total Jobs" : "My Jobs",  value: pool.length },
+    { key: "today",         accent: "#534AB7", icon: <FiCalendar    size={17} />, label: "Created Today",  value: todayCreated.length    },
+    { key: "design",        accent: "#7C3AED", icon: <FiEdit3       size={17} />, label: "Design",         value: designJobs.length      },
+    { key: "production",    accent: "#0369A1", icon: <FiPackage     size={17} />, label: "Production",     value: productionJobs.length  },
+    { key: "quality_check", accent: "#B45309", icon: <FiShield      size={17} />, label: "Quality Check",  value: qcJobs.length          },
+    { key: "completed",     accent: "#047857", icon: <FiCheckCircle size={17} />, label: "Completed",      value: completedJobs.length   },
+  ];
+
+  // Stats row 2: alerts
+  const STATS_ALERTS = [
+    {
+      key: "overdue",
+      accent: "#9B1C1C",
+      icon: <FiSlash size={17} />,
+      label: "Overdue",
+      sublabel: overdueJobs.length > 0 ? "Past delivery date" : null,
+      value: overdueJobs.length,
+    },
+    {
+      key: "delayed",
+      accent: "#92400E",
+      icon: <FiAlertTriangle size={17} />,
+      label: "Delayed",
+      sublabel: delayedJobs.length > 0 ? `In stage >48h` : null,
+      value: delayedJobs.length,
+    },
+    {
+      key: "expiry",
+      accent: "#993C1D",
+      icon: <FiAlertCircle size={17} />,
+      label: "Expiring Today",
+      sublabel: myExpiryToday.length > 0 ? "Validity ends today" : null,
+      value: myExpiryToday.length,
+    },
+    {
+      key: "on_hold",
+      accent: "#BA7517",
+      icon: <FiPauseCircle size={17} />,
+      label: "On Hold",
+      sublabel: null,
+      value: onHoldJobs.length,
+    },
   ];
 
   // ── Filter → search → sort ──────────────────────────────────────
   let displayJobs = (() => {
-    const base = isSuperAdmin ? allJobs : myJobs;
     switch (filter) {
       case "today":         return todayCreated;
-      case "expiry":        return expiryToday.filter(j => base.some(bj => bj._id === j._id));
+      case "expiry":        return myExpiryToday;
       case "design":        return designJobs;
       case "production":    return productionJobs;
       case "quality_check": return qcJobs;
       case "delivery":      return deliveryJobs;
       case "completed":     return completedJobs;
-      case "in_progress":   return inProgress;
-      case "on_hold":       return onHold;
-      default:              return base;
+      case "in_progress":   return inProgressJobs;
+      case "on_hold":       return onHoldJobs;
+      case "overdue":       return overdueJobs;
+      case "delayed":       return delayedJobs;
+      default:              return pool;
     }
   })();
 
@@ -795,20 +965,32 @@ export default function Dashboard() {
   }
 
   displayJobs = [...displayJobs].sort((a, b) => {
+    // Always pin overdue jobs to top, then delayed
+    const aScore = isJobOverdue(a) ? 2 : isJobDelayed(a) ? 1 : 0;
+    const bScore = isJobOverdue(b) ? 2 : isJobDelayed(b) ? 1 : 0;
+    if (aScore !== bScore) return bScore - aScore;
     const da = new Date(a.createdAt), db = new Date(b.createdAt);
     return sortAsc ? da - db : db - da;
   });
 
   const filterLabel = (() => {
-    if (filter === "all")    return "All jobs";
-    if (filter === "expiry") return "Expiring today";
-    if (filter === "today")  return "Created today";
-    return getStatusCfg(filter).label;
+    const map = {
+      all:           isSuperAdmin ? "All Jobs" : "My Jobs",
+      today:         "Created Today",
+      expiry:        "Expiring Today",
+      overdue:       "Overdue Jobs",
+      delayed:       "Delayed Jobs",
+      on_hold:       "On Hold",
+    };
+    return map[filter] || getStatusCfg(filter).label;
   })();
+
+  // Alert counts for top banner
+  const alertCount = overdueJobs.length + delayedJobs.length;
 
   // ── Render ──────────────────────────────────────────────────────
   return (
-    <div style={{ padding: isMobile ? "14px 10px" : "24px 28px", maxWidth: 1100, margin: "0 auto" }}>
+    <div style={{ padding: isMobile ? "14px 10px" : "24px 28px", maxWidth: 1140, margin: "0 auto" }}>
 
       {/* Header */}
       <div style={{
@@ -821,7 +1003,7 @@ export default function Dashboard() {
           </h2>
           <p style={{ margin: "3px 0 0", fontSize: 12, color: "var(--color-text-tertiary)", display: "flex", alignItems: "center", gap: 5 }}>
             <FiWifi size={11} />
-            {isSuperAdmin ? "Super admin — all jobs" : `Jobs created by ${user.name}`}
+            {isSuperAdmin ? "Super admin — all jobs" : `Jobs by ${user.name}`}
             {" · "}
             {new Date().toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short", year: "numeric" })}
           </p>
@@ -830,8 +1012,7 @@ export default function Dashboard() {
           onClick={() => load()}
           disabled={loading}
           style={{
-            all: "unset",
-            cursor: loading ? "not-allowed" : "pointer",
+            all: "unset", cursor: loading ? "not-allowed" : "pointer",
             display: "flex", alignItems: "center", gap: 6,
             fontSize: 12, color: "var(--color-text-secondary)",
             border: "0.5px solid var(--color-border-secondary)",
@@ -848,41 +1029,97 @@ export default function Dashboard() {
       {/* Error banner */}
       {error && <ErrorBanner message={error} onRetry={() => load()} />}
 
-      {/* Expiry banner */}
-      {!loading && expiryToday.filter(j => myJobs.some(mj => mj._id === j._id)).length > 0 && (
+      {/* Combined alert banner: overdue + delayed + expiring */}
+      {!loading && (alertCount > 0 || myExpiryToday.length > 0) && (
         <div style={{
-          display: "flex", alignItems: "center", gap: 10,
-          padding: "10px 16px", marginBottom: 18,
-          background: "#FAEEDA", border: "1px solid #BA751730", borderRadius: 10, flexWrap: "wrap",
+          padding: "12px 16px", marginBottom: 18,
+          background: alertCount > 0 ? "#FEF2F2" : "#FAEEDA",
+          border: `1px solid ${alertCount > 0 ? "#9B1C1C30" : "#BA751730"}`,
+          borderRadius: 12, display: "flex", flexDirection: "column", gap: 8,
         }}>
-          <FiAlertTriangle size={15} color="#BA7517" />
-          <span style={{ fontSize: 13, color: "#854F0B", fontWeight: 500 }}>
-            {expiryToday.filter(j => myJobs.some(mj => mj._id === j._id)).length} job(s) expiring today —&nbsp;
-            {expiryToday.filter(j => myJobs.some(mj => mj._id === j._id)).map(j => j.job_no).join(", ")}
-          </span>
-          <button
-            onClick={() => setFilter("expiry")}
-            style={{
-              all: "unset", cursor: "pointer", fontSize: 11, color: "#854F0B",
-              border: "1px solid #BA751760", padding: "2px 10px", borderRadius: 8, marginLeft: "auto",
-            }}
-          >
-            View all
-          </button>
+          {overdueJobs.length > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <FiSlash size={14} color="#9B1C1C" />
+              <span style={{ fontSize: 13, color: "#7F1D1D", fontWeight: 600 }}>
+                {overdueJobs.length} overdue job{overdueJobs.length > 1 ? "s" : ""} —
+              </span>
+              <span style={{ fontSize: 12, color: "#9B1C1C" }}>
+                {overdueJobs.slice(0, 4).map(j => j.job_no).join(", ")}{overdueJobs.length > 4 ? ` +${overdueJobs.length - 4} more` : ""}
+              </span>
+              <button onClick={() => setFilter("overdue")} style={{ all: "unset", cursor: "pointer", fontSize: 11, color: "#9B1C1C", border: "1px solid #9B1C1C60", padding: "2px 10px", borderRadius: 8, marginLeft: "auto" }}>
+                View
+              </button>
+            </div>
+          )}
+          {delayedJobs.length > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <FiAlertTriangle size={14} color="#92400E" />
+              <span style={{ fontSize: 13, color: "#78350F", fontWeight: 600 }}>
+                {delayedJobs.length} delayed job{delayedJobs.length > 1 ? "s" : ""} (stuck &gt;48h) —
+              </span>
+              <span style={{ fontSize: 12, color: "#92400E" }}>
+                {delayedJobs.slice(0, 4).map(j => j.job_no).join(", ")}{delayedJobs.length > 4 ? ` +${delayedJobs.length - 4} more` : ""}
+              </span>
+              <button onClick={() => setFilter("delayed")} style={{ all: "unset", cursor: "pointer", fontSize: 11, color: "#92400E", border: "1px solid #92400E60", padding: "2px 10px", borderRadius: 8, marginLeft: "auto" }}>
+                View
+              </button>
+            </div>
+          )}
+          {myExpiryToday.length > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <FiCalendar size={14} color="#BA7517" />
+              <span style={{ fontSize: 13, color: "#854F0B", fontWeight: 600 }}>
+                {myExpiryToday.length} job{myExpiryToday.length > 1 ? "s" : ""} expiring today —
+              </span>
+              <span style={{ fontSize: 12, color: "#BA7517" }}>
+                {myExpiryToday.slice(0, 4).map(j => j.job_no).join(", ")}{myExpiryToday.length > 4 ? ` +${myExpiryToday.length - 4} more` : ""}
+              </span>
+              <button onClick={() => setFilter("expiry")} style={{ all: "unset", cursor: "pointer", fontSize: 11, color: "#BA7517", border: "1px solid #BA751760", padding: "2px 10px", borderRadius: 8, marginLeft: "auto" }}>
+                View
+              </button>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Stat cards */}
+      {/* ── Pipeline stats ── */}
+      <p style={{ margin: "0 0 8px", fontSize: 10, fontWeight: 700, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+        Pipeline
+      </p>
       <div style={{
         display: "grid",
-        gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)",
-        gap: isMobile ? 8 : 12, marginBottom: 22,
+        gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(6, 1fr)",
+        gap: isMobile ? 8 : 10, marginBottom: 14,
       }}>
-        {STATS.map(s => (
+        {STATS_PIPELINE.map(s => (
           <StatCard
             key={s.key}
             icon={s.icon}
             label={s.label}
+            value={s.value}
+            accent={s.accent}
+            active={filter === s.key}
+            skeleton={loading && !data}
+            onClick={() => setFilter(prev => prev === s.key ? "all" : s.key)}
+          />
+        ))}
+      </div>
+
+      {/* ── Alert stats ── */}
+      <p style={{ margin: "0 0 8px", fontSize: 10, fontWeight: 700, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+        Alerts & Hold
+      </p>
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)",
+        gap: isMobile ? 8 : 10, marginBottom: 22,
+      }}>
+        {STATS_ALERTS.map(s => (
+          <StatCard
+            key={s.key}
+            icon={s.icon}
+            label={s.label}
+            sublabel={s.sublabel}
             value={s.value}
             accent={s.accent}
             active={filter === s.key}
@@ -957,13 +1194,13 @@ export default function Dashboard() {
             borderBottom: "0.5px solid var(--color-border-tertiary)",
           }}>
             {[
-              { label: "Job No." },
-              { label: "Customer / Creator" },
-              { label: "Stage" },
-              { label: "Status" },
-              { label: "Amount" },
+              { label: "Job No."              },
+              { label: "Customer / Creator"   },
+              { label: "Stage / Time"         },
+              { label: "Status"               },
+              { label: "Amount"               },
               { label: "Validity", sortable: true },
-              { label: "" },
+              { label: ""                     },
             ].map((h, i) => (
               <span
                 key={i}
@@ -983,7 +1220,7 @@ export default function Dashboard() {
         )}
 
         {/* Row list */}
-        <div style={{ maxHeight: 520, overflowY: "auto" }}>
+        <div style={{ maxHeight: 540, overflowY: "auto" }}>
           {loading && !data
             ? (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "60px 0", gap: 14 }}>
@@ -996,9 +1233,9 @@ export default function Dashboard() {
             : displayJobs.map(job =>
                 isMobile
                   ? <div key={job._id} style={{ padding: "0 10px" }}>
-                      <JobCard job={job} isExpiring={expiryIds.has(job._id)} onView={setViewJob} />
+                      <JobCard job={job} onView={setViewJob} />
                     </div>
-                  : <JobRow key={job._id} job={job} isExpiring={expiryIds.has(job._id)} onView={setViewJob} />
+                  : <JobRow key={job._id} job={job} onView={setViewJob} />
               )
           }
         </div>
@@ -1012,6 +1249,7 @@ export default function Dashboard() {
             <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
               {displayJobs.length} job{displayJobs.length !== 1 ? "s" : ""}
               {search ? ` matching "${search}"` : ""}
+              {filter !== "all" ? ` · ${filterLabel}` : ""}
             </span>
             <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
               Auto-refreshes every 60s

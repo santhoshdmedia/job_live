@@ -1,56 +1,27 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import {
-  Button,
-  Card,
-  Input,
-  Modal,
-  Select,
-  Tag,
-  Tooltip,
-  Divider,
-  Spin,
-  InputNumber,
-  Popconfirm,
-  Radio,
+  Button, Card, Input, Modal, Select, Tag, Tooltip, Divider, Spin,
+  InputNumber, Popconfirm, Radio, Image, DatePicker, Alert,
 } from "antd";
 import {
-  EyeOutlined,
-  EditOutlined,
-  ReloadOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  ClockCircleOutlined,
-  SwapOutlined,
-  SendOutlined,
-  UserOutlined,
-  EnvironmentOutlined,
-  FileTextOutlined,
-  TagOutlined,
-  ShoppingCartOutlined,
-  BranchesOutlined,
-  PlayCircleOutlined,
-  PauseCircleOutlined,
-  PlusOutlined,
-  DeleteOutlined,
-  SaveOutlined,
-  PhoneOutlined,
-  WalletOutlined,
-  BankOutlined,
-  InfoCircleOutlined,
-  ExclamationCircleOutlined,
+  EyeOutlined, EditOutlined, ReloadOutlined, CheckCircleOutlined,
+  CloseCircleOutlined, ClockCircleOutlined, SwapOutlined, SendOutlined,
+  UserOutlined, EnvironmentOutlined, FileTextOutlined, TagOutlined,
+  ShoppingCartOutlined, BranchesOutlined, PlayCircleOutlined,
+  PauseCircleOutlined, PlusOutlined, DeleteOutlined, SaveOutlined,
+  PhoneOutlined, WalletOutlined, BankOutlined, InfoCircleOutlined,
+  ExclamationCircleOutlined, CameraOutlined, CompassOutlined,
+  CalendarOutlined, AlertOutlined, CheckOutlined,
 } from "@ant-design/icons";
 import CustomTable from "../components/CustomTable";
 import UploadHelper from "../helper/UploadHelper";
-import {
-  ERROR_NOTIFICATION,
-  SUCCESS_NOTIFICATION,
-} from "../helper/notification_helper";
+import { ERROR_NOTIFICATION, SUCCESS_NOTIFICATION } from "../helper/notification_helper";
 import dayjs from "dayjs";
 
 const { Option } = Select;
 const { TextArea } = Input;
 
-// ─── Breakpoint Hook ──────────────────────────────────────────────────────────
+// ─── Breakpoint ───────────────────────────────────────────────────────────────
 const useBreakpoint = () => {
   const get = () => {
     const w = window.innerWidth;
@@ -65,906 +36,117 @@ const useBreakpoint = () => {
     window.addEventListener("resize", fn);
     return () => window.removeEventListener("resize", fn);
   }, []);
-  return {
-    bp,
-    isMobile: bp === "xs" || bp === "sm",
-    isTablet: bp === "md",
-    isDesktop: bp === "lg",
-  };
+  return { bp, isMobile: bp === "xs" || bp === "sm", isTablet: bp === "md", isDesktop: bp === "lg" };
 };
 
 // ─── Overdue Helper ───────────────────────────────────────────────────────────
-/**
- * Returns the overdue info for a job's estimated_delivery_date.
- *
- * - Negative  → days until delivery (early / future)
- * - 0         → due today
- * - Positive  → days past due (overdue)
- *
- * We compare calendar-day differences (ignoring time) so the badge is
- * human-readable ("today", "tomorrow", "yesterday", etc.)
- *
- * Returns: { diff: number, label: string, color: string, bg: string, isOverdue: boolean }
- */
 const getOverdueInfo = (estimated_delivery_date) => {
   if (!estimated_delivery_date) return null;
-
   const today = dayjs().startOf("day");
   const due = dayjs(estimated_delivery_date).startOf("day");
-  const diff = today.diff(due, "day"); // positive = past due, negative = future
-
-  if (diff === 0) {
-    return {
-      diff: 0,
-      label: "Today",
-      badge: "0",
-      color: "#92400e",
-      bg: "#fef3c7",
-      border: "#fcd34d",
-      isOverdue: false,
-      isDueToday: true,
-    };
-  }
-
-  if (diff < 0) {
-    // Future: diff is negative (e.g. -1 = tomorrow, -2 = day after tomorrow)
-    return {
-      diff,
-      label: diff === -1 ? "Due Tomorrow" : `Due in ${Math.abs(diff)}d`,
-      badge: `${diff}`, // shows -1, -2, etc.
-      color: "#065f46",
-      bg: "#d1fae5",
-      border: "#6ee7b7",
-      isOverdue: false,
-      isDueToday: false,
-    };
-  }
-
-  // Past due
-  return {
-    diff,
-    label: diff === 1 ? "Overdue by 1 day" : `Overdue by ${diff} days`,
-    badge: `+${diff}`,
-    color: "#991b1b",
-    bg: "#fee2e2",
-    border: "#fca5a5",
-    isOverdue: true,
-    isDueToday: false,
-  };
+  const diff = today.diff(due, "day");
+  if (diff === 0) return { diff: 0, label: "Due Today", badge: "0", color: "#92400e", bg: "#fef3c7", border: "#fcd34d", isOverdue: false, isDueToday: true };
+  if (diff < 0) return { diff, label: diff === -1 ? "Due Tomorrow" : `Due in ${Math.abs(diff)}d`, badge: `${diff}`, color: "#065f46", bg: "#d1fae5", border: "#6ee7b7", isOverdue: false, isDueToday: false };
+  return { diff, label: diff === 1 ? "Overdue 1d" : `Overdue ${diff}d`, badge: `+${diff}`, color: "#991b1b", bg: "#fee2e2", border: "#fca5a5", isOverdue: true, isDueToday: false };
 };
 
-/**
- * Small badge rendered above the Job No tag in the table.
- * Shows: red "+N" for overdue, yellow "0" for today, green "-N" for future.
- */
 const OverdueBadge = ({ estimated_delivery_date }) => {
   const info = getOverdueInfo(estimated_delivery_date);
   if (!info) return null;
-
-  // Only show a badge if overdue OR due today. Future jobs get a subtle chip.
-  const showAlways = info.isOverdue || info.isDueToday;
-  if (!showAlways && info.diff < -3) return null; // hide if more than 3 days away
-
+  if (!info.isOverdue && !info.isDueToday && info.diff < -3) return null;
   return (
-    <Tooltip
-      title={
-        <span style={{ fontSize: 12 }}>
-          {info.label} · Est. delivery:{" "}
-          {dayjs(estimated_delivery_date).format("DD MMM YYYY")}
-        </span>
-      }
-      placement="top"
-    >
-      <span
-        style={{
-          display: "inline-block",
-          fontSize: 10,
-          fontWeight: 800,
-          lineHeight: 1,
-          padding: "2px 6px",
-          borderRadius: 10,
-          border: `1px solid ${info.border}`,
-          background: info.bg,
-          color: info.color,
-          letterSpacing: "0.02em",
-          cursor: "default",
-          fontFamily: "monospace",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {info.isOverdue && (
-          <ExclamationCircleOutlined
-            style={{ fontSize: 9, marginRight: 2, verticalAlign: "middle" }}
-          />
-        )}
+    <Tooltip title={`${info.label} · Est: ${dayjs(estimated_delivery_date).format("DD MMM YYYY")}`}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10, fontWeight: 800, padding: "2px 6px", borderRadius: 10, border: `1px solid ${info.border}`, background: info.bg, color: info.color, fontFamily: "monospace", whiteSpace: "nowrap" }}>
+        {info.isOverdue && <ExclamationCircleOutlined style={{ fontSize: 9 }} />}
         {info.badge}d
       </span>
     </Tooltip>
   );
 };
 
-// ─── Static Configs ───────────────────────────────────────────────────────────
-const STATUS_CONFIG = {
-  draft: { label: "Draft", color: "default", icon: <FileTextOutlined /> },
-  sent: { label: "Sent", color: "blue", icon: <SendOutlined /> },
-  viewed: { label: "Viewed", color: "cyan", icon: <EyeOutlined /> },
-  accepted: {
-    label: "Accepted",
-    color: "green",
-    icon: <CheckCircleOutlined />,
-  },
-  design: { label: "Design", color: "blue", icon: <FileTextOutlined /> },
-  in_progress: {
-    label: "In Progress",
-    color: "gold",
-    icon: <PlayCircleOutlined />,
-  },
-  on_hold: { label: "On Hold", color: "orange", icon: <PauseCircleOutlined /> },
-  rejected: { label: "Rejected", color: "red", icon: <CloseCircleOutlined /> },
-  expired: {
-    label: "Expired",
-    color: "volcano",
-    icon: <ClockCircleOutlined />,
-  },
-  completed: {
-    label: "Completed",
-    color: "purple",
-    icon: <CheckCircleOutlined />,
-  },
-  converted: { label: "Converted", color: "geekblue", icon: <SwapOutlined /> },
+// ─── Payment Due Badge ────────────────────────────────────────────────────────
+const PaymentDueBadge = ({ next_due_date, balance_amount }) => {
+  if (!next_due_date || !balance_amount || parseFloat(balance_amount) <= 0) return null;
+  const today = dayjs().startOf("day");
+  const due = dayjs(next_due_date).startOf("day");
+  const diff = due.diff(today, "day");
+  let color, bg, border, label;
+  if (diff < 0) { color = "#991b1b"; bg = "#fee2e2"; border = "#fca5a5"; label = `Payment overdue ${Math.abs(diff)}d`; }
+  else if (diff === 0) { color = "#92400e"; bg = "#fef3c7"; border = "#fcd34d"; label = "Payment due today"; }
+  else if (diff <= 3) { color = "#92400e"; bg = "#fff7ed"; border = "#fdba74"; label = `Payment due in ${diff}d`; }
+  else { color = "#1e40af"; bg = "#eff6ff"; border = "#93c5fd"; label = `Payment due ${dayjs(next_due_date).format("DD MMM")}`; }
+  return (
+    <Tooltip title={`Balance ₹${parseFloat(balance_amount).toFixed(2)} · Due ${dayjs(next_due_date).format("DD MMM YYYY")}`}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 10, border: `1px solid ${border}`, background: bg, color, whiteSpace: "nowrap" }}>
+        <WalletOutlined style={{ fontSize: 9 }} /> {label}
+      </span>
+    </Tooltip>
+  );
 };
 
-const WORKFLOW_STAGES = [
-  { value: "design", label: "Design" },
-  { value: "prepress", label: "Prepress" },
-  { value: "printing", label: "Printing" },
-  { value: "finishing", label: "Finishing" },
-  { value: "quality_check", label: "Quality Check" },
-  { value: "dispatch", label: "Dispatch" },
-  { value: "delivered", label: "Delivered" },
-  { value: "custom", label: "Custom" },
-];
-
-const PRODUCTS = [
-  {
-    product_id: "P001",
-    product_name: "flex",
-    printing_type: ["Solvent", "Latex", "UV"],
-    variations: [
-      "Normal Flex",
-      "Flex BB -230gsm",
-      "Flex BB -280gsm",
-      "Flex BB -240gsm",
-      "Flex Star Backlight",
-      "Flex Backlight",
-      "Flex BB Star",
-    ],
-  },
-];
-
-const UNIT_OPTIONS = [
-  { value: "ft", label: "ft" },
-  { value: "inch", label: "inch" },
-  { value: "cm", label: "cm" },
-];
-
-const QTY_TYPE_OPTIONS = [
-  { value: "sq.ft", label: "Sq. Ft" },
-  { value: "quantity", label: "Quantity" },
-];
-
-const GST_OPTIONS = [0, 5, 12, 18, 28];
-
-const PAYMENT_MODES = [
-  "Cash",
-  "UPI",
-  "Bank Transfer",
-  "Cheque",
-  "Card",
-  "Cash on Delivery",
-];
-
-// ─── sq.ft auto-calculator ────────────────────────────────────────────────────
-const toSqFt = (w, h, unit) => {
-  const wn = parseFloat(w) || 0;
-  const hn = parseFloat(h) || 0;
-  if (!wn || !hn) return 0;
-  if (unit === "ft") return wn * hn;
-  if (unit === "inch") return (wn / 12) * (hn / 12);
-  if (unit === "cm") return (wn / 30.48) * (hn / 30.48);
-  return wn * hn;
+// ─── Next Due Date Calculator ─────────────────────────────────────────────────
+const getDefaultNextDueDate = (paymentMode, paidAmount, totalAmount) => {
+  const balance = totalAmount - paidAmount;
+  if (balance <= 0) return null;
+  const today = dayjs();
+  const modeDefaults = {
+    "Cash": 0,
+    "Cash on Delivery": 0,
+    "UPI": 0,
+    "Card": 0,
+    "Bank Transfer": 7,
+    "Cheque": 14,
+  };
+  const days = modeDefaults[paymentMode] ?? 30;
+  return days === 0 ? null : today.add(days, "day");
 };
 
-// ─── Per-item calculation helper ──────────────────────────────────────────────
-const calcItemTotals = (it) => {
-  const qty = parseFloat(it.quantity) || 0;
-  const sqFt = parseFloat(it.sq_ft) || 0;
-  const price = parseFloat(it.price) || 0;
-  const gstPct = parseFloat(it.gst_percentage) || 0;
-  const isSqFt = it.quantity_type === "sq.ft";
+const NextDueDatePreview = ({ paymentMode, paidAmount, totalAmount, nextDueDate }) => {
+  const balance = (totalAmount || 0) - (parseFloat(paidAmount) || 0);
+  if (balance <= 0) return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 10, marginTop: 8 }}>
+      <CheckOutlined style={{ color: "#16a34a", fontSize: 16 }} />
+      <div>
+        <div style={{ fontWeight: 700, color: "#15803d", fontSize: 13 }}>Fully Paid</div>
+        <div style={{ fontSize: 11, color: "#4ade80" }}>No outstanding balance.</div>
+      </div>
+    </div>
+  );
 
-  const base = isSqFt ? qty * sqFt * price : qty * price;
-  const gstAmt = base * (gstPct / 100);
-  const lineTotal = base + gstAmt;
+  const suggested = getDefaultNextDueDate(paymentMode, parseFloat(paidAmount) || 0, totalAmount || 0);
+  const displayDate = nextDueDate || suggested;
 
-  return { base, gstAmt, lineTotal, qty, sqFt, price, gstPct, isSqFt };
-};
-
-// ─── Job-level totals for VIEW modal ──────────────────────────────────────────
-const calcJobTotals = (job) => {
-  const cartItems = job.cart_items || [];
-  let subtotal = 0;
-  let taxAmount = 0;
-
-  cartItems.forEach((it) => {
-    const { base, gstAmt } = calcItemTotals(it);
-    subtotal += base;
-    taxAmount += gstAmt;
-  });
-
-  let discountAmt = parseFloat(job.discount_amount) || 0;
-  let discountPct = 0;
-  if (!discountAmt && job.discount_percentage) {
-    discountPct = parseFloat(job.discount_percentage) || 0;
-    discountAmt = subtotal * (discountPct / 100);
+  let urgencyColor = "#1e40af", urgencyBg = "#eff6ff", urgencyBorder = "#93c5fd", urgencyMsg = "";
+  if (displayDate) {
+    const today = dayjs().startOf("day");
+    const diff = dayjs(displayDate).startOf("day").diff(today, "day");
+    if (diff < 0) { urgencyColor = "#991b1b"; urgencyBg = "#fee2e2"; urgencyBorder = "#fca5a5"; urgencyMsg = `Payment is already overdue by ${Math.abs(diff)} day${Math.abs(diff) > 1 ? "s" : ""}!`; }
+    else if (diff === 0) { urgencyColor = "#92400e"; urgencyBg = "#fef3c7"; urgencyBorder = "#fcd34d"; urgencyMsg = "Payment is due today."; }
+    else if (diff <= 3) { urgencyColor = "#c2410c"; urgencyBg = "#fff7ed"; urgencyBorder = "#fdba74"; urgencyMsg = `Payment is due very soon — in ${diff} day${diff > 1 ? "s" : ""}.`; }
+    else { urgencyMsg = `Customer has ${diff} days to pay the balance.`; }
   }
 
-  const taxableAmount = subtotal - discountAmt;
-  const designCharges = parseFloat(job.design_charges) || 0;
-  const deliveryCharges = job.free_delivery
-    ? 0
-    : parseFloat(job.delivery_charges) || 0;
-  const grandTotal =
-    taxableAmount + taxAmount + designCharges + deliveryCharges;
-
-  return {
-    subtotal,
-    discountAmt,
-    discountPct,
-    taxableAmount,
-    taxAmount,
-    designCharges,
-    deliveryCharges,
-    grandTotal,
-    freeDelivery: !!job.free_delivery,
-  };
-};
-
-const EMPTY_ITEM = {
-  product_id: "",
-  product_name: "",
-  variation: "",
-  printing_type: "",
-  width: "",
-  height: "",
-  size_unit: "ft",
-  sq_ft: 0,
-  quantity_type: "sq.ft",
-  quantity: 1,
-  price: 0,
-  gst_percentage: 0,
-  design_file: "",
-  notes: "",
-};
-
-const DEFAULT_EDIT_FORM = {
-  customer_name: "",
-  customer_phone: "",
-  company_name: "",
-  estimated_delivery_date: "",
-  address_line1: "",
-  address_line2: "",
-  city: "",
-  state: "",
-  pincode: "",
-  country: "India",
-  gst_no: "",
-  delivery_charges: 0,
-  free_delivery: false,
-  design_charges: 0,
-  discount_amount: 0,
-  payment_mode: "",
-  payment_amount: "",
-  notes: "",
-  terms_and_conditions:
-    "Payment due within 30 days.\nPrices subject to change without notice.\nDelivery: 7-10 business days after confirmation.",
-};
-
-// ─── API helpers ──────────────────────────────────────────────────────────────
-const extractJobs = (d) => {
-  if (Array.isArray(d?.data?.jobs)) return d.data.jobs;
-  if (Array.isArray(d?.data)) return d.data;
-  if (Array.isArray(d?.jobs)) return d.jobs;
-  if (Array.isArray(d)) return d;
-  return [];
-};
-const extractTotal = (d, fb) => {
-  if (typeof d?.data?.pagination?.total === "number")
-    return d.data.pagination.total;
-  if (typeof d?.data?.total === "number") return d.data.total;
-  if (typeof d?.data?.count === "number") return d.data.count;
-  if (typeof d?.total === "number") return d.total;
-  return fb;
-};
-
-const AUTO_REFRESH_INTERVAL = 5 * 60 * 1000;
-
-// ─── Shared UI components ─────────────────────────────────────────────────────
-const SectionHeader = ({ icon, title }) => (
-  <div
-    style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}
-  >
-    <span style={{ color: "#2563eb", fontSize: 14 }}>{icon}</span>
-    <span
-      style={{
-        fontSize: 11,
-        fontWeight: 700,
-        color: "#374151",
-        textTransform: "uppercase",
-        letterSpacing: "0.06em",
-      }}
-    >
-      {title}
-    </span>
-    <div style={{ flex: 1, height: 1, background: "#e5e7eb", marginLeft: 6 }} />
-  </div>
-);
-
-const FormField = ({ label, required, children }) => (
-  <div>
-    <label
-      style={{
-        display: "block",
-        fontSize: 10,
-        fontWeight: 700,
-        color: "#6b7280",
-        marginBottom: 4,
-        textTransform: "uppercase",
-        letterSpacing: "0.05em",
-      }}
-    >
-      {label}
-      {required && <span style={{ color: "#ef4444", marginLeft: 2 }}>*</span>}
-    </label>
-    {children}
-  </div>
-);
-
-const InfoRow = ({ label, value, valueStyle }) => (
-  <div>
-    <div
-      style={{
-        fontSize: 10,
-        fontWeight: 700,
-        color: "#9ca3af",
-        textTransform: "uppercase",
-        letterSpacing: "0.05em",
-      }}
-    >
-      {label}
-    </div>
-    <div
-      style={{ fontSize: 13, fontWeight: 600, color: "#1a1a2e", ...valueStyle }}
-    >
-      {value || "—"}
-    </div>
-  </div>
-);
-
-const SummaryRow = ({ label, value, color, bold, borderTop }) => (
-  <div
-    style={{
-      display: "flex",
-      justifyContent: "space-between",
-      fontSize: bold ? 15 : 13,
-      fontWeight: bold ? 800 : 600,
-      color: color || "#4b5563",
-      marginBottom: bold ? 0 : 4,
-      paddingTop: borderTop ? 8 : 0,
-      borderTop: borderTop ? "1px solid #e5e7eb" : "none",
-    }}
-  >
-    <span style={{ color: bold ? "#1a1a2e" : undefined }}>{label}</span>
-    <span style={{ color: color || (bold ? "#2563eb" : undefined) }}>
-      {value}
-    </span>
-  </div>
-);
-
-// ─── ProductItemRow (EDIT MODE) ───────────────────────────────────────────────
-const ProductItemRow = ({
-  item,
-  idx,
-  onChange,
-  onRemove,
-  isOnly,
-  isMobile,
-  isTablet,
-}) => {
-  const [showSuggest, setShowSuggest] = useState(false);
-  const ref = useRef(null);
-
-  const matched = PRODUCTS.filter((p) =>
-    p.product_name
-      .toLowerCase()
-      .includes((item.product_name || "").toLowerCase()),
-  );
-  const selected = PRODUCTS.find(
-    (p) =>
-      p.product_name.toLowerCase() === (item.product_name || "").toLowerCase(),
-  );
-
-  useEffect(() => {
-    const fn = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setShowSuggest(false);
-    };
-    document.addEventListener("mousedown", fn);
-    return () => document.removeEventListener("mousedown", fn);
-  }, []);
-
-  const sizeChange = (field, val) => {
-    const updated = { ...item, [field]: val };
-    if (item.quantity_type === "sq.ft") {
-      const sq = toSqFt(updated.width, updated.height, updated.size_unit);
-      updated.sq_ft = parseFloat(sq.toFixed(4));
-    }
-    onChange(idx, updated);
-  };
-
-  const set = (f, v) => onChange(idx, { ...item, [f]: v });
-
-  const handleQtyTypeChange = (val) => {
-    onChange(idx, {
-      ...item,
-      quantity_type: val,
-      ...(val === "quantity" ? { sq_ft: 0 } : {}),
-    });
-  };
-
-  const { base, gstAmt, lineTotal, isSqFt } = calcItemTotals(item);
-  const productCols = isMobile ? "1fr" : isTablet ? "1fr 1fr" : "1fr 1fr 1fr";
-  const sizeCols = isSqFt
-    ? isMobile
-      ? "1fr 1fr"
-      : "1fr 1fr 90px 1fr"
-    : isMobile
-      ? "1fr 1fr"
-      : "1fr 1fr 90px";
-  const priceCols = isMobile ? "1fr 1fr" : "repeat(3,1fr)";
-
   return (
-    <div
-      style={{
-        background: "#f9fafb",
-        border: "1px solid #e5e7eb",
-        borderRadius: 10,
-        padding: isMobile ? 10 : 14,
-      }}
-    >
-      {/* Row Header */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 10,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            flexWrap: "wrap",
-          }}
-        >
-          <span
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              color: "#374151",
-              background: "#e0e7ff",
-              padding: "2px 10px",
-              borderRadius: 20,
-            }}
-          >
-            Item {idx + 1}
-          </span>
-          <Radio.Group
-            size="small"
-            value={item.quantity_type}
-            onChange={(e) => handleQtyTypeChange(e.target.value)}
-            buttonStyle="solid"
-          >
-            {QTY_TYPE_OPTIONS.map((o) => (
-              <Radio.Button
-                key={o.value}
-                value={o.value}
-                style={{
-                  fontSize: 11,
-                  fontWeight: 600,
-                  height: 24,
-                  lineHeight: "22px",
-                  padding: "0 10px",
-                }}
-              >
-                {o.label}
-              </Radio.Button>
-            ))}
-          </Radio.Group>
-        </div>
-        <Popconfirm
-          title="Remove this item?"
-          onConfirm={() => onRemove(idx)}
-          disabled={isOnly}
-          okText="Yes"
-          cancelText="No"
-        >
-          <Button
-            icon={<DeleteOutlined />}
-            size="small"
-            danger
-            type="text"
-            disabled={isOnly}
-          />
-        </Popconfirm>
-      </div>
-
-      {/* Product / Variation / Printing */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: productCols,
-          gap: 8,
-          marginBottom: 10,
-        }}
-      >
-        <FormField label="Product Name" required>
-          <div style={{ position: "relative" }} ref={ref}>
-            <Input
-              placeholder="Type product…"
-              value={item.product_name}
-              size="small"
-              autoComplete="off"
-              style={{ borderRadius: 6 }}
-              onChange={(e) => {
-                onChange(idx, {
-                  ...item,
-                  product_name: e.target.value,
-                  variation: "",
-                  printing_type: "",
-                });
-                setShowSuggest(true);
-              }}
-              onFocus={() => item.product_name && setShowSuggest(true)}
-            />
-            {showSuggest && matched.length > 0 && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: "100%",
-                  left: 0,
-                  right: 0,
-                  background: "#fff",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 8,
-                  zIndex: 9999,
-                  boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
-                  overflow: "hidden",
-                }}
-              >
-                {matched.map((p) => (
-                  <div
-                    key={p.product_id}
-                    onMouseDown={() => {
-                      onChange(idx, {
-                        ...item,
-                        product_name: p.product_name,
-                        product_id: p.product_id,
-                        variation: "",
-                        printing_type: "",
-                      });
-                      setShowSuggest(false);
-                    }}
-                    style={{
-                      padding: "8px 12px",
-                      cursor: "pointer",
-                      fontSize: 13,
-                      color: "#1a1a2e",
-                      fontWeight: 600,
-                      borderBottom: "1px solid #f3f4f6",
-                    }}
-                    onMouseEnter={(e) =>
-                      (e.currentTarget.style.background = "#eff6ff")
-                    }
-                    onMouseLeave={(e) =>
-                      (e.currentTarget.style.background = "#fff")
-                    }
-                  >
-                    {p.product_name}
-                    <span
-                      style={{
-                        marginLeft: 6,
-                        fontSize: 10,
-                        color: "#6b7280",
-                        fontWeight: 400,
-                      }}
-                    >
-                      {p.printing_type?.join(" · ")}
-                    </span>
-                  </div>
-                ))}
+    <div style={{ marginTop: 8, padding: "12px 14px", background: urgencyBg, border: `1px solid ${urgencyBorder}`, borderRadius: 10 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+        <CalendarOutlined style={{ color: urgencyColor, fontSize: 18, marginTop: 2, flexShrink: 0 }} />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 700, color: urgencyColor, fontSize: 13, marginBottom: 4 }}>
+            Balance Due: ₹{balance.toFixed(2)}
+          </div>
+          {displayDate ? (
+            <>
+              <div style={{ fontSize: 12, color: urgencyColor, marginBottom: 4 }}>
+                Next payment due: <strong>{dayjs(displayDate).format("dddd, DD MMM YYYY")}</strong>
               </div>
-            )}
-          </div>
-        </FormField>
-
-        <FormField label="Material">
-          <Select
-            placeholder={selected ? "Select variation" : "—"}
-            value={item.variation || undefined}
-            size="small"
-            style={{ width: "100%" }}
-            disabled={!selected}
-            onChange={(v) => set("variation", v)}
-          >
-            {(selected?.variations || []).map((v) => (
-              <Option key={v} value={v}>
-                {v}
-              </Option>
-            ))}
-          </Select>
-        </FormField>
-
-        <FormField label="Printing Type">
-          <Select
-            placeholder={selected ? "Select type" : "—"}
-            value={item.printing_type || undefined}
-            size="small"
-            style={{ width: "100%" }}
-            disabled={!selected}
-            onChange={(v) => set("printing_type", v)}
-          >
-            {(selected?.printing_type || []).map((t) => (
-              <Option key={t} value={t}>
-                {t}
-              </Option>
-            ))}
-          </Select>
-        </FormField>
-      </div>
-
-      {/* Size fields */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: sizeCols,
-          gap: 8,
-          marginBottom: 10,
-          alignItems: "end",
-        }}
-      >
-        <FormField label="Width" required={isSqFt}>
-          <Input
-            size="small"
-            placeholder="0"
-            type="number"
-            min={0}
-            value={item.width}
-            prefix={
-              <span style={{ fontSize: 10, color: "#6b7280", fontWeight: 700 }}>
-                W
-              </span>
-            }
-            style={{ borderRadius: 6 }}
-            onChange={(e) => sizeChange("width", e.target.value)}
-          />
-        </FormField>
-
-        <FormField label="Height" required={isSqFt}>
-          <Input
-            size="small"
-            placeholder="0"
-            type="number"
-            min={0}
-            value={item.height}
-            prefix={
-              <span style={{ fontSize: 10, color: "#6b7280", fontWeight: 700 }}>
-                H
-              </span>
-            }
-            style={{ borderRadius: 6 }}
-            onChange={(e) => sizeChange("height", e.target.value)}
-          />
-        </FormField>
-
-        <FormField label="Unit">
-          <Select
-            value={item.size_unit}
-            size="small"
-            style={{ width: "100%" }}
-            onChange={(v) => sizeChange("size_unit", v)}
-          >
-            {UNIT_OPTIONS.map((u) => (
-              <Option key={u.value} value={u.value}>
-                {u.label}
-              </Option>
-            ))}
-          </Select>
-        </FormField>
-
-        {isSqFt && (
-          <FormField label="Sq. Ft (editable)">
-            <InputNumber
-              size="small"
-              min={0}
-              precision={4}
-              value={item.sq_ft}
-              style={{
-                width: "100%",
-                borderRadius: 6,
-                background: item.sq_ft > 0 ? "#ecfdf5" : undefined,
-                borderColor: item.sq_ft > 0 ? "#6ee7b7" : undefined,
-              }}
-              onChange={(v) => set("sq_ft", parseFloat((v || 0).toFixed(4)))}
-            />
-          </FormField>
-        )}
-      </div>
-
-      {/* Notes */}
-      <div style={{ marginBottom: 10 }}>
-        <FormField label="Notes / Specs">
-          <Input
-            placeholder="Custom text, specs…"
-            value={item.notes}
-            size="small"
-            style={{ borderRadius: 6 }}
-            onChange={(e) => set("notes", e.target.value)}
-          />
-        </FormField>
-      </div>
-
-      {/* Price / GST / Qty */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: priceCols,
-          gap: 8,
-          marginBottom: 10,
-        }}
-      >
-        <FormField label="Quantity" required>
-          <InputNumber
-            min={1}
-            value={item.quantity}
-            size="small"
-            style={{ width: "100%", borderRadius: 6 }}
-            onChange={(v) => set("quantity", v || 1)}
-          />
-        </FormField>
-        <FormField
-          label={isSqFt ? "Price / sq.ft (₹)" : "Unit Price (₹)"}
-          required
-        >
-          <InputNumber
-            min={0}
-            value={item.price}
-            size="small"
-            style={{ width: "100%", borderRadius: 6 }}
-            prefix="₹"
-            onChange={(v) => set("price", v || 0)}
-          />
-        </FormField>
-        <FormField label="GST %">
-          <Select
-            value={item.gst_percentage ?? 0}
-            size="small"
-            style={{ width: "100%" }}
-            onChange={(v) => set("gst_percentage", v)}
-          >
-            {GST_OPTIONS.map((g) => (
-              <Option key={g} value={g}>
-                {g === 0 ? "No GST" : `${g}%`}
-              </Option>
-            ))}
-          </Select>
-        </FormField>
-      </div>
-
-      {/* Design File */}
-      <div style={{ marginBottom: 10 }}>
-        <FormField label="Design File">
-          <UploadHelper
-            setImagePath={(path) => set("design_file", path)}
-            image_path={item.design_file}
-          />
-        </FormField>
-      </div>
-      {item.design_file && (
-        <div style={{ marginBottom: 10 }}>
-          <div
-            style={{
-              fontSize: 10,
-              fontWeight: 700,
-              color: "#6b7280",
-              marginBottom: 6,
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
-            }}
-          >
-            Design Preview
-          </div>
-          <div
-            style={{
-              border: "1px solid #e5e7eb",
-              borderRadius: 8,
-              background: "#f9fafb",
-              padding: 4,
-              display: "flex",
-              justifyContent: "center",
-            }}
-          >
-            <img
-              src={item.design_file}
-              alt="Design Preview"
-              style={{
-                maxHeight: 100,
-                maxWidth: "100%",
-                objectFit: "contain",
-                borderRadius: 4,
-              }}
-              onError={(e) => {
-                e.currentTarget.parentElement.style.display = "none";
-              }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Item Total */}
-      <div style={{ display: "flex", justifyContent: "flex-end" }}>
-        <div
-          style={{
-            background: "#fff",
-            border: "1px solid #d1fae5",
-            borderRadius: 8,
-            padding: "8px 14px",
-            textAlign: "right",
-            minWidth: "100%",
-          }}
-        >
-          <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 2 }}>
-            Base:{" "}
-            <span style={{ fontWeight: 600, color: "#374151" }}>
-              ₹{base.toFixed(2)}
-            </span>
-            {isSqFt && item.sq_ft > 0 && (
-              <span style={{ marginLeft: 6, fontSize: 10, color: "#9ca3af" }}>
-                ({item.quantity} qty × {item.sq_ft} ft² × ₹{item.price}/ft²)
-              </span>
-            )}
-            {!isSqFt && (
-              <span style={{ marginLeft: 6, fontSize: 10, color: "#9ca3af" }}>
-                ({item.quantity} qty × ₹{item.price})
-              </span>
-            )}
-            {(item.gst_percentage || 0) > 0 && (
-              <span style={{ marginLeft: 8 }}>
-                + GST ({item.gst_percentage}%):{" "}
-                <span style={{ fontWeight: 600, color: "#d97706" }}>
-                  ₹{gstAmt.toFixed(2)}
-                </span>
-              </span>
-            )}
-          </div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "#065f46" }}>
-            Item Total: ₹{lineTotal.toFixed(2)}
-          </div>
-          {!isSqFt && (item.width || item.height) && (
-            <div style={{ fontSize: 10, color: "#6b7280", marginTop: 2 }}>
-              Size ref: {item.width || "—"} × {item.height || "—"}{" "}
-              {item.size_unit}
+              <div style={{ fontSize: 11, color: urgencyColor, opacity: 0.85 }}>{urgencyMsg}</div>
+            </>
+          ) : (
+            <div style={{ fontSize: 12, color: urgencyColor }}>Set a due date below so the customer knows when to pay the remaining balance.</div>
+          )}
+          {suggested && !nextDueDate && (
+            <div style={{ marginTop: 6, fontSize: 11, color: urgencyColor, opacity: 0.75, fontStyle: "italic" }}>
+              Suggested based on payment mode "{paymentMode}": {dayjs(suggested).format("DD MMM YYYY")}
             </div>
           )}
         </div>
@@ -973,63 +155,363 @@ const ProductItemRow = ({
   );
 };
 
+// ─── Site Visit Badge ─────────────────────────────────────────────────────────
+const SiteVisitBadge = () => (
+  <Tooltip title="Created from a Site Visit">
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 10, background: "linear-gradient(135deg,#7c3aed22,#4f46e522)", border: "1px solid #a78bfa", color: "#6d28d9", whiteSpace: "nowrap" }}>
+      <CompassOutlined style={{ fontSize: 9 }} /> Site Visit
+    </span>
+  </Tooltip>
+);
+
+// ─── Static Configs ───────────────────────────────────────────────────────────
+const STATUS_CONFIG = {
+  draft:       { label: "Draft",       color: "default",  icon: <FileTextOutlined /> },
+  sent:        { label: "Sent",        color: "blue",     icon: <SendOutlined /> },
+  viewed:      { label: "Viewed",      color: "cyan",     icon: <EyeOutlined /> },
+  accepted:    { label: "Accepted",    color: "green",    icon: <CheckCircleOutlined /> },
+  design:      { label: "Design",      color: "blue",     icon: <FileTextOutlined /> },
+  in_progress: { label: "In Progress", color: "gold",     icon: <PlayCircleOutlined /> },
+  on_hold:     { label: "On Hold",     color: "orange",   icon: <PauseCircleOutlined /> },
+  rejected:    { label: "Rejected",    color: "red",      icon: <CloseCircleOutlined /> },
+  expired:     { label: "Expired",     color: "volcano",  icon: <ClockCircleOutlined /> },
+  completed:   { label: "Completed",   color: "purple",   icon: <CheckCircleOutlined /> },
+  converted:   { label: "Converted",   color: "geekblue", icon: <SwapOutlined /> },
+};
+
+const WORKFLOW_STAGES = [
+  { value: "design",        label: "Design" },
+  { value: "prepress",      label: "Prepress" },
+  { value: "printing",      label: "Printing" },
+  { value: "finishing",     label: "Finishing" },
+  { value: "quality_check", label: "Quality Check" },
+  { value: "dispatch",      label: "Dispatch" },
+  { value: "delivered",     label: "Delivered" },
+  { value: "custom",        label: "Custom" },
+];
+
+const PRODUCTS = [
+  {
+    product_id: "P001",
+    product_name: "flex",
+    printing_type: ["Solvent", "Latex", "UV"],
+    variations: ["Normal Flex","Flex BB -230gsm","Flex BB -280gsm","Flex BB -240gsm","Flex Star Backlight","Flex Backlight","Flex BB Star"],
+  },
+];
+
+const UNIT_OPTIONS  = [{ value: "ft", label: "ft" },{ value: "inch", label: "inch" },{ value: "cm", label: "cm" }];
+const QTY_TYPE_OPTIONS = [{ value: "sq.ft", label: "Sq. Ft" },{ value: "quantity", label: "Quantity" }];
+const GST_OPTIONS   = [0, 5, 12, 18, 28];
+const PAYMENT_MODES = ["Cash","UPI","Bank Transfer","Cheque","Card","Cash on Delivery"];
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+const toSqFt = (w, h, unit) => {
+  const wn = parseFloat(w) || 0, hn = parseFloat(h) || 0;
+  if (!wn || !hn) return 0;
+  if (unit === "ft")   return wn * hn;
+  if (unit === "inch") return (wn / 12) * (hn / 12);
+  if (unit === "cm")   return (wn / 30.48) * (hn / 30.48);
+  return wn * hn;
+};
+
+const calcItemTotals = (it) => {
+  const qty = parseFloat(it.quantity) || 0, sqFt = parseFloat(it.sq_ft) || 0,
+    price = parseFloat(it.price) || 0, gstPct = parseFloat(it.gst_percentage) || 0;
+  const isSqFt = it.quantity_type === "sq.ft";
+  const base = isSqFt ? qty * sqFt * price : qty * price;
+  const gstAmt = base * (gstPct / 100);
+  return { base, gstAmt, lineTotal: base + gstAmt, qty, sqFt, price, gstPct, isSqFt };
+};
+
+const calcJobTotals = (job) => {
+  let subtotal = 0, taxAmount = 0;
+  (job.cart_items || []).forEach(it => { const { base, gstAmt } = calcItemTotals(it); subtotal += base; taxAmount += gstAmt; });
+  let discountAmt = parseFloat(job.discount_amount) || 0;
+  if (!discountAmt && job.discount_percentage) discountAmt = subtotal * ((parseFloat(job.discount_percentage) || 0) / 100);
+  const taxableAmount = subtotal - discountAmt;
+  const designCharges = parseFloat(job.design_charges) || 0;
+  const deliveryCharges = job.free_delivery ? 0 : parseFloat(job.delivery_charges) || 0;
+  return { subtotal, discountAmt, taxableAmount, taxAmount, designCharges, deliveryCharges, grandTotal: taxableAmount + taxAmount + designCharges + deliveryCharges, freeDelivery: !!job.free_delivery };
+};
+
+const isSiteVisitJob = (r) => !!(r?.site_visit_id || r?.site_visit_no);
+
+const extractJobs  = (d) => Array.isArray(d?.data?.jobs) ? d.data.jobs : Array.isArray(d?.data) ? d.data : Array.isArray(d?.jobs) ? d.jobs : Array.isArray(d) ? d : [];
+const extractTotal = (d, fb) => typeof d?.data?.pagination?.total === "number" ? d.data.pagination.total : typeof d?.data?.total === "number" ? d.data.total : typeof d?.total === "number" ? d.total : fb;
+
+const AUTO_REFRESH_INTERVAL = 5 * 60 * 1000;
+
+const EMPTY_ITEM = { product_id:"",product_name:"",variation:"",printing_type:"",width:"",height:"",size_unit:"ft",sq_ft:0,quantity_type:"sq.ft",quantity:1,price:0,gst_percentage:0,design_file:"",notes:"" };
+
+const DEFAULT_EDIT_FORM = {
+  customer_name:"",customer_phone:"",company_name:"",estimated_delivery_date:"",
+  address_line1:"",address_line2:"",city:"",state:"",pincode:"",country:"India",
+  gst_no:"",delivery_charges:0,free_delivery:false,design_charges:0,discount_amount:0,
+  payment_mode:"",payment_amount:"",next_due_date:null,notes:"",
+  terms_and_conditions:"Payment due within 30 days.\nPrices subject to change without notice.\nDelivery: 7-10 business days after confirmation.",
+};
+
+// ─── Shared UI ────────────────────────────────────────────────────────────────
+const SectionHeader = ({ icon, title, badge }) => (
+  <div style={{ display:"flex",alignItems:"center",gap:6,marginBottom:10 }}>
+    <span style={{ color:"#2563eb",fontSize:14 }}>{icon}</span>
+    <span style={{ fontSize:11,fontWeight:700,color:"#374151",textTransform:"uppercase",letterSpacing:"0.06em" }}>{title}</span>
+    {badge}
+    <div style={{ flex:1,height:1,background:"#e5e7eb",marginLeft:6 }} />
+  </div>
+);
+
+const FormField = ({ label, required, children, hint }) => (
+  <div>
+    <label style={{ display:"block",fontSize:10,fontWeight:700,color:"#6b7280",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em" }}>
+      {label}{required && <span style={{ color:"#ef4444",marginLeft:2 }}>*</span>}
+    </label>
+    {children}
+    {hint && <div style={{ fontSize:10,color:"#9ca3af",marginTop:3 }}>{hint}</div>}
+  </div>
+);
+
+const InfoRow = ({ label, value, valueStyle }) => (
+  <div>
+    <div style={{ fontSize:10,fontWeight:700,color:"#9ca3af",textTransform:"uppercase",letterSpacing:"0.05em" }}>{label}</div>
+    <div style={{ fontSize:13,fontWeight:600,color:"#1a1a2e",...valueStyle }}>{value || "—"}</div>
+  </div>
+);
+
+const SummaryRow = ({ label, value, color, bold, borderTop }) => (
+  <div style={{ display:"flex",justifyContent:"space-between",fontSize:bold?15:13,fontWeight:bold?800:600,color:color||"#4b5563",marginBottom:bold?0:4,paddingTop:borderTop?8:0,borderTop:borderTop?"1px solid #e5e7eb":"none" }}>
+    <span style={{ color:bold?"#1a1a2e":undefined }}>{label}</span>
+    <span style={{ color:color||(bold?"#2563eb":undefined) }}>{value}</span>
+  </div>
+);
+
+// ─── Site Visit Photos ────────────────────────────────────────────────────────
+const SiteVisitPhotosPanel = ({ photos }) => {
+  if (!photos?.length) return null;
+  return (
+    <div style={{ background:"linear-gradient(135deg,#f5f3ff,#ede9fe22)",border:"1px solid #c4b5fd",borderRadius:10,padding:"12px 14px" }}>
+      <SectionHeader icon={<CameraOutlined style={{ color:"#7c3aed" }} />} title={`Site Visit Photos (${photos.length})`} />
+      <Image.PreviewGroup>
+        <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(100px,1fr))",gap:8 }}>
+          {photos.map((photo, i) => (
+            <div key={photo._id || i}>
+              <Image src={photo.url} alt={photo.caption || `Photo ${i+1}`} style={{ width:"100%",height:90,objectFit:"cover",borderRadius:8,border:"2px solid #c4b5fd",cursor:"pointer" }} preview={{ mask:<EyeOutlined style={{ fontSize:16 }} /> }} />
+              {photo.caption && <div style={{ fontSize:10,color:"#6b7280",marginTop:3,textAlign:"center",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{photo.caption}</div>}
+              {photo.taken_at && <div style={{ fontSize:9,color:"#9ca3af",textAlign:"center" }}>{dayjs(photo.taken_at).format("DD MMM, HH:mm")}</div>}
+            </div>
+          ))}
+        </div>
+      </Image.PreviewGroup>
+    </div>
+  );
+};
+
+// ─── Payment Info Panel (View Modal) ─────────────────────────────────────────
+const PaymentInfoPanel = ({ job }) => {
+  const paid = parseFloat(job.payment_amount || 0);
+  const balance = parseFloat(job.balance_amount || 0);
+  const nextDue = job.next_due_date;
+  const hasDue = nextDue && balance > 0;
+
+  if (!job.payment_mode && paid <= 0) return null;
+
+  let dueColor = "#1e40af", dueBg = "#eff6ff", dueBorder = "#93c5fd", dueMsg = "";
+  if (hasDue) {
+    const today = dayjs().startOf("day");
+    const diff = dayjs(nextDue).startOf("day").diff(today, "day");
+    if (diff < 0) { dueColor="#991b1b"; dueBg="#fee2e2"; dueBorder="#fca5a5"; dueMsg=`Overdue by ${Math.abs(diff)} day${Math.abs(diff)>1?"s":""}`; }
+    else if (diff === 0) { dueColor="#92400e"; dueBg="#fef3c7"; dueBorder="#fcd34d"; dueMsg="Due today"; }
+    else if (diff <= 3) { dueColor="#c2410c"; dueBg="#fff7ed"; dueBorder="#fdba74"; dueMsg=`Due in ${diff} day${diff>1?"s":""}`; }
+    else { dueMsg=`Due in ${diff} days`; }
+  }
+
+  return (
+    <div style={{ background:"#f0fdf4",borderRadius:10,padding:"12px 14px",border:"1px solid #bbf7d0" }}>
+      <SectionHeader icon={<WalletOutlined />} title="Payment" />
+      <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom: hasDue ? 12 : 0 }}>
+        <InfoRow label="Payment Mode" value={job.payment_mode || "—"} />
+        <InfoRow label="Amount Paid" value={paid > 0 ? `₹${paid.toFixed(2)}` : "Unpaid"} valueStyle={{ color: paid > 0 ? "#16a34a" : "#dc2626" }} />
+        {balance > 0 && <InfoRow label="Balance Due" value={`₹${balance.toFixed(2)}`} valueStyle={{ color:"#dc2626",fontWeight:800 }} />}
+        {hasDue && <InfoRow label="Next Due Date" value={dayjs(nextDue).format("DD MMM YYYY")} valueStyle={{ color: dueColor, fontWeight: 700 }} />}
+      </div>
+      {hasDue && (
+        <div style={{ display:"flex",alignItems:"flex-start",gap:10,padding:"10px 12px",background:dueBg,border:`1px solid ${dueBorder}`,borderRadius:8 }}>
+          <CalendarOutlined style={{ color:dueColor,fontSize:16,flexShrink:0,marginTop:2 }} />
+          <div>
+            <div style={{ fontWeight:700,color:dueColor,fontSize:13 }}>
+              ₹{balance.toFixed(2)} balance due on {dayjs(nextDue).format("dddd, DD MMM YYYY")}
+            </div>
+            <div style={{ fontSize:11,color:dueColor,opacity:0.8,marginTop:2 }}>{dueMsg}</div>
+          </div>
+        </div>
+      )}
+      {balance <= 0 && paid > 0 && (
+        <div style={{ display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:"#d1fae5",border:"1px solid #6ee7b7",borderRadius:8 }}>
+          <CheckCircleOutlined style={{ color:"#16a34a",fontSize:16 }} />
+          <span style={{ fontWeight:700,color:"#065f46",fontSize:13 }}>Fully paid — no outstanding balance</span>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── ProductItemRow (EDIT MODE) ───────────────────────────────────────────────
+const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTablet }) => {
+  const [showSuggest, setShowSuggest] = useState(false);
+  const ref = useRef(null);
+  const matched = PRODUCTS.filter(p => p.product_name.toLowerCase().includes((item.product_name || "").toLowerCase()));
+  const selected = PRODUCTS.find(p => p.product_name.toLowerCase() === (item.product_name || "").toLowerCase());
+
+  useEffect(() => {
+    const fn = (e) => { if (ref.current && !ref.current.contains(e.target)) setShowSuggest(false); };
+    document.addEventListener("mousedown", fn);
+    return () => document.removeEventListener("mousedown", fn);
+  }, []);
+
+  const sizeChange = (field, val) => {
+    const updated = { ...item, [field]: val };
+    if (item.quantity_type === "sq.ft") updated.sq_ft = parseFloat(toSqFt(updated.width, updated.height, updated.size_unit).toFixed(4));
+    onChange(idx, updated);
+  };
+  const set = (f, v) => onChange(idx, { ...item, [f]: v });
+  const handleQtyTypeChange = (val) => onChange(idx, { ...item, quantity_type: val, ...(val === "quantity" ? { sq_ft: 0 } : {}) });
+
+  const { base, gstAmt, lineTotal, isSqFt } = calcItemTotals(item);
+  const productCols = isMobile ? "1fr" : isTablet ? "1fr 1fr" : "1fr 1fr 1fr";
+  const sizeCols    = isSqFt ? (isMobile ? "1fr 1fr" : "1fr 1fr 90px 1fr") : (isMobile ? "1fr 1fr" : "1fr 1fr 90px");
+  const priceCols   = isMobile ? "1fr 1fr" : "repeat(3,1fr)";
+
+  return (
+    <div style={{ background:"#f9fafb",border:"1px solid #e5e7eb",borderRadius:10,padding:isMobile?10:14 }}>
+      <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10 }}>
+        <div style={{ display:"flex",alignItems:"center",gap:8,flexWrap:"wrap" }}>
+          <span style={{ fontSize:11,fontWeight:700,color:"#374151",background:"#e0e7ff",padding:"2px 10px",borderRadius:20 }}>Item {idx+1}</span>
+          <Radio.Group size="small" value={item.quantity_type} onChange={(e) => handleQtyTypeChange(e.target.value)} buttonStyle="solid">
+            {QTY_TYPE_OPTIONS.map(o => <Radio.Button key={o.value} value={o.value} style={{ fontSize:11,fontWeight:600,height:24,lineHeight:"22px",padding:"0 10px" }}>{o.label}</Radio.Button>)}
+          </Radio.Group>
+        </div>
+        <Popconfirm title="Remove this item?" onConfirm={() => onRemove(idx)} disabled={isOnly} okText="Yes" cancelText="No">
+          <Button icon={<DeleteOutlined />} size="small" danger type="text" disabled={isOnly} />
+        </Popconfirm>
+      </div>
+
+      <div style={{ display:"grid",gridTemplateColumns:productCols,gap:8,marginBottom:10 }}>
+        <FormField label="Product Name" required>
+          <div style={{ position:"relative" }} ref={ref}>
+            <Input placeholder="Type product…" value={item.product_name} size="small" autoComplete="off" style={{ borderRadius:6 }}
+              onChange={(e) => { onChange(idx,{...item,product_name:e.target.value,variation:"",printing_type:""}); setShowSuggest(true); }}
+              onFocus={() => item.product_name && setShowSuggest(true)} />
+            {showSuggest && matched.length > 0 && (
+              <div style={{ position:"absolute",top:"100%",left:0,right:0,background:"#fff",border:"1px solid #e5e7eb",borderRadius:8,zIndex:9999,boxShadow:"0 4px 16px rgba(0,0,0,0.12)",overflow:"hidden" }}>
+                {matched.map(p => (
+                  <div key={p.product_id} onMouseDown={() => { onChange(idx,{...item,product_name:p.product_name,product_id:p.product_id,variation:"",printing_type:""}); setShowSuggest(false); }}
+                    style={{ padding:"8px 12px",cursor:"pointer",fontSize:13,color:"#1a1a2e",fontWeight:600,borderBottom:"1px solid #f3f4f6" }}
+                    onMouseEnter={e => e.currentTarget.style.background="#eff6ff"} onMouseLeave={e => e.currentTarget.style.background="#fff"}>
+                    {p.product_name}
+                    <span style={{ marginLeft:6,fontSize:10,color:"#6b7280",fontWeight:400 }}>{p.printing_type?.join(" · ")}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </FormField>
+        <FormField label="Material">
+          <Select placeholder={selected ? "Select variation" : "—"} value={item.variation||undefined} size="small" style={{ width:"100%" }} disabled={!selected} onChange={v => set("variation",v)}>
+            {(selected?.variations||[]).map(v => <Option key={v} value={v}>{v}</Option>)}
+          </Select>
+        </FormField>
+        <FormField label="Printing Type">
+          <Select placeholder={selected ? "Select type" : "—"} value={item.printing_type||undefined} size="small" style={{ width:"100%" }} disabled={!selected} onChange={v => set("printing_type",v)}>
+            {(selected?.printing_type||[]).map(t => <Option key={t} value={t}>{t}</Option>)}
+          </Select>
+        </FormField>
+      </div>
+
+      <div style={{ display:"grid",gridTemplateColumns:sizeCols,gap:8,marginBottom:10,alignItems:"end" }}>
+        <FormField label="Width" required={isSqFt}><Input size="small" placeholder="0" type="number" min={0} value={item.width} prefix={<span style={{ fontSize:10,color:"#6b7280",fontWeight:700 }}>W</span>} style={{ borderRadius:6 }} onChange={e => sizeChange("width",e.target.value)} /></FormField>
+        <FormField label="Height" required={isSqFt}><Input size="small" placeholder="0" type="number" min={0} value={item.height} prefix={<span style={{ fontSize:10,color:"#6b7280",fontWeight:700 }}>H</span>} style={{ borderRadius:6 }} onChange={e => sizeChange("height",e.target.value)} /></FormField>
+        <FormField label="Unit"><Select value={item.size_unit} size="small" style={{ width:"100%" }} onChange={v => sizeChange("size_unit",v)}>{UNIT_OPTIONS.map(u => <Option key={u.value} value={u.value}>{u.label}</Option>)}</Select></FormField>
+        {isSqFt && <FormField label="Sq. Ft (editable)"><InputNumber size="small" min={0} precision={4} value={item.sq_ft} style={{ width:"100%",borderRadius:6,background:item.sq_ft>0?"#ecfdf5":undefined,borderColor:item.sq_ft>0?"#6ee7b7":undefined }} onChange={v => set("sq_ft",parseFloat((v||0).toFixed(4)))} /></FormField>}
+      </div>
+
+      <div style={{ marginBottom:10 }}>
+        <FormField label="Notes / Specs"><Input placeholder="Custom text, specs…" value={item.notes} size="small" style={{ borderRadius:6 }} onChange={e => set("notes",e.target.value)} /></FormField>
+      </div>
+
+      <div style={{ display:"grid",gridTemplateColumns:priceCols,gap:8,marginBottom:10 }}>
+        <FormField label="Quantity" required><InputNumber min={1} value={item.quantity} size="small" style={{ width:"100%",borderRadius:6 }} onChange={v => set("quantity",v||1)} /></FormField>
+        <FormField label={isSqFt ? "Price / sq.ft (₹)" : "Unit Price (₹)"} required><InputNumber min={0} value={item.price} size="small" style={{ width:"100%",borderRadius:6 }} prefix="₹" onChange={v => set("price",v||0)} /></FormField>
+        <FormField label="GST %"><Select value={item.gst_percentage??0} size="small" style={{ width:"100%" }} onChange={v => set("gst_percentage",v)}>{GST_OPTIONS.map(g => <Option key={g} value={g}>{g===0?"No GST":`${g}%`}</Option>)}</Select></FormField>
+      </div>
+
+      <div style={{ marginBottom:10 }}>
+        <FormField label="Design File"><UploadHelper setImagePath={path => set("design_file",path)} image_path={item.design_file} /></FormField>
+      </div>
+      {item.design_file && (
+        <div style={{ marginBottom:10 }}>
+          <div style={{ fontSize:10,fontWeight:700,color:"#6b7280",marginBottom:6,textTransform:"uppercase" }}>Design Preview</div>
+          <div style={{ border:"1px solid #e5e7eb",borderRadius:8,background:"#f9fafb",padding:4,display:"flex",justifyContent:"center" }}>
+            <img src={item.design_file} alt="Design" style={{ maxHeight:100,maxWidth:"100%",objectFit:"contain",borderRadius:4 }} onError={e=>{e.currentTarget.parentElement.style.display="none";}} />
+          </div>
+        </div>
+      )}
+
+      <div style={{ display:"flex",justifyContent:"flex-end" }}>
+        <div style={{ background:"#fff",border:"1px solid #d1fae5",borderRadius:8,padding:"8px 14px",textAlign:"right",minWidth:"100%" }}>
+          <div style={{ fontSize:11,color:"#6b7280",marginBottom:2 }}>
+            Base: <span style={{ fontWeight:600,color:"#374151" }}>₹{base.toFixed(2)}</span>
+            {isSqFt && item.sq_ft>0 && <span style={{ marginLeft:6,fontSize:10,color:"#9ca3af" }}>({item.quantity} qty × {item.sq_ft} ft² × ₹{item.price}/ft²)</span>}
+            {!isSqFt && <span style={{ marginLeft:6,fontSize:10,color:"#9ca3af" }}>({item.quantity} qty × ₹{item.price})</span>}
+            {(item.gst_percentage||0)>0 && <span style={{ marginLeft:8 }}>+ GST ({item.gst_percentage}%): <span style={{ fontWeight:600,color:"#d97706" }}>₹{gstAmt.toFixed(2)}</span></span>}
+          </div>
+          <div style={{ fontSize:14,fontWeight:700,color:"#065f46" }}>Item Total: ₹{lineTotal.toFixed(2)}</div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ════════════════════════════════════════════════════════════════════════════
-// Main Page Component
+// Main Component
 // ════════════════════════════════════════════════════════════════════════════
 const AdminJobManagement = () => {
   const { isMobile, isTablet, isDesktop } = useBreakpoint();
 
-  // ── View modal ────────────────────────────────────────────────────────────
-  const [viewModal, setViewModal] = useState(false);
-  const [viewJob, setViewJob] = useState(null);
-  const openViewModal = (record) => {
-    setViewJob(record);
-    setViewModal(true);
-  };
-  const closeViewModal = () => {
-    setViewModal(false);
-    setViewJob(null);
-  };
-
-  // ── Table state ───────────────────────────────────────────────────────────
-  const [loading, setLoading] = useState(false);
-  const [jobs, setJobs] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [search, setSearch] = useState("");
+  // ── State ──────────────────────────────────────────────────────────────────
+  const [viewModal, setViewModal]   = useState(false);
+  const [viewJob, setViewJob]       = useState(null);
+  const [loading, setLoading]       = useState(false);
+  const [jobs, setJobs]             = useState([]);
+  const [total, setTotal]           = useState(0);
+  const [search, setSearch]         = useState("");
   const [statusFilter, setStatusFilter] = useState(null);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [page, setPage]             = useState(1);
+  const [pageSize, setPageSize]     = useState(10);
   const [lastRefreshed, setLastRefreshed] = useState(dayjs());
-  const [countdown, setCountdown] = useState(AUTO_REFRESH_INTERVAL / 1000);
+  const [countdown, setCountdown]   = useState(AUTO_REFRESH_INTERVAL / 1000);
 
-  // ── Edit modal state ──────────────────────────────────────────────────────
-  const [editModal, setEditModal] = useState(false);
-  const [editJob, setEditJob] = useState(null);
-  const [editForm, setEditForm] = useState({ ...DEFAULT_EDIT_FORM });
-  const [editItems, setEditItems] = useState([{ ...EMPTY_ITEM }]);
+  const [editModal, setEditModal]   = useState(false);
+  const [editJob, setEditJob]       = useState(null);
+  const [editForm, setEditForm]     = useState({ ...DEFAULT_EDIT_FORM });
+  const [editItems, setEditItems]   = useState([{ ...EMPTY_ITEM }]);
   const [editLoading, setEditLoading] = useState(false);
-  const [editError, setEditError] = useState("");
+  const [editError, setEditError]   = useState("");
 
-  // ── Approve modal state ───────────────────────────────────────────────────
   const [approveModalOpen, setApproveModalOpen] = useState(false);
-  const [approvingJob, setApprovingJob] = useState(null);
-  const [designers, setDesigners] = useState([]);
+  const [approvingJob, setApprovingJob]         = useState(null);
+  const [designers, setDesigners]               = useState([]);
   const [selectedDesigner, setSelectedDesigner] = useState(null);
-  const [approving, setApproving] = useState(false);
+  const [approving, setApproving]               = useState(false);
   const [designersLoading, setDesignersLoading] = useState(false);
 
   const autoRefreshRef = useRef(null);
-  const countdownRef = useRef(null);
+  const countdownRef   = useRef(null);
 
-  // ── Fetch jobs ────────────────────────────────────────────────────────────
+  // ── Data loading ───────────────────────────────────────────────────────────
   const loadJobs = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const res = await fetch("https://api.dmedia.in/api/jobs", {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
-        },
-      });
+      const res  = await fetch("https://api.dmedia.in/api/jobs", { headers: { Authorization: `Bearer ${localStorage.getItem("authToken")}` } });
       const data = await res.json();
       const rows = extractJobs(data);
       setJobs(rows);
@@ -1047,657 +529,274 @@ const AdminJobManagement = () => {
     clearInterval(autoRefreshRef.current);
     clearInterval(countdownRef.current);
     setCountdown(AUTO_REFRESH_INTERVAL / 1000);
-    countdownRef.current = setInterval(() => {
-      setCountdown((prev) =>
-        prev <= 1 ? AUTO_REFRESH_INTERVAL / 1000 : prev - 1,
-      );
-    }, 1000);
-    autoRefreshRef.current = setInterval(
-      () => loadJobs(true),
-      AUTO_REFRESH_INTERVAL,
-    );
+    countdownRef.current   = setInterval(() => setCountdown(p => p <= 1 ? AUTO_REFRESH_INTERVAL / 1000 : p - 1), 1000);
+    autoRefreshRef.current = setInterval(() => loadJobs(true), AUTO_REFRESH_INTERVAL);
   }, [loadJobs]);
 
-  useEffect(() => {
-    loadJobs();
-    startAutoRefresh();
-    return () => {
-      clearInterval(autoRefreshRef.current);
-      clearInterval(countdownRef.current);
-    };
-  }, []);
+  useEffect(() => { loadJobs(); startAutoRefresh(); return () => { clearInterval(autoRefreshRef.current); clearInterval(countdownRef.current); }; }, []);
+  useEffect(() => { setPage(1); }, [search, statusFilter, pageSize]);
 
-  useEffect(() => {
-    setPage(1);
-  }, [search, statusFilter, pageSize]);
-
-  const handleManualRefresh = () => {
-    loadJobs();
-    startAutoRefresh();
-  };
-
-  // ── Designers ─────────────────────────────────────────────────────────────
+  // ── Designers ──────────────────────────────────────────────────────────────
   const fetchDesigners = async () => {
     setDesignersLoading(true);
     try {
-      const res = await fetch("https://api.dmedia.in/api/admin/get_admin", {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
-        },
-      });
+      const res  = await fetch("https://api.dmedia.in/api/admin/get_admin", { headers: { Authorization: `Bearer ${localStorage.getItem("authToken")}` } });
       const data = await res.json();
-      const designTeam = (data.data || []).filter(
-        (u) => u.role === "designing team",
-      );
-      setDesigners(designTeam);
-      return designTeam;
-    } catch (err) {
-      ERROR_NOTIFICATION({ message: "Could not load designers list" });
-      return [];
-    } finally {
-      setDesignersLoading(false);
-    }
+      const team = (data.data || []).filter(u => u.role === "designing team");
+      setDesigners(team);
+      return team;
+    } catch { ERROR_NOTIFICATION({ message: "Could not load designers list" }); return []; }
+    finally { setDesignersLoading(false); }
   };
 
-  const openApproveModal = async (job) => {
-    setApprovingJob(job);
-    setSelectedDesigner(null);
-    setApproveModalOpen(true);
-    await fetchDesigners();
-  };
+  const openApproveModal = async (job) => { setApprovingJob(job); setSelectedDesigner(null); setApproveModalOpen(true); await fetchDesigners(); };
 
   const handleApproveWithDesigner = async () => {
-    if (!selectedDesigner) {
-      ERROR_NOTIFICATION({
-        message: "Please select a designer or 'Designed By Customer' option.",
-      });
-      return;
-    }
+    if (!selectedDesigner) { ERROR_NOTIFICATION({ message: "Please select a designer." }); return; }
     setApproving(true);
     try {
-      const profile = localStorage.getItem("userprofile")
-        ? JSON.parse(localStorage.getItem("userprofile"))
-        : {};
-      const adminId = profile._id || null;
-      const adminName = profile.name || null;
-
-      const isCustomerDesigned = selectedDesigner._id === "customer_designed";
-
-      let response;
-
-      if (isCustomerDesigned) {
-        response = await fetch(
-          `https://api.dmedia.in/api/jobs/${approvingJob._id}/approve`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${localStorage.getItem("authToken")}`,
-            },
-            body: JSON.stringify({
-              job_status: "design",
-              approved_by: adminName,
-              approved_by_admin_id: adminId,
-              is_customer_designed: true,
-            }),
-          },
-        );
-      } else {
-        const designerName =
-          selectedDesigner.name ||
-          selectedDesigner.fullName ||
-          selectedDesigner.username ||
-          "Unknown";
-
-        response = await fetch(
-          `https://api.dmedia.in/api/jobs/${approvingJob._id}/approve`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${localStorage.getItem("authToken")}`,
-            },
-            body: JSON.stringify({
-              job_status: "design",
-              approved_by: adminName,
-              approved_by_admin_id: adminId,
-              assign_to: {
-                user_id: selectedDesigner._id,
-                name: designerName,
-              },
-            }),
-          },
-        );
-      }
-
-      const data = await response.json();
-      if (!response.ok || !data.success)
-        throw new Error(data.message || "Approval failed");
-
-      const successMessage = isCustomerDesigned
-        ? `Job ${approvingJob.job_no} approved as customer-provided design`
-        : `Job ${approvingJob.job_no} approved & assigned to ${selectedDesigner.name || selectedDesigner.fullName || "designer"}`;
-
-      SUCCESS_NOTIFICATION({ message: successMessage });
-      setApproveModalOpen(false);
-      setApprovingJob(null);
-      setSelectedDesigner(null);
+      const profile = localStorage.getItem("userprofile") ? JSON.parse(localStorage.getItem("userprofile")) : {};
+      const isCustomer = selectedDesigner._id === "customer_designed";
+      const body = isCustomer
+        ? { job_status:"design", approved_by: profile.name||null, approved_by_admin_id: profile._id||null, is_customer_designed: true }
+        : { job_status:"design", approved_by: profile.name||null, approved_by_admin_id: profile._id||null, assign_to: { user_id: selectedDesigner._id, name: selectedDesigner.name||selectedDesigner.fullName||"Unknown" } };
+      const res  = await fetch(`https://api.dmedia.in/api/jobs/${approvingJob._id}/approve`, { method:"POST", headers:{"Content-Type":"application/json",Authorization:`Bearer ${localStorage.getItem("authToken")}`}, body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || "Approval failed");
+      SUCCESS_NOTIFICATION({ message: isCustomer ? `Job ${approvingJob.job_no} approved (customer design)` : `Job ${approvingJob.job_no} approved & assigned to ${selectedDesigner.name||"designer"}` });
+      setApproveModalOpen(false); setApprovingJob(null); setSelectedDesigner(null);
       loadJobs(true);
-    } catch (err) {
-      ERROR_NOTIFICATION({ message: err.message || "Failed to approve job" });
-    } finally {
-      setApproving(false);
-    }
+    } catch (err) { ERROR_NOTIFICATION({ message: err.message || "Failed to approve" }); }
+    finally { setApproving(false); }
   };
 
-  const closeApproveModal = () => {
-    if (approving) return;
-    setApproveModalOpen(false);
-    setApprovingJob(null);
-    setSelectedDesigner(null);
-    setDesigners([]);
-  };
-
-  // ── Open Edit modal ───────────────────────────────────────────────────────
+  // ── Edit modal ─────────────────────────────────────────────────────────────
   const openEditModal = (record) => {
-    setEditJob(record);
-    setEditError("");
-
+    setEditJob(record); setEditError("");
     const addr = record.delivery_address || {};
     const streetParts = (addr.street || "").split(", ");
-    const address_line1 = streetParts[0] || "";
-    const address_line2 = streetParts.slice(1).join(", ") || "";
-
-    const storedDiscountAmt = parseFloat(record.discount_amount) || 0;
-    const legacyDiscountPct = parseFloat(record.discount_percentage) || 0;
-    let legacyDiscountAmt = 0;
-    if (!storedDiscountAmt && legacyDiscountPct > 0) {
-      const cartSub = (record.cart_items || []).reduce((acc, it) => {
-        const { base } = calcItemTotals(it);
-        return acc + base;
-      }, 0);
-      legacyDiscountAmt = cartSub * (legacyDiscountPct / 100);
+    const storedDisc = parseFloat(record.discount_amount) || 0;
+    const legacyPct  = parseFloat(record.discount_percentage) || 0;
+    let legacyDisc = 0;
+    if (!storedDisc && legacyPct > 0) {
+      const sub = (record.cart_items || []).reduce((acc,it) => acc + calcItemTotals(it).base, 0);
+      legacyDisc = sub * (legacyPct / 100);
     }
-
     setEditForm({
-      customer_name: record.customer_name || "",
-      customer_phone: record.customer_phone || "",
-      company_name: record.company_name || "",
-      estimated_delivery_date: record.estimated_delivery_date
-        ? dayjs(record.estimated_delivery_date).format("YYYY-MM-DDTHH:mm")
-        : "",
-      address_line1,
-      address_line2,
-      city: addr.city || "",
-      state: addr.state || "",
-      pincode: addr.pincode || "",
-      country: addr.country || "India",
-      gst_no: record.gst_no || "",
-      delivery_charges: record.delivery_charges ?? 0,
-      free_delivery: record.free_delivery ?? false,
-      design_charges: record.design_charges ?? 0,
-      discount_amount: storedDiscountAmt || legacyDiscountAmt || 0,
-      payment_mode: record.payment_mode || "",
-      payment_amount: record.payment_amount || "",
-      notes: record.notes || "",
-      terms_and_conditions:
-        record.terms_and_conditions ||
-        "Payment due within 30 days.\nPrices subject to change without notice.\nDelivery: 7-10 business days after confirmation.",
+      customer_name: record.customer_name||"", customer_phone: record.customer_phone||"", company_name: record.company_name||"",
+      estimated_delivery_date: record.estimated_delivery_date ? dayjs(record.estimated_delivery_date).format("YYYY-MM-DDTHH:mm") : "",
+      address_line1: streetParts[0]||"", address_line2: streetParts.slice(1).join(", ")||"",
+      city: addr.city||"", state: addr.state||"", pincode: addr.pincode||"", country: addr.country||"India",
+      gst_no: record.gst_no||"", delivery_charges: record.delivery_charges??0, free_delivery: record.free_delivery??false,
+      design_charges: record.design_charges??0, discount_amount: storedDisc||legacyDisc||0,
+      payment_mode: record.payment_mode||"", payment_amount: record.payment_amount||"",
+      next_due_date: record.next_due_date ? dayjs(record.next_due_date) : null,
+      notes: record.notes||"",
+      terms_and_conditions: record.terms_and_conditions||"Payment due within 30 days.\nPrices subject to change without notice.\nDelivery: 7-10 business days after confirmation.",
     });
-
-    const items = (record.cart_items || []).map((it) => {
-      let width = String(it.width || "");
-      let height = String(it.height || "");
-      let size_unit = it.size_unit || "ft";
-
-      if ((!width || !height) && it.size) {
-        const m = it.size.match(/^([\d.]+)\s*[×xX]\s*([\d.]+)\s*(\w+)/);
-        if (m) {
-          width = m[1];
-          height = m[2];
-          size_unit = m[3] || "ft";
-        }
-      }
-
-      const quantity_type =
-        it.quantity_type ||
-        (parseFloat(width) > 0 && parseFloat(height) > 0
-          ? "sq.ft"
-          : "quantity");
-
-      const sq_ft = it.sq_ft
-        ? parseFloat(it.sq_ft)
-        : quantity_type === "sq.ft"
-          ? parseFloat(toSqFt(width, height, size_unit).toFixed(4))
-          : 0;
-
-      return {
-        ...EMPTY_ITEM,
-        ...it,
-        width,
-        height,
-        size_unit,
-        sq_ft,
-        quantity_type,
-        gst_percentage: it.gst_percentage ?? 0,
-      };
+    const items = (record.cart_items||[]).map(it => {
+      let width = String(it.width||""), height = String(it.height||""), size_unit = it.size_unit||"ft";
+      if ((!width||!height) && it.size) { const m=it.size.match(/^([\d.]+)\s*[×xX]\s*([\d.]+)\s*(\w+)/); if(m){width=m[1];height=m[2];size_unit=m[3]||"ft";} }
+      const quantity_type = it.quantity_type||(parseFloat(width)>0&&parseFloat(height)>0?"sq.ft":"quantity");
+      const sq_ft = it.sq_ft ? parseFloat(it.sq_ft) : quantity_type==="sq.ft" ? parseFloat(toSqFt(width,height,size_unit).toFixed(4)) : 0;
+      return { ...EMPTY_ITEM,...it,width,height,size_unit,sq_ft,quantity_type,gst_percentage:it.gst_percentage??0 };
     });
-
     setEditItems(items.length ? items : [{ ...EMPTY_ITEM }]);
     setEditModal(true);
   };
 
-  const resetEditModal = () => {
-    setEditModal(false);
-    setEditJob(null);
-    setEditError("");
-    setEditForm({ ...DEFAULT_EDIT_FORM });
-    setEditItems([{ ...EMPTY_ITEM }]);
-  };
+  const resetEditModal = () => { setEditModal(false); setEditJob(null); setEditError(""); setEditForm({...DEFAULT_EDIT_FORM}); setEditItems([{...EMPTY_ITEM}]); };
+  const handleEditInput = (k, v) => setEditForm(p => ({ ...p, [k]: v }));
 
-  // ── Edit item helpers ─────────────────────────────────────────────────────
-  const handleEditInput = (k, v) => setEditForm((p) => ({ ...p, [k]: v }));
-  const handleEditItem = (i, u) =>
-    setEditItems((p) => p.map((it, j) => (j === i ? u : it)));
-  const addEditItem = () => setEditItems((p) => [...p, { ...EMPTY_ITEM }]);
-  const removeEditItem = (i) =>
-    setEditItems((p) => p.filter((_, j) => j !== i));
-
-  // ── Edit totals ───────────────────────────────────────────────────────────
-  const editTotals = useMemo(() => {
-    let subtotal = 0;
-    let taxAmount = 0;
-
-    editItems.forEach((it) => {
-      const { base, gstAmt } = calcItemTotals(it);
-      subtotal += base;
-      taxAmount += gstAmt;
-    });
-
-    const discountAmt = Math.min(
-      parseFloat(editForm.discount_amount) || 0,
-      subtotal,
-    );
-    const taxableAmount = subtotal - discountAmt;
-    const designCharges = parseFloat(editForm.design_charges) || 0;
-    const deliveryCharges = editForm.free_delivery
-      ? 0
-      : parseFloat(editForm.delivery_charges) || 0;
-    const grandTotal =
-      taxableAmount + taxAmount + designCharges + deliveryCharges;
-    const paid = parseFloat(editForm.payment_amount) || 0;
-    const balance = grandTotal - paid;
-
-    return {
-      subtotal,
-      taxAmount,
-      discountAmt,
-      taxableAmount,
-      designCharges,
-      deliveryCharges,
-      grandTotal,
-      paid,
-      balance,
-    };
-  }, [editItems, editForm]);
-
-  // ── Submit edit ───────────────────────────────────────────────────────────
-  const handleEditSubmit = async () => {
-    setEditLoading(true);
-    setEditError("");
-    try {
-      if (!editForm.customer_name.trim())
-        throw new Error("Customer name is required");
-      if (!editForm.customer_phone.trim())
-        throw new Error("Phone number is required");
-      if (!editForm.estimated_delivery_date)
-        throw new Error("Estimated delivery date is required");
-
-      const valid = editItems.filter((it) => {
-        if (!it.product_name || !it.quantity_type) return false;
-        if (it.quantity_type === "sq.ft" && (it.sq_ft || 0) <= 0) return false;
-        return (it.quantity || 0) > 0 && (it.price || 0) > 0;
-      });
-
-      if (!valid.length)
-        throw new Error(
-          "Add at least one valid product with size/qty and price",
-        );
-
-      const payload = {
-        customer_name: editForm.customer_name.trim(),
-        customer_phone: editForm.customer_phone.trim(),
-        company_name: (editForm.company_name || "").trim(),
-        estimated_delivery_date: dayjs(
-          editForm.estimated_delivery_date,
-        ).toISOString(),
-        delivery_address: {
-          street: [editForm.address_line1, editForm.address_line2]
-            .filter(Boolean)
-            .join(", "),
-          city: editForm.city,
-          state: editForm.state,
-          pincode: editForm.pincode,
-          country: editForm.country,
-        },
-        cart_items: valid.map((it) => {
-          const isSqFt = it.quantity_type === "sq.ft";
-          return {
-            product_id: it.product_id || "",
-            product_name: it.product_name,
-            variation: it.variation || "",
-            printing_type: it.printing_type || "",
-            quantity: it.quantity,
-            quantity_type: it.quantity_type,
-            price: it.price,
-            gst_percentage: it.gst_percentage || 0,
-            design_file: it.design_file || "",
-            notes: it.notes || "",
-            width: it.width || "",
-            height: it.height || "",
-            size_unit: it.size_unit || (isSqFt ? "ft" : "pcs"),
-            sq_ft: isSqFt ? it.sq_ft : 0,
-            size:
-              isSqFt && it.width && it.height
-                ? `${it.width}×${it.height} ${it.size_unit} (${it.sq_ft} sq.ft)`
-                : "",
-          };
-        }),
-        gst_no: editForm.gst_no.trim(),
-        delivery_charges: editTotals.deliveryCharges,
-        free_delivery: editForm.free_delivery,
-        design_charges: editTotals.designCharges,
-        discount_amount: parseFloat(editTotals.discountAmt.toFixed(2)),
-        discount_percentage: 0,
-        subtotal: parseFloat(editTotals.subtotal.toFixed(2)),
-        taxable_amount: parseFloat(editTotals.taxableAmount.toFixed(2)),
-        tax_amount: parseFloat(editTotals.taxAmount.toFixed(2)),
-        total_amount: parseFloat(editTotals.grandTotal.toFixed(2)),
-        payment_mode: editForm.payment_mode || "",
-        payment_amount: parseFloat(editForm.payment_amount) || 0,
-        balance_amount: parseFloat(editTotals.balance.toFixed(2)),
-        notes: editForm.notes,
-        terms_and_conditions: editForm.terms_and_conditions,
-      };
-
-      const res = await fetch(`https://api.dmedia.in/api/jobs/${editJob._id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
-        },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success)
-        throw new Error(data.message || "Failed to update job");
-
-      SUCCESS_NOTIFICATION({ message: "Job updated successfully!" });
-      resetEditModal();
-      loadJobs(true);
-    } catch (err) {
-      setEditError(err.message || "Failed to update job");
-    } finally {
-      setEditLoading(false);
+  // ── Auto-suggest next due date when payment mode or amount changes ─────────
+  const handlePaymentModeChange = (v) => {
+    const newMode = v || "";
+    const currentBalance = editTotals?.grandTotal - (parseFloat(editForm.payment_amount) || 0);
+    // Only auto-fill if no due date is set yet and there's a balance
+    if (!editForm.next_due_date && currentBalance > 0) {
+      const suggested = getDefaultNextDueDate(newMode, parseFloat(editForm.payment_amount)||0, editTotals?.grandTotal||0);
+      setEditForm(p => ({ ...p, payment_mode: newMode, next_due_date: suggested }));
+    } else {
+      setEditForm(p => ({ ...p, payment_mode: newMode }));
     }
   };
 
-  // ── Layout vars ───────────────────────────────────────────────────────────
+  const handlePaymentAmountChange = (v) => {
+    const paid = v || 0;
+    const grandTotal = editTotals?.grandTotal || 0;
+    const balance = grandTotal - paid;
+    // Clear due date if fully paid, or auto-suggest if not set
+    if (balance <= 0) {
+      setEditForm(p => ({ ...p, payment_amount: v, next_due_date: null }));
+    } else if (!editForm.next_due_date && editForm.payment_mode) {
+      const suggested = getDefaultNextDueDate(editForm.payment_mode, paid, grandTotal);
+      setEditForm(p => ({ ...p, payment_amount: v, next_due_date: suggested }));
+    } else {
+      setEditForm(p => ({ ...p, payment_amount: v }));
+    }
+  };
+
+  const editTotals = useMemo(() => {
+    let subtotal = 0, taxAmount = 0;
+    editItems.forEach(it => { const { base, gstAmt } = calcItemTotals(it); subtotal += base; taxAmount += gstAmt; });
+    const discountAmt    = Math.min(parseFloat(editForm.discount_amount)||0, subtotal);
+    const taxableAmount  = subtotal - discountAmt;
+    const designCharges  = parseFloat(editForm.design_charges)||0;
+    const deliveryCharges = editForm.free_delivery ? 0 : parseFloat(editForm.delivery_charges)||0;
+    const grandTotal     = taxableAmount + taxAmount + designCharges + deliveryCharges;
+    const paid           = parseFloat(editForm.payment_amount)||0;
+    const balance        = grandTotal - paid;
+    return { subtotal, taxAmount, discountAmt, taxableAmount, designCharges, deliveryCharges, grandTotal, paid, balance };
+  }, [editItems, editForm]);
+
+  const handleEditSubmit = async () => {
+    setEditLoading(true); setEditError("");
+    try {
+      if (!editForm.customer_name.trim()) throw new Error("Customer name is required");
+      if (!editForm.customer_phone.trim()) throw new Error("Phone number is required");
+      if (!editForm.estimated_delivery_date) throw new Error("Estimated delivery date is required");
+      const valid = editItems.filter(it => {
+        if (!it.product_name||!it.quantity_type) return false;
+        if (it.quantity_type==="sq.ft"&&(it.sq_ft||0)<=0) return false;
+        return (it.quantity||0)>0&&(it.price||0)>0;
+      });
+      if (!valid.length) throw new Error("Add at least one valid product with size/qty and price");
+
+      const payload = {
+        customer_name: editForm.customer_name.trim(), customer_phone: editForm.customer_phone.trim(),
+        company_name: (editForm.company_name||"").trim(),
+        estimated_delivery_date: dayjs(editForm.estimated_delivery_date).toISOString(),
+        delivery_address: { street:[editForm.address_line1,editForm.address_line2].filter(Boolean).join(", "), city:editForm.city, state:editForm.state, pincode:editForm.pincode, country:editForm.country },
+        cart_items: valid.map(it => {
+          const isSqFt = it.quantity_type==="sq.ft";
+          return { product_id:it.product_id||"",product_name:it.product_name,variation:it.variation||"",printing_type:it.printing_type||"",quantity:it.quantity,quantity_type:it.quantity_type,price:it.price,gst_percentage:it.gst_percentage||0,design_file:it.design_file||"",notes:it.notes||"",width:it.width||"",height:it.height||"",size_unit:it.size_unit||(isSqFt?"ft":"pcs"),sq_ft:isSqFt?it.sq_ft:0,size:isSqFt&&it.width&&it.height?`${it.width}×${it.height} ${it.size_unit} (${it.sq_ft} sq.ft)`:"" };
+        }),
+        gst_no: editForm.gst_no.trim(),
+        delivery_charges: editTotals.deliveryCharges, free_delivery: editForm.free_delivery,
+        design_charges: editTotals.designCharges, discount_amount: parseFloat(editTotals.discountAmt.toFixed(2)),
+        discount_percentage: 0, subtotal: parseFloat(editTotals.subtotal.toFixed(2)),
+        taxable_amount: parseFloat(editTotals.taxableAmount.toFixed(2)), tax_amount: parseFloat(editTotals.taxAmount.toFixed(2)),
+        total_amount: parseFloat(editTotals.grandTotal.toFixed(2)),
+        payment_mode: editForm.payment_mode||"", payment_amount: parseFloat(editForm.payment_amount)||0,
+        balance_amount: parseFloat(editTotals.balance.toFixed(2)),
+        next_due_date: editTotals.balance > 0 && editForm.next_due_date ? dayjs(editForm.next_due_date).toISOString() : null,
+        notes: editForm.notes, terms_and_conditions: editForm.terms_and_conditions,
+      };
+
+      const res  = await fetch(`https://api.dmedia.in/api/jobs/${editJob._id}`, { method:"PUT", headers:{"Content-Type":"application/json",Authorization:`Bearer ${localStorage.getItem("authToken")}`}, body:JSON.stringify(payload) });
+      const data = await res.json();
+      if (!res.ok||!data.success) throw new Error(data.message||"Failed to update job");
+      SUCCESS_NOTIFICATION({ message:"Job updated successfully!" });
+      resetEditModal(); loadJobs(true);
+    } catch (err) { setEditError(err.message||"Failed to update job"); }
+    finally { setEditLoading(false); }
+  };
+
+  // ── Layout vars ────────────────────────────────────────────────────────────
   const p = isMobile ? 8 : 12;
   const g = isMobile ? 8 : 12;
   const c2 = isMobile ? "1fr" : "1fr 1fr";
   const c3 = isMobile ? "1fr" : isTablet ? "1fr 1fr" : "1fr 1fr 1fr";
-  const c4 = isMobile ? "1fr 1fr" : isTablet ? "1fr 1fr" : "repeat(4,1fr)";
+  const c4 = isMobile ? "1fr 1fr" : "repeat(4,1fr)";
   const c5 = isMobile ? "1fr 1fr" : isTablet ? "1fr 1fr 1fr" : "repeat(4,1fr)";
+  const formatCountdown = (s) => `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
+  const modalWidth    = isMobile ? "100vw" : isTablet ? "94vw" : "min(96vw,900px)";
+  const mobileStyle   = isMobile ? { top:0,margin:0,maxWidth:"100vw",padding:0 } : {};
+  const modalBody     = { maxHeight: isMobile ? "calc(100dvh - 56px)" : "85vh", overflowY:"auto", padding: isMobile ? 10 : 16 };
+  const sheetStyle    = isMobile ? { top:"auto",bottom:0,margin:0,maxWidth:"100vw",padding:0 } : {};
+  const sheetBody     = { maxHeight: isMobile ? "72dvh" : "80vh", overflowY:"auto", padding: isMobile ? 12 : 16 };
 
-  const formatCountdown = (secs) => {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${m}:${String(s).padStart(2, "0")}`;
-  };
-
-  const modalWidth = isMobile ? "100vw" : isTablet ? "94vw" : "min(96vw,900px)";
-  const mobileFullStyle = isMobile
-    ? { top: 0, margin: 0, maxWidth: "100vw", padding: 0 }
-    : {};
-  const modalBodyStyle = {
-    maxHeight: isMobile ? "calc(100dvh - 56px)" : "85vh",
-    overflowY: "auto",
-    padding: isMobile ? 10 : 16,
-  };
-  const sheetStyle = isMobile
-    ? { top: "auto", bottom: 0, margin: 0, maxWidth: "100vw", padding: 0 }
-    : {};
-  const sheetBodyStyle = {
-    maxHeight: isMobile ? "72dvh" : "80vh",
-    overflowY: "auto",
-    padding: isMobile ? 12 : 16,
-  };
-
-  // ── Table columns ─────────────────────────────────────────────────────────
+  // ── Table columns ──────────────────────────────────────────────────────────
   const columns = [
+    { title:"#", width:36, render:(_,__,i) => <span style={{ color:"#9ca3af",fontSize:11 }}>{(page-1)*pageSize+i+1}</span> },
     {
-      title: "#",
-      width: 36,
-      render: (_, __, i) => (
-        <span style={{ color: "#9ca3af", fontSize: 11 }}>
-          {(page - 1) * pageSize + i + 1}
-        </span>
-      ),
-    },
-    {
-      title: "Job No",
-      dataIndex: "job_no",
-      render: (n, record) => (
-        <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-start" }}>
-          {/* ── Overdue badge sits above the Job No tag ── */}
-          <OverdueBadge estimated_delivery_date={record.estimated_delivery_date} />
-          <Tag
-            color="blue"
-            style={{ fontFamily: "monospace", fontWeight: 600, fontSize: 11, margin: 0 }}
-          >
-            {n || "—"}
-          </Tag>
-        </div>
-      ),
-    },
-    {
-      title: "Customer",
-      key: "customer",
-      render: (_, r) => (
-        <div>
-          <div style={{ fontWeight: 600, fontSize: 13, color: "#1a1a2e" }}>
-            {r.customer_name || "—"}
-          </div>
-          {r.company_name && (
-            <div
-              style={{
-                fontSize: 11,
-                color: "#6b7280",
-                display: "flex",
-                alignItems: "center",
-                gap: 3,
-              }}
-            >
-              <BankOutlined style={{ fontSize: 10 }} /> {r.company_name}
-            </div>
-          )}
-          <div style={{ fontSize: 11, color: "#6b7280" }}>
-            {r.customer_phone || ""}
-          </div>
-          {isMobile &&
-            (() => {
-              const cfg = STATUS_CONFIG[r.job_status] || STATUS_CONFIG.draft;
-              return (
-                <Tag
-                  color={cfg.color}
-                  icon={cfg.icon}
-                  style={{ marginTop: 4, fontSize: 10 }}
-                >
-                  {cfg.label}
-                </Tag>
-              );
-            })()}
-        </div>
-      ),
-    },
-    ...(!isMobile
-      ? [
-          {
-            title: "Est. Delivery",
-            dataIndex: "estimated_delivery_date",
-            render: (d, record) => {
-              if (!d) return <span style={{ color: "#9ca3af", fontSize: 12 }}>—</span>;
-              const info = getOverdueInfo(d);
-              return (
-                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                  <span style={{ fontSize: 12, color: "#374151", whiteSpace: "nowrap" }}>
-                    {dayjs(d).format("DD MMM YY")}
-                  </span>
-                  {info && (
-                    <span
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 600,
-                        color: info.color,
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {info.isDueToday
-                        ? "⚡ Due today"
-                        : info.isOverdue
-                          ? `⚠ ${info.label}`
-                          : info.label}
-                    </span>
-                  )}
-                </div>
-              );
-            },
-          },
-        ]
-      : []),
-    {
-      title: "Total",
-      dataIndex: "total_amount",
-      render: (a) => (
-        <span
-          style={{
-            fontWeight: 700,
-            fontSize: 13,
-            color: "#1a1a2e",
-            whiteSpace: "nowrap",
-          }}
-        >
-          ₹
-          {parseFloat(a || 0).toLocaleString("en-IN", {
-            minimumFractionDigits: 2,
-          })}
-        </span>
-      ),
-    },
-    ...(!isMobile
-      ? [
-          {
-            title: "Status",
-            dataIndex: "job_status",
-            render: (s) => {
-              const c = STATUS_CONFIG[s] || STATUS_CONFIG.draft;
-              return (
-                <Tag color={c.color} icon={c.icon} style={{ fontWeight: 500 }}>
-                  {c.label}
-                </Tag>
-              );
-            },
-          },
-        ]
-      : []),
-    ...(isDesktop
-      ? [
-          {
-            title: "Stage",
-            key: "stage",
-            render: (_, r) => {
-              const stage = r.current_stage?.stage;
-              const label = WORKFLOW_STAGES.find(
-                (s) => s.value === stage,
-              )?.label;
-              return stage ? (
-                <Tag
-                  color="purple"
-                  icon={<BranchesOutlined />}
-                  style={{ fontSize: 11 }}
-                >
-                  {label}
-                </Tag>
-              ) : (
-                <span style={{ color: "#9ca3af", fontSize: 12 }}>—</span>
-              );
-            },
-          },
-        ]
-      : []),
-    {
-      title: "Approved By",
-      key: "approved_by",
-      width: isMobile ? 100 : 130,
-      render: (_, r) => {
-        const approvedByName = r.approved_by;
-        const approvedById = r.approved_by_admin_id;
-
-        if (!approvedByName && !approvedById) {
-          return <span style={{ color: "#9ca3af", fontSize: 12 }}>—</span>;
-        }
-
+      title:"Job No", dataIndex:"job_no",
+      render:(n,record) => {
+        const isSV = isSiteVisitJob(record);
+        const hasPaymentDue = record.next_due_date && parseFloat(record.balance_amount||0) > 0;
         return (
-          <Tooltip title={approvedById ? `Admin ID: ${approvedById}` : ""}>
-            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <UserOutlined style={{ color: "#6b7280", fontSize: 11 }} />
-              <span style={{ fontSize: 12, fontWeight: 500, color: "#374151" }}>
-                {approvedByName || "Unknown"}
-              </span>
+          <div style={{ display:"flex",flexDirection:"column",gap:3,alignItems:"flex-start" }}>
+            <OverdueBadge estimated_delivery_date={record.estimated_delivery_date} />
+            {hasPaymentDue && <PaymentDueBadge next_due_date={record.next_due_date} balance_amount={record.balance_amount} />}
+            {isSV && <SiteVisitBadge />}
+            <Tag color="blue" style={{ fontFamily:"monospace",fontWeight:600,fontSize:11,margin:0,border:isSV?"1px solid #a78bfa":undefined }}>{n||"—"}</Tag>
+          </div>
+        );
+      },
+    },
+    {
+      title:"Customer", key:"customer",
+      render:(_,r) => {
+        const isSV = isSiteVisitJob(r);
+        return (
+          <div>
+            <div style={{ fontWeight:600,fontSize:13,color:"#1a1a2e" }}>{r.customer_name||"—"}</div>
+            {r.company_name && <div style={{ fontSize:11,color:"#6b7280",display:"flex",alignItems:"center",gap:3 }}><BankOutlined style={{ fontSize:10 }}/> {r.company_name}</div>}
+            <div style={{ fontSize:11,color:"#6b7280" }}>{r.customer_phone||""}</div>
+            {isSV && r.site_visit_no && <div style={{ fontSize:10,color:"#7c3aed",fontWeight:600,display:"flex",alignItems:"center",gap:3,marginTop:2 }}><CompassOutlined style={{ fontSize:9 }}/> {r.site_visit_no}</div>}
+            {isMobile && (() => { const cfg=STATUS_CONFIG[r.job_status]||STATUS_CONFIG.draft; return <Tag color={cfg.color} icon={cfg.icon} style={{ marginTop:4,fontSize:10 }}>{cfg.label}</Tag>; })()}
+          </div>
+        );
+      },
+    },
+    ...(!isMobile ? [{
+      title:"Est. Delivery", dataIndex:"estimated_delivery_date",
+      render:(d) => {
+        if (!d) return <span style={{ color:"#9ca3af",fontSize:12 }}>—</span>;
+        const info = getOverdueInfo(d);
+        return (
+          <div style={{ display:"flex",flexDirection:"column",gap:2 }}>
+            <span style={{ fontSize:12,color:"#374151",whiteSpace:"nowrap" }}>{dayjs(d).format("DD MMM YY")}</span>
+            {info && <span style={{ fontSize:10,fontWeight:600,color:info.color,whiteSpace:"nowrap" }}>{info.isDueToday?"⚡ Today":info.isOverdue?`⚠ ${info.label}`:info.label}</span>}
+          </div>
+        );
+      },
+    }] : []),
+    {
+      title:"Amount", key:"amount",
+      render:(_,r) => {
+        const balance = parseFloat(r.balance_amount||0);
+        const paid    = parseFloat(r.payment_amount||0);
+        return (
+          <div>
+            <div style={{ fontWeight:700,fontSize:13,color:"#1a1a2e",whiteSpace:"nowrap" }}>₹{parseFloat(r.total_amount||0).toLocaleString("en-IN",{minimumFractionDigits:2})}</div>
+            {balance > 0 && <div style={{ fontSize:10,color:"#dc2626",fontWeight:600 }}>Bal: ₹{balance.toLocaleString("en-IN",{minimumFractionDigits:2})}</div>}
+            {balance <= 0 && paid > 0 && <div style={{ fontSize:10,color:"#16a34a",fontWeight:600 }}>✓ Paid</div>}
+          </div>
+        );
+      },
+    },
+    ...(!isMobile ? [{
+      title:"Status", dataIndex:"job_status",
+      render:(s) => { const c=STATUS_CONFIG[s]||STATUS_CONFIG.draft; return <Tag color={c.color} icon={c.icon} style={{ fontWeight:500 }}>{c.label}</Tag>; },
+    }] : []),
+    ...(isDesktop ? [{
+      title:"Stage", key:"stage",
+      render:(_,r) => {
+        const stage=r.current_stage?.stage, label=WORKFLOW_STAGES.find(s=>s.value===stage)?.label;
+        return stage ? <Tag color="purple" icon={<BranchesOutlined />} style={{ fontSize:11 }}>{label}</Tag> : <span style={{ color:"#9ca3af",fontSize:12 }}>—</span>;
+      },
+    }] : []),
+    {
+      title:"Approved By", key:"approved_by", width:isMobile?100:130,
+      render:(_,r) => {
+        if (!r.approved_by&&!r.approved_by_admin_id) return <span style={{ color:"#9ca3af",fontSize:12 }}>—</span>;
+        return (
+          <Tooltip title={r.approved_by_admin_id?`Admin ID: ${r.approved_by_admin_id}`:""}>
+            <div style={{ display:"flex",alignItems:"center",gap:4 }}>
+              <UserOutlined style={{ color:"#6b7280",fontSize:11 }}/><span style={{ fontSize:12,fontWeight:500,color:"#374151" }}>{r.approved_by||"Unknown"}</span>
             </div>
           </Tooltip>
         );
       },
     },
     {
-      title: "",
-      width: isMobile ? 90 : 150,
-      render: (_, record) => (
-        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-          <Tooltip title="View Job">
-            <Button
-              icon={<EyeOutlined />}
-              size="small"
-              style={{ color: "#6b7280", borderColor: "#e5e7eb" }}
-              onClick={() => openViewModal(record)}
-            >
-              {!isMobile && "View"}
-            </Button>
-          </Tooltip>
-          <Tooltip title="Edit Job">
-            <Button
-              icon={<EditOutlined />}
-              size="small"
-              style={{ color: "#2563eb", borderColor: "#bfdbfe" }}
-              onClick={() => openEditModal(record)}
-            >
-              {!isMobile && "Edit"}
-            </Button>
-          </Tooltip>
-          {record.job_status === "draft" && (
-            <Tooltip title="Approve & Assign">
-              <Button
-                type="primary"
-                icon={<CheckCircleOutlined />}
-                size="small"
-                style={{ background: "#16a34a", borderColor: "#16a34a" }}
-                onClick={() => openApproveModal(record)}
-              >
-                {!isMobile && "Approve"}
-              </Button>
-            </Tooltip>
-          )}
+      title:"", width:isMobile?90:150,
+      render:(_,record) => (
+        <div style={{ display:"flex",gap:4,flexWrap:"wrap" }}>
+          <Tooltip title="View Job"><Button icon={<EyeOutlined />} size="small" style={{ color:"#6b7280",borderColor:"#e5e7eb" }} onClick={() => { setViewJob(record); setViewModal(true); }}>{!isMobile&&"View"}</Button></Tooltip>
+          <Tooltip title="Edit Job"><Button icon={<EditOutlined />} size="small" style={{ color:"#2563eb",borderColor:"#bfdbfe" }} onClick={() => openEditModal(record)}>{!isMobile&&"Edit"}</Button></Tooltip>
+          {record.job_status==="draft" && <Tooltip title="Approve & Assign"><Button type="primary" icon={<CheckCircleOutlined />} size="small" style={{ background:"#16a34a",borderColor:"#16a34a" }} onClick={() => openApproveModal(record)}>{!isMobile&&"Approve"}</Button></Tooltip>}
         </div>
       ),
     },
@@ -1705,1672 +804,489 @@ const AdminJobManagement = () => {
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div style={{ padding: p, background: "#f8fafc", minHeight: "100vh" }}>
-      {/* ── Header ── */}
-      <Card
-        bodyStyle={{ padding: `${p}px ${p + 4}px` }}
-        style={{
-          borderRadius: 12,
-          border: "1px solid #e5e7eb",
-          marginBottom: g,
-          boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: 8,
-          }}
-        >
+    <div style={{ padding:p,background:"#f8fafc",minHeight:"100vh" }}>
+
+      {/* Header */}
+      <Card bodyStyle={{ padding:`${p}px ${p+4}px` }} style={{ borderRadius:12,border:"1px solid #e5e7eb",marginBottom:g,boxShadow:"0 1px 4px rgba(0,0,0,0.06)" }}>
+        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8 }}>
           <div>
-            <h2
-              style={{
-                margin: 0,
-                fontSize: isMobile ? 15 : 18,
-                fontWeight: 700,
-                color: "#1a1a2e",
-              }}
-            >
-              Job Management
-            </h2>
-            <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>
-              <strong>{total}</strong> jobs · Last refreshed{" "}
-              {lastRefreshed.format("HH:mm:ss")}
-            </p>
+            <h2 style={{ margin:0,fontSize:isMobile?15:18,fontWeight:700,color:"#1a1a2e" }}>Job Management</h2>
+            <p style={{ margin:0,fontSize:12,color:"#6b7280" }}><strong>{total}</strong> jobs · Refreshed {lastRefreshed.format("HH:mm:ss")}</p>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 5,
-                background: "#f0fdf4",
-                border: "1px solid #bbf7d0",
-                borderRadius: 20,
-                padding: "4px 10px",
-              }}
-            >
-              <span
-                style={{
-                  width: 7,
-                  height: 7,
-                  borderRadius: "50%",
-                  background: "#22c55e",
-                  boxShadow: "0 0 0 2px #bbf7d0",
-                  display: "inline-block",
-                  animation: "pulse 1.5s infinite",
-                }}
-              />
-              <span
-                style={{
-                  fontSize: 11,
-                  color: "#15803d",
-                  fontWeight: 600,
-                  fontFamily: "monospace",
-                }}
-              >
-                {formatCountdown(countdown)}
-              </span>
+          <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+            <div style={{ display:"flex",alignItems:"center",gap:5,background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:20,padding:"4px 10px" }}>
+              <span style={{ width:7,height:7,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 0 2px #bbf7d0",display:"inline-block",animation:"pulse 1.5s infinite" }} />
+              <span style={{ fontSize:11,color:"#15803d",fontWeight:600,fontFamily:"monospace" }}>{formatCountdown(countdown)}</span>
             </div>
-            <Tooltip title="Refresh now">
-              <Button
-                icon={<ReloadOutlined spin={loading} />}
-                onClick={handleManualRefresh}
-                style={{ borderRadius: 8 }}
-              />
-            </Tooltip>
+            <Tooltip title="Refresh now"><Button icon={<ReloadOutlined spin={loading} />} onClick={() => { loadJobs(); startAutoRefresh(); }} style={{ borderRadius:8 }} /></Tooltip>
           </div>
         </div>
       </Card>
 
-      {/* ── Filters ── */}
-      <Card
-        bodyStyle={{ padding: `${p}px ${p + 4}px` }}
-        style={{
-          borderRadius: 12,
-          border: "1px solid #e5e7eb",
-          marginBottom: g,
-          boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            flexDirection: isMobile ? "column" : "row",
-            gap: 8,
-          }}
-        >
-          <Input.Search
-            placeholder="Search name, phone, job no…"
-            allowClear
-            onSearch={(v) => {
-              setSearch(v);
-              setPage(1);
-            }}
-            onChange={(e) => {
-              if (!e.target.value) {
-                setSearch("");
-                setPage(1);
-              }
-            }}
-            style={{ flex: 1 }}
-            size="middle"
-          />
-          <Select
-            placeholder="Filter Status"
-            allowClear
-            onChange={(v) => {
-              setStatusFilter(v || null);
-              setPage(1);
-            }}
-            size="middle"
-            style={{ width: isMobile ? "100%" : 180 }}
-          >
-            {Object.entries(STATUS_CONFIG).map(([k, { label, color }]) => (
-              <Option key={k} value={k}>
-                <Tag color={color} style={{ fontWeight: 500 }}>
-                  {label}
-                </Tag>
-              </Option>
-            ))}
+      {/* Filters */}
+      <Card bodyStyle={{ padding:`${p}px ${p+4}px` }} style={{ borderRadius:12,border:"1px solid #e5e7eb",marginBottom:g,boxShadow:"0 1px 4px rgba(0,0,0,0.06)" }}>
+        <div style={{ display:"flex",flexDirection:isMobile?"column":"row",gap:8 }}>
+          <Input.Search placeholder="Search name, phone, job no…" allowClear onSearch={v=>{setSearch(v);setPage(1);}} onChange={e=>{if(!e.target.value){setSearch("");setPage(1);}}} style={{ flex:1 }} size="middle" />
+          <Select placeholder="Filter Status" allowClear onChange={v=>{setStatusFilter(v||null);setPage(1);}} size="middle" style={{ width:isMobile?"100%":180 }}>
+            {Object.entries(STATUS_CONFIG).map(([k,{label,color}]) => <Option key={k} value={k}><Tag color={color} style={{ fontWeight:500 }}>{label}</Tag></Option>)}
           </Select>
         </div>
       </Card>
 
-      {/* ── Table ── */}
-      <Card
-        bodyStyle={{ padding: "0 0 8px 0" }}
-        style={{
-          borderRadius: 12,
-          border: "1px solid #e5e7eb",
-          boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
-          overflow: "hidden",
-        }}
-      >
-        <CustomTable
-          dataSource={jobs}
-          loading={loading}
-          columns={columns}
-          scroll={{ x: isMobile ? 360 : 820 }}
-          rowKey={(r) => r._id || r.job_no}
-          size="small"
-          pagination={{
-            current: page,
-            pageSize,
-            total,
-            showSizeChanger: !isMobile,
-            pageSizeOptions: ["10", "25", "50"],
-            showTotal: isMobile
-              ? undefined
-              : (t, r) => `${r[0]}-${r[1]} of ${t}`,
-            onChange: (pg, ps) => {
-              setPage(pg);
-              setPageSize(ps);
-            },
-            style: { padding: "8px 12px" },
-            size: isMobile ? "small" : "default",
-          }}
-        />
+      {/* Table */}
+      <Card bodyStyle={{ padding:"0 0 8px 0" }} style={{ borderRadius:12,border:"1px solid #e5e7eb",boxShadow:"0 1px 4px rgba(0,0,0,0.06)",overflow:"hidden" }}>
+        <CustomTable dataSource={jobs} loading={loading} columns={columns} scroll={{ x:isMobile?360:820 }} rowKey={r=>r._id||r.job_no} size="small"
+          rowClassName={record => isSiteVisitJob(record) ? "site-visit-row" : ""}
+          pagination={{ current:page,pageSize,total,showSizeChanger:!isMobile,pageSizeOptions:["10","25","50"],showTotal:isMobile?undefined:(t,r)=>`${r[0]}-${r[1]} of ${t}`,onChange:(pg,ps)=>{setPage(pg);setPageSize(ps);},style:{padding:"8px 12px"},size:isMobile?"small":"default" }} />
       </Card>
 
-      {/* ════════════ VIEW JOB MODAL ════════════ */}
-      <Modal
-        open={viewModal}
-        onCancel={closeViewModal}
-        footer={
-          <Button onClick={closeViewModal} style={{ borderRadius: 8 }}>
-            Close
-          </Button>
-        }
+      {/* ══ VIEW MODAL ══ */}
+      <Modal open={viewModal} onCancel={() => { setViewModal(false); setViewJob(null); }}
+        footer={<Button onClick={() => { setViewModal(false); setViewJob(null); }} style={{ borderRadius:8 }}>Close</Button>}
         title={
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <EyeOutlined style={{ color: "#6b7280" }} />
-            <span style={{ fontWeight: 700 }}>View Job</span>
-            {viewJob && (
-              <Tag
-                color="blue"
-                style={{
-                  fontFamily: "monospace",
-                  fontWeight: 600,
-                  fontSize: 11,
-                }}
-              >
-                {viewJob.job_no}
-              </Tag>
-            )}
-            {/* ── Overdue badge in modal title ── */}
-            {viewJob?.estimated_delivery_date && (
-              <OverdueBadge
-                estimated_delivery_date={viewJob.estimated_delivery_date}
-              />
-            )}
+          <div style={{ display:"flex",alignItems:"center",gap:8,flexWrap:"wrap" }}>
+            <EyeOutlined style={{ color:"#6b7280" }} />
+            <span style={{ fontWeight:700 }}>View Job</span>
+            {viewJob && <Tag color="blue" style={{ fontFamily:"monospace",fontWeight:600,fontSize:11 }}>{viewJob.job_no}</Tag>}
+            {viewJob && isSiteVisitJob(viewJob) && <SiteVisitBadge />}
+            {viewJob?.estimated_delivery_date && <OverdueBadge estimated_delivery_date={viewJob.estimated_delivery_date} />}
+            {viewJob?.next_due_date && parseFloat(viewJob.balance_amount||0)>0 && <PaymentDueBadge next_due_date={viewJob.next_due_date} balance_amount={viewJob.balance_amount} />}
           </div>
         }
-        width={isMobile ? "100vw" : "min(96vw, 760px)"}
-        style={
-          isMobile ? { top: 0, margin: 0, maxWidth: "100vw", padding: 0 } : {}
+        width={isMobile?"100vw":"min(96vw,760px)"} style={mobileStyle} styles={{ body: modalBody }} destroyOnClose>
+        {viewJob && (() => {
+          const cfg      = STATUS_CONFIG[viewJob.job_status] || STATUS_CONFIG.draft;
+          const addr     = viewJob.delivery_address || {};
+          const totals   = calcJobTotals(viewJob);
+          const cartItems = viewJob.cart_items || [];
+          const overdueInfo = getOverdueInfo(viewJob.estimated_delivery_date);
+          const isFromSV = isSiteVisitJob(viewJob);
+          const fullAddress = [addr.street,addr.city,addr.state,addr.pincode,addr.country].filter(Boolean).join(", ");
+          const stageCfg = viewJob.current_stage;
+
+          return (
+            <div style={{ display:"flex",flexDirection:"column",gap:14 }}>
+
+              {/* Site Visit Banner */}
+              {isFromSV && (
+                <div style={{ display:"flex",alignItems:"center",gap:12,padding:"12px 16px",borderRadius:10,background:"linear-gradient(135deg,#f5f3ff 0%,#ede9fe55 100%)",border:"2px solid #a78bfa",position:"relative",overflow:"hidden" }}>
+                  <div style={{ position:"absolute",top:0,left:0,width:4,height:"100%",background:"linear-gradient(180deg,#7c3aed,#a78bfa)" }} />
+                  <CompassOutlined style={{ color:"#7c3aed",fontSize:22,marginLeft:6,flexShrink:0 }} />
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontWeight:700,color:"#5b21b6",fontSize:13 }}>Created from a Site Visit</div>
+                    <div style={{ display:"flex",gap:12,marginTop:4,flexWrap:"wrap" }}>
+                      {viewJob.site_visit_no && <span style={{ fontSize:12,color:"#7c3aed" }}>Visit No: <strong style={{ fontFamily:"monospace" }}>{viewJob.site_visit_no}</strong></span>}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Site Visit Photos */}
+              {isFromSV && viewJob.site_visit_photos?.length > 0 && <SiteVisitPhotosPanel photos={viewJob.site_visit_photos} />}
+
+              {/* Overdue Alert */}
+              {overdueInfo && (overdueInfo.isOverdue || overdueInfo.isDueToday) && (
+                <div style={{ display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderRadius:8,background:overdueInfo.bg,border:`1px solid ${overdueInfo.border}` }}>
+                  <ExclamationCircleOutlined style={{ color:overdueInfo.color,fontSize:16,flexShrink:0 }} />
+                  <div>
+                    <div style={{ fontWeight:700,color:overdueInfo.color,fontSize:13 }}>{overdueInfo.isDueToday?"⚡ Delivery due today!":`⚠ ${overdueInfo.label}`}</div>
+                    <div style={{ fontSize:11,color:overdueInfo.color,opacity:0.85 }}>Est. delivery was {dayjs(viewJob.estimated_delivery_date).format("DD MMM YYYY")}</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Status & Stage */}
+              <div style={{ display:"flex",alignItems:"center",flexWrap:"wrap",gap:8,justifyContent:"space-between" }}>
+                <div style={{ display:"flex",alignItems:"center",gap:8,flexWrap:"wrap" }}>
+                  <Tag color={cfg.color} icon={cfg.icon} style={{ fontWeight:600,fontSize:13,padding:"3px 10px" }}>{cfg.label}</Tag>
+                  {stageCfg?.stage && <Tag color="purple" icon={<BranchesOutlined />} style={{ fontSize:11 }}>{WORKFLOW_STAGES.find(s=>s.value===stageCfg.stage)?.label||stageCfg.stage_label}</Tag>}
+                </div>
+                {viewJob.order_date && <span style={{ fontSize:12,color:"#6b7280" }}>Ordered: {dayjs(viewJob.order_date).format("DD MMM YYYY, HH:mm")}</span>}
+              </div>
+
+              {/* Customer Info */}
+              <div style={{ background:"#f9fafb",borderRadius:10,padding:"12px 14px",border:"1px solid #e5e7eb" }}>
+                <SectionHeader icon={<UserOutlined />} title="Customer Info" />
+                <div style={{ display:"grid",gridTemplateColumns:c2,gap:10 }}>
+                  <InfoRow label="Name" value={viewJob.customer_name} />
+                  <InfoRow label="Phone" value={viewJob.customer_phone} />
+                  {viewJob.company_name && <InfoRow label="Company" value={viewJob.company_name} />}
+                  <InfoRow label="Est. Delivery" value={viewJob.estimated_delivery_date ? dayjs(viewJob.estimated_delivery_date).format("DD MMM YYYY, HH:mm") : "—"} />
+                  <InfoRow label="GST Number" value={viewJob.gst_no||"—"} />
+                  <InfoRow label="Created By" value={viewJob.created_by||"—"} />
+                </div>
+              </div>
+
+              {/* Assigned Designer */}
+              {stageCfg?.assigned_to?.name && (
+                <div style={{ background:"#eff6ff",borderRadius:10,padding:"10px 14px",border:"1px solid #bfdbfe",display:"flex",alignItems:"center",gap:10 }}>
+                  <UserOutlined style={{ color:"#2563eb",fontSize:16 }} />
+                  <div>
+                    <div style={{ fontSize:10,fontWeight:700,color:"#2563eb",textTransform:"uppercase" }}>Assigned Designer</div>
+                    <div style={{ fontSize:13,fontWeight:600,color:"#1e3a8a" }}>{stageCfg.assigned_to.name} <span style={{ fontSize:11,fontWeight:400,color:"#3b82f6" }}>{stageCfg.assigned_to.role}</span></div>
+                    {stageCfg.since && <div style={{ fontSize:11,color:"#6b7280" }}>Since {dayjs(stageCfg.since).format("DD MMM YYYY, HH:mm")}</div>}
+                  </div>
+                </div>
+              )}
+
+              {/* Delivery Address */}
+              {fullAddress && (
+                <div style={{ background:"#f9fafb",borderRadius:10,padding:"12px 14px",border:"1px solid #e5e7eb" }}>
+                  <SectionHeader icon={<EnvironmentOutlined />} title="Delivery Address" />
+                  <div style={{ fontSize:13,color:"#374151",lineHeight:1.8 }}>{fullAddress}</div>
+                </div>
+              )}
+
+              {/* Cart Items */}
+              <div>
+                <SectionHeader icon={<ShoppingCartOutlined />} title={`Job Items (${cartItems.length})`} />
+                <div style={{ display:"flex",flexDirection:"column",gap:10 }}>
+                  {cartItems.map((it, i) => {
+                    const { base,gstAmt,lineTotal,isSqFt,qty,sqFt,price,gstPct } = calcItemTotals(it);
+                    const itemDesignFiles = it.design_files||[];
+                    return (
+                      <div key={i} style={{ background:"#fff",border:"1px solid #e5e7eb",borderRadius:10,padding:"12px 14px" }}>
+                        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:6,marginBottom:8 }}>
+                          <div style={{ display:"flex",alignItems:"center",gap:6,flexWrap:"wrap" }}>
+                            <span style={{ fontSize:11,fontWeight:700,color:"#374151",background:"#e0e7ff",padding:"2px 8px",borderRadius:20 }}>#{i+1}</span>
+                            <span style={{ fontWeight:700,fontSize:14,color:"#1a1a2e",textTransform:"capitalize" }}>{it.product_name||"—"}</span>
+                            {it.variation && <Tag style={{ fontSize:10,margin:0 }}>{it.variation}</Tag>}
+                            {it.printing_type && <Tag color="blue" style={{ fontSize:10,margin:0 }}>{it.printing_type}</Tag>}
+                            <Tag color={isSqFt?"cyan":"orange"} style={{ fontSize:10,margin:0 }}>{isSqFt?"Sq. Ft":"Qty"}</Tag>
+                          </div>
+                          <div style={{ fontWeight:700,color:"#065f46",fontSize:15,background:"#d1fae5",padding:"2px 10px",borderRadius:8 }}>₹{lineTotal.toFixed(2)}</div>
+                        </div>
+                        <div style={{ display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:8,marginBottom:8 }}>
+                          <InfoRow label="Quantity" value={`${qty}`} />
+                          {isSqFt ? <>
+                            <InfoRow label="Sq. Ft" value={`${sqFt} ft²`} />
+                            <InfoRow label="Size" value={it.size||`${it.width}×${it.height} ${it.size_unit}`} />
+                            <InfoRow label="Rate" value={`₹${price} / ft²`} />
+                          </> : <>
+                            <InfoRow label="Unit Price" value={`₹${price}`} />
+                            {(it.width||it.height) && <InfoRow label="Size (ref)" value={`${it.width||"—"} × ${it.height||"—"} ${it.size_unit}`} />}
+                          </>}
+                        </div>
+                        <div style={{ background:"#f9fafb",borderRadius:8,padding:"8px 12px",border:"1px solid #e5e7eb",fontSize:12 }}>
+                          <div style={{ display:"flex",justifyContent:"space-between",color:"#4b5563",marginBottom:2 }}>
+                            <span>Base {isSqFt?`(${qty}×${sqFt}ft²×₹${price}/ft²)`:`(${qty}×₹${price})`}</span>
+                            <span style={{ fontWeight:600,color:"#374151" }}>₹{base.toFixed(2)}</span>
+                          </div>
+                          {gstPct>0 && <div style={{ display:"flex",justifyContent:"space-between",color:"#92400e",marginBottom:2 }}><span>GST @ {gstPct}%</span><span style={{ fontWeight:600 }}>+ ₹{gstAmt.toFixed(2)}</span></div>}
+                          <div style={{ display:"flex",justifyContent:"space-between",fontWeight:700,color:"#065f46",borderTop:"1px solid #d1fae5",paddingTop:4,marginTop:4 }}><span>Item Total</span><span>₹{lineTotal.toFixed(2)}</span></div>
+                        </div>
+                        {it.notes && <div style={{ marginTop:8,fontSize:12,color:"#6b7280",fontStyle:"italic",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:6,padding:"4px 8px" }}>Note: "{it.notes}"</div>}
+                        {itemDesignFiles.length>0 && (
+                          <div style={{ marginTop:10 }}>
+                            <div style={{ fontSize:10,fontWeight:700,color:"#9ca3af",marginBottom:6,textTransform:"uppercase" }}>Design Files ({itemDesignFiles.length})</div>
+                            <Image.PreviewGroup>
+                              <div style={{ display:"flex",gap:8,flexWrap:"wrap" }}>
+                                {itemDesignFiles.map((df,di) => (
+                                  <div key={df._id||di} style={{ textAlign:"center" }}>
+                                    <Image src={df.url} alt={df.file_name||`Design ${di+1}`} style={{ height:70,width:70,objectFit:"cover",borderRadius:6,border:"1px solid #e5e7eb",cursor:"pointer" }} preview={{ mask:<EyeOutlined /> }} />
+                                    {df.label && <div style={{ fontSize:9,color:"#6b7280",marginTop:2 }}>{df.label}</div>}
+                                  </div>
+                                ))}
+                              </div>
+                            </Image.PreviewGroup>
+                          </div>
+                        )}
+                        {it.design_file && !itemDesignFiles.length && (
+                          <div style={{ marginTop:8 }}>
+                            <div style={{ fontSize:10,fontWeight:700,color:"#9ca3af",marginBottom:4,textTransform:"uppercase" }}>Design File</div>
+                            <img src={it.design_file} alt="Design" style={{ maxHeight:80,maxWidth:"100%",borderRadius:6,objectFit:"contain",border:"1px solid #e5e7eb" }} onError={e=>{e.currentTarget.style.display="none";}} />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Order Summary */}
+              <div style={{ background:"linear-gradient(135deg,#eff6ff 0%,#f8fafc 100%)",border:"1px solid #bfdbfe",borderRadius:10,padding:isMobile?12:"14px 16px" }}>
+                <div style={{ fontWeight:700,color:"#1e40af",marginBottom:12,fontSize:14,display:"flex",alignItems:"center",gap:6 }}><WalletOutlined /> Order Summary</div>
+                <SummaryRow label="Subtotal (base)" value={`₹${totals.subtotal.toFixed(2)}`} />
+                {totals.discountAmt>0 && <SummaryRow label="Discount" value={`− ₹${totals.discountAmt.toFixed(2)}`} color="#059669" />}
+                <SummaryRow label="Total GST" value={`₹${totals.taxAmount.toFixed(2)}`} color="#d97706" />
+                {totals.designCharges>0 && <SummaryRow label="Design Charges" value={`₹${totals.designCharges.toFixed(2)}`} color="#7c3aed" />}
+                <SummaryRow label="Delivery" value={totals.freeDelivery?"Free":`₹${totals.deliveryCharges.toFixed(2)}`} color={totals.freeDelivery?"#059669":undefined} />
+                <Divider style={{ margin:"10px 0" }} />
+                <SummaryRow label="Grand Total" value={`₹${totals.grandTotal.toFixed(2)}`} bold />
+              </div>
+
+              {/* Payment Info */}
+              <PaymentInfoPanel job={viewJob} />
+
+              {/* Notes */}
+              {viewJob.notes && (
+                <div style={{ fontSize:13,color:"#374151",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:8,padding:"10px 12px" }}>
+                  <div style={{ fontSize:10,fontWeight:700,color:"#92400e",textTransform:"uppercase",marginBottom:4 }}>Notes</div>
+                  {viewJob.notes}
+                </div>
+              )}
+              {viewJob.terms_and_conditions && (
+                <div style={{ fontSize:12,color:"#6b7280",background:"#f9fafb",border:"1px solid #e5e7eb",borderRadius:8,padding:"10px 12px" }}>
+                  <div style={{ fontSize:10,fontWeight:700,color:"#374151",textTransform:"uppercase",marginBottom:4 }}>Terms & Conditions</div>
+                  <div style={{ whiteSpace:"pre-line",lineHeight:1.7 }}>{viewJob.terms_and_conditions}</div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </Modal>
+
+      {/* ══ EDIT MODAL ══ */}
+      <Modal open={editModal} onCancel={resetEditModal} footer={null}
+        title={
+          <div style={{ display:"flex",alignItems:"center",gap:8,flexWrap:"wrap" }}>
+            <EditOutlined style={{ color:"#2563eb" }} />
+            <span style={{ fontWeight:700,fontSize:isMobile?14:15 }}>Edit Job</span>
+            {editJob && <Tag color="blue" style={{ fontFamily:"monospace",fontWeight:600,fontSize:11 }}>{editJob.job_no}</Tag>}
+            {editJob && isSiteVisitJob(editJob) && <SiteVisitBadge />}
+          </div>
         }
-        styles={{
-          body: {
-            maxHeight: isMobile ? "calc(100dvh - 56px)" : "85vh",
-            overflowY: "auto",
-            padding: isMobile ? 10 : 16,
-          },
-        }}
-        destroyOnClose
-      >
-        {viewJob &&
-          (() => {
-            const cfg =
-              STATUS_CONFIG[viewJob.job_status] || STATUS_CONFIG.draft;
-            const addr = viewJob.delivery_address || {};
-            const totals = calcJobTotals(viewJob);
-            const cartItems = viewJob.cart_items || [];
-            const overdueInfo = getOverdueInfo(viewJob.estimated_delivery_date);
+        width={modalWidth} style={mobileStyle}
+        styles={{ body:modalBody, header:{ padding:`${isMobile?10:14}px ${isMobile?12:16}px`,borderBottom:"1px solid #f0f0f0" } }}
+        destroyOnClose>
+        <Spin spinning={editLoading}>
 
-            const fullAddress = [
-              addr.street,
-              addr.city,
-              addr.state,
-              addr.pincode,
-              addr.country,
-            ]
-              .filter(Boolean)
-              .join(", ");
-
-            const stageCfg = viewJob.current_stage;
-
-            return (
-              <div
-                style={{ display: "flex", flexDirection: "column", gap: 14 }}
-              >
-                {/* ── Overdue Alert Banner (show for overdue and due-today) ── */}
-                {overdueInfo && (overdueInfo.isOverdue || overdueInfo.isDueToday) && (
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      padding: "10px 14px",
-                      borderRadius: 8,
-                      background: overdueInfo.bg,
-                      border: `1px solid ${overdueInfo.border}`,
-                    }}
-                  >
-                    <ExclamationCircleOutlined
-                      style={{ color: overdueInfo.color, fontSize: 16, flexShrink: 0 }}
-                    />
-                    <div>
-                      <div style={{ fontWeight: 700, color: overdueInfo.color, fontSize: 13 }}>
-                        {overdueInfo.isDueToday
-                          ? "⚡ Delivery due today!"
-                          : `⚠ ${overdueInfo.label}`}
+          {/* Site Visit Banner */}
+          {editJob && isSiteVisitJob(editJob) && (
+            <div style={{ marginBottom:16,padding:"12px 16px",borderRadius:10,background:"linear-gradient(135deg,#f5f3ff,#ede9fe44)",border:"2px solid #a78bfa",display:"flex",gap:12,alignItems:"flex-start",position:"relative",overflow:"hidden" }}>
+              <div style={{ position:"absolute",top:0,left:0,width:4,height:"100%",background:"linear-gradient(180deg,#7c3aed,#a78bfa)" }} />
+              <CompassOutlined style={{ color:"#7c3aed",fontSize:18,marginLeft:6,flexShrink:0,marginTop:2 }} />
+              <div style={{ flex:1 }}>
+                <div style={{ fontWeight:700,color:"#5b21b6",fontSize:13,marginBottom:4 }}>Site Visit Job — fill in all details</div>
+                {editJob.site_visit_no && <span style={{ fontSize:11,color:"#6d28d9",background:"#ede9fe",padding:"2px 8px",borderRadius:10 }}><CompassOutlined style={{ marginRight:4 }}/>{editJob.site_visit_no}</span>}
+                {editJob.site_visit_photos?.length > 0 && (
+                  <div style={{ marginTop:10 }}>
+                    <div style={{ fontSize:10,fontWeight:700,color:"#7c3aed",textTransform:"uppercase",marginBottom:6 }}>Site Visit Photos — Reference for sizing</div>
+                    <Image.PreviewGroup>
+                      <div style={{ display:"flex",gap:6,flexWrap:"wrap" }}>
+                        {editJob.site_visit_photos.map((photo,i) => (
+                          <Image key={photo._id||i} src={photo.url} alt={photo.caption||`Photo ${i+1}`} style={{ height:64,width:64,objectFit:"cover",borderRadius:6,border:"2px solid #c4b5fd",cursor:"pointer" }} preview={{ mask:<EyeOutlined style={{ fontSize:12 }} /> }} />
+                        ))}
                       </div>
-                      <div style={{ fontSize: 11, color: overdueInfo.color, opacity: 0.85 }}>
-                        Est. delivery was{" "}
-                        {dayjs(viewJob.estimated_delivery_date).format("DD MMM YYYY")}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* ── Status & Meta ── */}
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    flexWrap: "wrap",
-                    gap: 8,
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <Tag
-                      color={cfg.color}
-                      icon={cfg.icon}
-                      style={{
-                        fontWeight: 600,
-                        fontSize: 13,
-                        padding: "3px 10px",
-                      }}
-                    >
-                      {cfg.label}
-                    </Tag>
-                    {stageCfg?.stage && (
-                      <Tag
-                        color="purple"
-                        icon={<BranchesOutlined />}
-                        style={{ fontSize: 11 }}
-                      >
-                        {WORKFLOW_STAGES.find((s) => s.value === stageCfg.stage)
-                          ?.label || stageCfg.stage_label}
-                      </Tag>
-                    )}
-                  </div>
-                  {viewJob.order_date && (
-                    <span style={{ fontSize: 12, color: "#6b7280" }}>
-                      Ordered:{" "}
-                      {dayjs(viewJob.order_date).format("DD MMM YYYY, HH:mm")}
-                    </span>
-                  )}
-                </div>
-
-                {/* ── Customer Info ── */}
-                <div
-                  style={{
-                    background: "#f9fafb",
-                    borderRadius: 10,
-                    padding: "12px 14px",
-                    border: "1px solid #e5e7eb",
-                  }}
-                >
-                  <SectionHeader
-                    icon={<UserOutlined />}
-                    title="Customer Info"
-                  />
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: c2,
-                      gap: 10,
-                    }}
-                  >
-                    <InfoRow label="Name" value={viewJob.customer_name} />
-                    <InfoRow label="Phone" value={viewJob.customer_phone} />
-                    {viewJob.company_name && (
-                      <InfoRow
-                        label="Company / Business"
-                        value={viewJob.company_name}
-                        valueStyle={{
-                          color: "#1e3a8a",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 4,
-                        }}
-                      />
-                    )}
-                    <InfoRow
-                      label="Estimated Delivery"
-                      value={
-                        viewJob.estimated_delivery_date
-                          ? dayjs(viewJob.estimated_delivery_date).format(
-                              "DD MMM YYYY, HH:mm",
-                            )
-                          : "—"
-                      }
-                    />
-                    <InfoRow label="GST Number" value={viewJob.gst_no || "—"} />
-                    <InfoRow
-                      label="Created By"
-                      value={viewJob.created_by || "—"}
-                    />
-                    <InfoRow
-                      label="Valid Until"
-                      value={
-                        viewJob.valid_until
-                          ? dayjs(viewJob.valid_until).format("DD MMM YYYY")
-                          : "—"
-                      }
-                    />
-                  </div>
-                </div>
-
-                {/* ── Assigned Designer ── */}
-                {stageCfg?.assigned_to?.name && (
-                  <div
-                    style={{
-                      background: "#eff6ff",
-                      borderRadius: 10,
-                      padding: "10px 14px",
-                      border: "1px solid #bfdbfe",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                    }}
-                  >
-                    <UserOutlined style={{ color: "#2563eb", fontSize: 16 }} />
-                    <div>
-                      <div
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          color: "#2563eb",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.05em",
-                        }}
-                      >
-                        Assigned Designer
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 600,
-                          color: "#1e3a8a",
-                        }}
-                      >
-                        {stageCfg.assigned_to.name}
-                        <span
-                          style={{
-                            marginLeft: 8,
-                            fontSize: 11,
-                            fontWeight: 400,
-                            color: "#3b82f6",
-                          }}
-                        >
-                          {stageCfg.assigned_to.role}
-                        </span>
-                      </div>
-                      {stageCfg.since && (
-                        <div style={{ fontSize: 11, color: "#6b7280" }}>
-                          Since{" "}
-                          {dayjs(stageCfg.since).format("DD MMM YYYY, HH:mm")}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* ── Delivery Address ── */}
-                {fullAddress && (
-                  <div
-                    style={{
-                      background: "#f9fafb",
-                      borderRadius: 10,
-                      padding: "12px 14px",
-                      border: "1px solid #e5e7eb",
-                    }}
-                  >
-                    <SectionHeader
-                      icon={<EnvironmentOutlined />}
-                      title="Delivery Address"
-                    />
-                    <div
-                      style={{
-                        fontSize: 13,
-                        color: "#374151",
-                        lineHeight: 1.8,
-                      }}
-                    >
-                      {fullAddress}
-                    </div>
-                  </div>
-                )}
-
-                {/* ── Cart Items ── */}
-                <div>
-                  <SectionHeader
-                    icon={<ShoppingCartOutlined />}
-                    title={`Job Items (${cartItems.length})`}
-                  />
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 10,
-                    }}
-                  >
-                    {cartItems.map((it, i) => {
-                      const {
-                        base,
-                        gstAmt,
-                        lineTotal,
-                        isSqFt,
-                        qty,
-                        sqFt,
-                        price,
-                        gstPct,
-                      } = calcItemTotals(it);
-                      return (
-                        <div
-                          key={i}
-                          style={{
-                            background: "#fff",
-                            border: "1px solid #e5e7eb",
-                            borderRadius: 10,
-                            padding: "12px 14px",
-                          }}
-                        >
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              alignItems: "flex-start",
-                              flexWrap: "wrap",
-                              gap: 6,
-                              marginBottom: 8,
-                            }}
-                          >
-                            <div
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 6,
-                                flexWrap: "wrap",
-                              }}
-                            >
-                              <span
-                                style={{
-                                  fontSize: 11,
-                                  fontWeight: 700,
-                                  color: "#374151",
-                                  background: "#e0e7ff",
-                                  padding: "2px 8px",
-                                  borderRadius: 20,
-                                }}
-                              >
-                                #{i + 1}
-                              </span>
-                              <span
-                                style={{
-                                  fontWeight: 700,
-                                  fontSize: 14,
-                                  color: "#1a1a2e",
-                                  textTransform: "capitalize",
-                                }}
-                              >
-                                {it.product_name || "—"}
-                              </span>
-                              {it.variation && (
-                                <Tag style={{ fontSize: 10, margin: 0 }}>
-                                  {it.variation}
-                                </Tag>
-                              )}
-                              {it.printing_type && (
-                                <Tag
-                                  color="blue"
-                                  style={{ fontSize: 10, margin: 0 }}
-                                >
-                                  {it.printing_type}
-                                </Tag>
-                              )}
-                              <Tag
-                                color={isSqFt ? "cyan" : "orange"}
-                                style={{ fontSize: 10, margin: 0 }}
-                              >
-                                {isSqFt ? "Sq. Ft" : "Qty"}
-                              </Tag>
-                            </div>
-                            <div
-                              style={{
-                                fontWeight: 700,
-                                color: "#065f46",
-                                fontSize: 15,
-                                background: "#d1fae5",
-                                padding: "2px 10px",
-                                borderRadius: 8,
-                              }}
-                            >
-                              ₹{lineTotal.toFixed(2)}
-                            </div>
-                          </div>
-
-                          <div
-                            style={{
-                              display: "grid",
-                              gridTemplateColumns: isMobile
-                                ? "1fr 1fr"
-                                : "repeat(4, 1fr)",
-                              gap: 8,
-                              marginBottom: 8,
-                            }}
-                          >
-                            <InfoRow label="Quantity" value={`${qty}`} />
-                            {isSqFt ? (
-                              <>
-                                <InfoRow label="Sq. Ft" value={`${sqFt} ft²`} />
-                                <InfoRow
-                                  label="Size"
-                                  value={
-                                    it.size ||
-                                    `${it.width}×${it.height} ${it.size_unit}`
-                                  }
-                                />
-                                <InfoRow
-                                  label="Rate"
-                                  value={`₹${price} / ft²`}
-                                />
-                              </>
-                            ) : (
-                              <>
-                                <InfoRow
-                                  label="Unit Price"
-                                  value={`₹${price}`}
-                                />
-                                {(it.width || it.height) && (
-                                  <InfoRow
-                                    label="Size (ref)"
-                                    value={`${it.width || "—"} × ${it.height || "—"} ${it.size_unit}`}
-                                  />
-                                )}
-                              </>
-                            )}
-                          </div>
-
-                          <div
-                            style={{
-                              background: "#f9fafb",
-                              borderRadius: 8,
-                              padding: "8px 12px",
-                              border: "1px solid #e5e7eb",
-                              fontSize: 12,
-                            }}
-                          >
-                            <div
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                color: "#4b5563",
-                                marginBottom: 2,
-                              }}
-                            >
-                              <span>
-                                Base Amount
-                                {isSqFt && (
-                                  <span
-                                    style={{ color: "#9ca3af", marginLeft: 4 }}
-                                  >
-                                    ({qty} qty × {sqFt} ft² × ₹{price}/ft²)
-                                  </span>
-                                )}
-                                {!isSqFt && (
-                                  <span
-                                    style={{ color: "#9ca3af", marginLeft: 4 }}
-                                  >
-                                    ({qty} qty × ₹{price})
-                                  </span>
-                                )}
-                              </span>
-                              <span
-                                style={{ fontWeight: 600, color: "#374151" }}
-                              >
-                                ₹{base.toFixed(2)}
-                              </span>
-                            </div>
-                            {gstPct > 0 && (
-                              <div
-                                style={{
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  color: "#92400e",
-                                  marginBottom: 2,
-                                }}
-                              >
-                                <span>GST @ {gstPct}%</span>
-                                <span style={{ fontWeight: 600 }}>
-                                  + ₹{gstAmt.toFixed(2)}
-                                </span>
-                              </div>
-                            )}
-                            <div
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                fontWeight: 700,
-                                color: "#065f46",
-                                borderTop: "1px solid #d1fae5",
-                                paddingTop: 4,
-                                marginTop: 4,
-                              }}
-                            >
-                              <span>Item Total</span>
-                              <span>₹{lineTotal.toFixed(2)}</span>
-                            </div>
-                          </div>
-
-                          {it.notes && (
-                            <div
-                              style={{
-                                marginTop: 8,
-                                fontSize: 12,
-                                color: "#6b7280",
-                                fontStyle: "italic",
-                                background: "#fffbeb",
-                                border: "1px solid #fde68a",
-                                borderRadius: 6,
-                                padding: "4px 8px",
-                              }}
-                            >
-                              Note: "{it.notes}"
-                            </div>
-                          )}
-
-                          {it.design_file && (
-                            <div style={{ marginTop: 8 }}>
-                              <div
-                                style={{
-                                  fontSize: 10,
-                                  fontWeight: 700,
-                                  color: "#9ca3af",
-                                  marginBottom: 4,
-                                  textTransform: "uppercase",
-                                }}
-                              >
-                                Design File
-                              </div>
-                              <img
-                                src={it.design_file}
-                                alt="Design"
-                                style={{
-                                  maxHeight: 80,
-                                  maxWidth: "100%",
-                                  borderRadius: 6,
-                                  objectFit: "contain",
-                                  border: "1px solid #e5e7eb",
-                                }}
-                                onError={(e) => {
-                                  e.currentTarget.style.display = "none";
-                                }}
-                              />
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* ── Order Summary ── */}
-                <div
-                  style={{
-                    background:
-                      "linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%)",
-                    border: "1px solid #bfdbfe",
-                    borderRadius: 10,
-                    padding: isMobile ? 12 : "14px 16px",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontWeight: 700,
-                      color: "#1e40af",
-                      marginBottom: 12,
-                      fontSize: 14,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                    }}
-                  >
-                    <WalletOutlined /> Order Summary
-                  </div>
-                  <SummaryRow
-                    label="Subtotal (items base)"
-                    value={`₹${totals.subtotal.toFixed(2)}`}
-                  />
-                  {totals.discountAmt > 0 && (
-                    <SummaryRow
-                      label="Discount"
-                      value={`− ₹${totals.discountAmt.toFixed(2)}`}
-                      color="#059669"
-                    />
-                  )}
-                  {totals.discountAmt > 0 && (
-                    <SummaryRow
-                      label="Taxable Amount"
-                      value={`₹${totals.taxableAmount.toFixed(2)}`}
-                      color="#374151"
-                    />
-                  )}
-                  <SummaryRow
-                    label="Total GST (all items)"
-                    value={`₹${totals.taxAmount.toFixed(2)}`}
-                    color="#d97706"
-                  />
-                  {totals.designCharges > 0 && (
-                    <SummaryRow
-                      label="Design Charges"
-                      value={`₹${totals.designCharges.toFixed(2)}`}
-                      color="#7c3aed"
-                    />
-                  )}
-                  <SummaryRow
-                    label="Delivery Charges"
-                    value={
-                      totals.freeDelivery
-                        ? "Free"
-                        : `₹${totals.deliveryCharges.toFixed(2)}`
-                    }
-                    color={totals.freeDelivery ? "#059669" : undefined}
-                  />
-                  <Divider style={{ margin: "10px 0" }} />
-                  <SummaryRow
-                    label="Grand Total"
-                    value={`₹${totals.grandTotal.toFixed(2)}`}
-                    bold
-                  />
-                  {Math.abs(
-                    totals.grandTotal - parseFloat(viewJob.total_amount || 0),
-                  ) > 0.5 && (
-                    <div
-                      style={{
-                        marginTop: 8,
-                        fontSize: 11,
-                        color: "#92400e",
-                        background: "#fffbeb",
-                        border: "1px solid #fde68a",
-                        borderRadius: 6,
-                        padding: "4px 8px",
-                      }}
-                    >
-                      Stored total: ₹
-                      {parseFloat(viewJob.total_amount || 0).toFixed(2)} ·
-                      Computed: ₹{totals.grandTotal.toFixed(2)}
-                    </div>
-                  )}
-                </div>
-
-                {/* ── Payment Info ── */}
-                {(viewJob.payment_mode ||
-                  parseFloat(viewJob.payment_amount || 0) > 0) && (
-                  <div
-                    style={{
-                      background: "#f0fdf4",
-                      borderRadius: 10,
-                      padding: "12px 14px",
-                      border: "1px solid #bbf7d0",
-                    }}
-                  >
-                    <SectionHeader icon={<WalletOutlined />} title="Payment" />
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: c2,
-                        gap: 10,
-                      }}
-                    >
-                      <InfoRow
-                        label="Payment Mode"
-                        value={viewJob.payment_mode || "—"}
-                      />
-                      <InfoRow
-                        label="Amount Paid"
-                        value={
-                          parseFloat(viewJob.payment_amount || 0) > 0
-                            ? `₹${parseFloat(viewJob.payment_amount).toFixed(2)}`
-                            : "Unpaid"
-                        }
-                        valueStyle={{
-                          color:
-                            parseFloat(viewJob.payment_amount || 0) > 0
-                              ? "#16a34a"
-                              : "#dc2626",
-                        }}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* ── Notes ── */}
-                {viewJob.notes && (
-                  <div
-                    style={{
-                      fontSize: 13,
-                      color: "#374151",
-                      background: "#fffbeb",
-                      border: "1px solid #fde68a",
-                      borderRadius: 8,
-                      padding: "10px 12px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        color: "#92400e",
-                        textTransform: "uppercase",
-                        marginBottom: 4,
-                      }}
-                    >
-                      Notes
-                    </div>
-                    {viewJob.notes}
-                  </div>
-                )}
-
-                {/* ── Terms ── */}
-                {viewJob.terms_and_conditions && (
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: "#6b7280",
-                      background: "#f9fafb",
-                      border: "1px solid #e5e7eb",
-                      borderRadius: 8,
-                      padding: "10px 12px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        color: "#374151",
-                        textTransform: "uppercase",
-                        marginBottom: 4,
-                      }}
-                    >
-                      Terms & Conditions
-                    </div>
-                    <div style={{ whiteSpace: "pre-line", lineHeight: 1.7 }}>
-                      {viewJob.terms_and_conditions}
-                    </div>
+                    </Image.PreviewGroup>
                   </div>
                 )}
               </div>
-            );
-          })()}
-      </Modal>
-
-      {/* ════════════ EDIT JOB MODAL ════════════ */}
-      <Modal
-        open={editModal}
-        onCancel={resetEditModal}
-        footer={null}
-        title={
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              flexWrap: "wrap",
-            }}
-          >
-            <EditOutlined style={{ color: "#2563eb" }} />
-            <span style={{ fontWeight: 700, fontSize: isMobile ? 14 : 15 }}>
-              Edit Job
-            </span>
-            {editJob && (
-              <Tag
-                color="blue"
-                style={{
-                  fontFamily: "monospace",
-                  fontWeight: 600,
-                  fontSize: 11,
-                }}
-              >
-                {editJob.job_no}
-              </Tag>
-            )}
-          </div>
-        }
-        width={modalWidth}
-        style={mobileFullStyle}
-        styles={{
-          body: modalBodyStyle,
-          header: {
-            padding: `${isMobile ? 10 : 14}px ${isMobile ? 12 : 16}px`,
-            borderBottom: "1px solid #f0f0f0",
-          },
-        }}
-        destroyOnClose
-      >
-        <Spin spinning={editLoading}>
-          {editError && (
-            <div
-              style={{
-                marginBottom: 12,
-                padding: "10px 14px",
-                background: "#fef2f2",
-                border: "1px solid #fca5a5",
-                borderRadius: 8,
-                color: "#b91c1c",
-                fontSize: 13,
-              }}
-            >
-              ⚠ {editError}
             </div>
           )}
 
-          {/* ── Customer Info ── */}
+          {editError && (
+            <div style={{ marginBottom:12,padding:"10px 14px",background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:8,color:"#b91c1c",fontSize:13 }}>⚠ {editError}</div>
+          )}
+
+          {/* Customer Info */}
           <SectionHeader icon={<UserOutlined />} title="Customer Info" />
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: c3,
-              gap: g,
-              marginBottom: g,
-            }}
-          >
-            <FormField label="Customer Name" required>
-              <Input
-                prefix={<UserOutlined style={{ color: "#9ca3af" }} />}
-                placeholder="Full name"
-                value={editForm.customer_name}
-                onChange={(e) =>
-                  handleEditInput("customer_name", e.target.value)
-                }
-                style={{ borderRadius: 8 }}
-              />
-            </FormField>
-            <FormField label="Phone" required>
-              <Input
-                prefix={<PhoneOutlined style={{ color: "#9ca3af" }} />}
-                placeholder="10-digit mobile"
-                value={editForm.customer_phone}
-                maxLength={10}
-                onChange={(e) =>
-                  handleEditInput("customer_phone", e.target.value)
-                }
-                style={{ borderRadius: 8 }}
-              />
-            </FormField>
-            <FormField label="Est. Delivery Date" required>
-              <Input
-                type="datetime-local"
-                value={editForm.estimated_delivery_date}
-                onChange={(e) =>
-                  handleEditInput("estimated_delivery_date", e.target.value)
-                }
-                style={{ borderRadius: 8 }}
-              />
-            </FormField>
+          <div style={{ display:"grid",gridTemplateColumns:c3,gap:g,marginBottom:g }}>
+            <FormField label="Customer Name" required><Input prefix={<UserOutlined style={{ color:"#9ca3af" }} />} placeholder="Full name" value={editForm.customer_name} onChange={e=>handleEditInput("customer_name",e.target.value)} style={{ borderRadius:8 }} /></FormField>
+            <FormField label="Phone" required><Input prefix={<PhoneOutlined style={{ color:"#9ca3af" }} />} placeholder="10-digit mobile" value={editForm.customer_phone} maxLength={10} onChange={e=>handleEditInput("customer_phone",e.target.value)} style={{ borderRadius:8 }} /></FormField>
+            <FormField label="Est. Delivery Date" required><Input type="datetime-local" value={editForm.estimated_delivery_date} onChange={e=>handleEditInput("estimated_delivery_date",e.target.value)} style={{ borderRadius:8 }} /></FormField>
+          </div>
+          <div style={{ display:"grid",gridTemplateColumns:c2,gap:g,marginBottom:14 }}>
+            <FormField label="Company Name"><Input prefix={<BankOutlined style={{ color:"#9ca3af" }} />} placeholder="Company / Business name" value={editForm.company_name} onChange={e=>handleEditInput("company_name",e.target.value)} style={{ borderRadius:8 }} /></FormField>
+            <FormField label="GST Number"><Input placeholder="GSTIN (15 chars)" maxLength={15} value={editForm.gst_no} onChange={e=>handleEditInput("gst_no",e.target.value.toUpperCase())} style={{ borderRadius:8 }} /></FormField>
           </div>
 
-          {/* Company Name + GST Number */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: c2,
-              gap: g,
-              marginBottom: 14,
-            }}
-          >
-            <FormField label="Company Name">
-              <Input
-                prefix={<BankOutlined style={{ color: "#9ca3af" }} />}
-                placeholder="Company / Business name"
-                value={editForm.company_name}
-                onChange={(e) =>
-                  handleEditInput("company_name", e.target.value)
-                }
-                style={{ borderRadius: 8 }}
-              />
-            </FormField>
-            <FormField label="GST Number">
-              <Input
-                placeholder="GSTIN (15 chars)"
-                maxLength={15}
-                value={editForm.gst_no}
-                onChange={(e) =>
-                  handleEditInput("gst_no", e.target.value.toUpperCase())
-                }
-                style={{ borderRadius: 8 }}
-              />
-            </FormField>
-          </div>
-
-          {/* ── Delivery Address ── */}
-          <SectionHeader
-            icon={<EnvironmentOutlined />}
-            title="Delivery Address"
-          />
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: g,
-              marginBottom: 14,
-            }}
-          >
-            <div style={{ display: "grid", gridTemplateColumns: c2, gap: g }}>
-              <FormField label="Address Line 1">
-                <Input
-                  placeholder="Flat / Door No, Building"
-                  value={editForm.address_line1}
-                  onChange={(e) =>
-                    handleEditInput("address_line1", e.target.value)
-                  }
-                  style={{ borderRadius: 8 }}
-                />
-              </FormField>
-              <FormField label="Address Line 2">
-                <Input
-                  placeholder="Street, Area, Landmark"
-                  value={editForm.address_line2}
-                  onChange={(e) =>
-                    handleEditInput("address_line2", e.target.value)
-                  }
-                  style={{ borderRadius: 8 }}
-                />
-              </FormField>
+          {/* Delivery Address */}
+          <SectionHeader icon={<EnvironmentOutlined />} title="Delivery Address" />
+          <div style={{ display:"flex",flexDirection:"column",gap:g,marginBottom:14 }}>
+            <div style={{ display:"grid",gridTemplateColumns:c2,gap:g }}>
+              <FormField label="Address Line 1"><Input placeholder="Flat / Door No, Building" value={editForm.address_line1} onChange={e=>handleEditInput("address_line1",e.target.value)} style={{ borderRadius:8 }} /></FormField>
+              <FormField label="Address Line 2"><Input placeholder="Street, Area, Landmark" value={editForm.address_line2} onChange={e=>handleEditInput("address_line2",e.target.value)} style={{ borderRadius:8 }} /></FormField>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: c4, gap: g }}>
-              {[
-                ["city", "City", "City"],
-                ["state", "State", "State"],
-                ["pincode", "Pincode", "6-digit"],
-                ["country", "Country", "Country"],
-              ].map(([k, label, ph]) => (
-                <FormField key={k} label={label}>
-                  <Input
-                    placeholder={ph}
-                    value={editForm[k]}
-                    onChange={(e) => handleEditInput(k, e.target.value)}
-                    style={{ borderRadius: 8 }}
-                  />
-                </FormField>
+            <div style={{ display:"grid",gridTemplateColumns:c4,gap:g }}>
+              {[["city","City","City"],["state","State","State"],["pincode","Pincode","6-digit"],["country","Country","Country"]].map(([k,label,ph]) => (
+                <FormField key={k} label={label}><Input placeholder={ph} value={editForm[k]} onChange={e=>handleEditInput(k,e.target.value)} style={{ borderRadius:8 }} /></FormField>
               ))}
             </div>
           </div>
 
-          {/* ── Job Items ── */}
+          {/* Job Items */}
           <SectionHeader icon={<ShoppingCartOutlined />} title="Job Items" />
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: g,
-              marginBottom: 14,
-            }}
-          >
-            {editItems.map((item, idx) => (
-              <ProductItemRow
-                key={idx}
-                item={item}
-                idx={idx}
-                onChange={handleEditItem}
-                onRemove={removeEditItem}
-                isOnly={editItems.length === 1}
-                isMobile={isMobile}
-                isTablet={isTablet}
-              />
-            ))}
-            <Button
-              icon={<PlusOutlined />}
-              onClick={addEditItem}
-              style={{
-                borderStyle: "dashed",
-                borderRadius: 8,
-                color: "#6b7280",
-                height: 40,
-              }}
-            >
-              Add Item
-            </Button>
+          <div style={{ display:"flex",flexDirection:"column",gap:g,marginBottom:14 }}>
+            {editItems.map((item,idx) => <ProductItemRow key={idx} item={item} idx={idx} onChange={(i,u)=>setEditItems(p=>p.map((it,j)=>j===i?u:it))} onRemove={i=>setEditItems(p=>p.filter((_,j)=>j!==i))} isOnly={editItems.length===1} isMobile={isMobile} isTablet={isTablet} />)}
+            <Button icon={<PlusOutlined />} onClick={()=>setEditItems(p=>[...p,{...EMPTY_ITEM}])} style={{ borderStyle:"dashed",borderRadius:8,color:"#6b7280",height:40 }}>Add Item</Button>
           </div>
 
-          {/* ── Pricing & Tax ── */}
+          {/* Pricing */}
           <SectionHeader icon={<TagOutlined />} title="Pricing & Tax" />
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: c5,
-              gap: g,
-              marginBottom: 14,
-            }}
-          >
-            <FormField label="Discount (₹)">
-              <InputNumber
-                min={0}
-                max={editTotals.subtotal || undefined}
-                value={editForm.discount_amount}
-                style={{ width: "100%", borderRadius: 8 }}
-                prefix="₹"
-                placeholder="0.00"
-                onChange={(v) => handleEditInput("discount_amount", v || 0)}
-              />
-            </FormField>
-
-            <FormField label="Delivery Charges (₹)">
-              <InputNumber
-                min={0}
-                value={editForm.free_delivery ? 0 : editForm.delivery_charges}
-                disabled={editForm.free_delivery}
-                style={{ width: "100%", borderRadius: 8 }}
-                prefix="₹"
-                onChange={(v) => handleEditInput("delivery_charges", v || 0)}
-              />
-            </FormField>
-
-            <FormField label="Design Charges (₹)">
-              <InputNumber
-                min={0}
-                value={editForm.design_charges}
-                style={{
-                  width: "100%",
-                  borderRadius: 8,
-                  background:
-                    (editForm.design_charges || 0) > 0 ? "#faf5ff" : undefined,
-                  borderColor:
-                    (editForm.design_charges || 0) > 0 ? "#c4b5fd" : undefined,
-                }}
-                prefix="₹"
-                onChange={(v) => handleEditInput("design_charges", v || 0)}
-              />
-            </FormField>
-
+          <div style={{ display:"grid",gridTemplateColumns:c5,gap:g,marginBottom:14 }}>
+            <FormField label="Discount (₹)"><InputNumber min={0} value={editForm.discount_amount} style={{ width:"100%",borderRadius:8 }} prefix="₹" onChange={v=>handleEditInput("discount_amount",v||0)} /></FormField>
+            <FormField label="Delivery Charges (₹)"><InputNumber min={0} value={editForm.free_delivery?0:editForm.delivery_charges} disabled={editForm.free_delivery} style={{ width:"100%",borderRadius:8 }} prefix="₹" onChange={v=>handleEditInput("delivery_charges",v||0)} /></FormField>
+            <FormField label="Design Charges (₹)"><InputNumber min={0} value={editForm.design_charges} style={{ width:"100%",borderRadius:8 }} prefix="₹" onChange={v=>handleEditInput("design_charges",v||0)} /></FormField>
             <FormField label="Free Delivery">
-              <div
-                onClick={() =>
-                  handleEditInput("free_delivery", !editForm.free_delivery)
-                }
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  cursor: "pointer",
-                  background: editForm.free_delivery ? "#f0fdf4" : "#f9fafb",
-                  border: `1px solid ${editForm.free_delivery ? "#86efac" : "#e5e7eb"}`,
-                  borderRadius: 8,
-                  padding: "6px 12px",
-                  userSelect: "none",
-                  transition: "all 0.15s",
-                }}
-              >
-                <div
-                  style={{
-                    width: 36,
-                    height: 20,
-                    borderRadius: 10,
-                    background: editForm.free_delivery ? "#22c55e" : "#d1d5db",
-                    position: "relative",
-                    transition: "background 0.2s",
-                  }}
-                >
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: 2,
-                      left: editForm.free_delivery ? 18 : 2,
-                      width: 16,
-                      height: 16,
-                      borderRadius: "50%",
-                      background: "#fff",
-                      transition: "left 0.2s",
-                      boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
-                    }}
-                  />
+              <div onClick={()=>handleEditInput("free_delivery",!editForm.free_delivery)} style={{ display:"flex",alignItems:"center",gap:8,cursor:"pointer",background:editForm.free_delivery?"#f0fdf4":"#f9fafb",border:`1px solid ${editForm.free_delivery?"#86efac":"#e5e7eb"}`,borderRadius:8,padding:"6px 12px",userSelect:"none" }}>
+                <div style={{ width:36,height:20,borderRadius:10,background:editForm.free_delivery?"#22c55e":"#d1d5db",position:"relative" }}>
+                  <div style={{ position:"absolute",top:2,left:editForm.free_delivery?18:2,width:16,height:16,borderRadius:"50%",background:"#fff",transition:"left 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.2)" }} />
                 </div>
-                <span
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: editForm.free_delivery ? "#16a34a" : "#6b7280",
-                  }}
-                >
-                  {editForm.free_delivery ? "Free" : "Paid"}
-                </span>
+                <span style={{ fontSize:12,fontWeight:600,color:editForm.free_delivery?"#16a34a":"#6b7280" }}>{editForm.free_delivery?"Free":"Paid"}</span>
               </div>
             </FormField>
           </div>
 
-          {/* ── Payment Section ── */}
+          {/* ══ Payment Section ══ */}
           <SectionHeader icon={<WalletOutlined />} title="Payment" />
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: c2,
-              gap: g,
-              marginBottom: 14,
-            }}
-          >
-            <FormField label="Payment Mode">
-              <Select
-                placeholder="Select payment mode"
-                value={editForm.payment_mode || undefined}
-                style={{ width: "100%" }}
-                allowClear
-                onChange={(v) => handleEditInput("payment_mode", v ?? "")}
-              >
-                {PAYMENT_MODES.map((m) => (
-                  <Option key={m} value={m}>
-                    {m}
-                  </Option>
-                ))}
+          <div style={{ display:"grid",gridTemplateColumns:c2,gap:g,marginBottom:10 }}>
+            <FormField label="Payment Mode" hint="Changing mode auto-suggests next due date">
+              <Select placeholder="Select payment mode" value={editForm.payment_mode||undefined} style={{ width:"100%" }} allowClear onChange={handlePaymentModeChange}>
+                {PAYMENT_MODES.map(m => <Option key={m} value={m}>{m}</Option>)}
               </Select>
             </FormField>
-            <FormField label="Amount Paid (₹)">
-              <InputNumber
-                min={0}
-                placeholder="0.00"
-                value={editForm.payment_amount || undefined}
-                style={{ width: "100%", borderRadius: 8 }}
-                prefix="₹"
-                onChange={(v) => handleEditInput("payment_amount", v ?? "")}
-              />
+            <FormField label="Amount Paid (₹)" hint="Balance will be calculated automatically">
+              <InputNumber min={0} placeholder="0.00" value={editForm.payment_amount||undefined} style={{ width:"100%",borderRadius:8 }} prefix="₹" onChange={handlePaymentAmountChange} />
             </FormField>
           </div>
 
-          {/* ── Notes ── */}
-          <SectionHeader icon={<FileTextOutlined />} title="Notes" />
-          <div style={{ display: "grid", marginBottom: 14 }}>
-            <FormField label="Notes">
-              <TextArea
-                rows={3}
-                placeholder="Additional notes…"
-                value={editForm.notes}
-                onChange={(e) => handleEditInput("notes", e.target.value)}
-                style={{ borderRadius: 8 }}
-              />
-            </FormField>
-          </div>
+          {/* Next Due Date Preview — the key new feature */}
+          <NextDueDatePreview
+            paymentMode={editForm.payment_mode}
+            paidAmount={editForm.payment_amount}
+            totalAmount={editTotals.grandTotal}
+            nextDueDate={editForm.next_due_date}
+          />
 
-          {/* ── Order Summary (live preview) ── */}
-          <div
-            style={{
-              background: "linear-gradient(135deg,#eff6ff 0%,#f8fafc 100%)",
-              border: "1px solid #bfdbfe",
-              borderRadius: 10,
-              padding: isMobile ? 12 : "14px 16px",
-              marginBottom: 14,
-            }}
-          >
-            <div
-              style={{
-                fontWeight: 700,
-                color: "#1e40af",
-                marginBottom: 10,
-                fontSize: 14,
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-              }}
-            >
-              <FileTextOutlined /> Order Summary
+          {/* Next Due Date picker — only shown if there's a balance */}
+          {editTotals.balance > 0 && (
+            <div style={{ marginTop:12, marginBottom:14 }}>
+              <FormField label="Next Payment Due Date" hint="When should the customer pay the remaining balance?">
+                <div style={{ display:"flex",gap:8,alignItems:"center" }}>
+                  <DatePicker
+                    value={editForm.next_due_date ? dayjs(editForm.next_due_date) : null}
+                    onChange={d => handleEditInput("next_due_date", d)}
+                    format="DD MMM YYYY"
+                    style={{ flex:1,borderRadius:8 }}
+                    disabledDate={d => d && d.isBefore(dayjs().startOf("day"))}
+                    placeholder="Pick a due date"
+                  />
+                  {editForm.next_due_date && (
+                    <Button size="small" onClick={() => handleEditInput("next_due_date", null)} style={{ color:"#6b7280" }}>Clear</Button>
+                  )}
+                </div>
+                {/* Quick preset buttons */}
+                <div style={{ display:"flex",gap:6,marginTop:8,flexWrap:"wrap" }}>
+                  {[["7 days",7],["15 days",15],["30 days",30],["45 days",45]].map(([label,days]) => (
+                    <button key={days} onClick={() => handleEditInput("next_due_date", dayjs().add(days,"day"))}
+                      style={{ fontSize:11,padding:"3px 10px",borderRadius:20,border:"1px solid #d1d5db",background:"#f9fafb",color:"#374151",cursor:"pointer",fontWeight:600 }}
+                      onMouseEnter={e=>e.target.style.background="#eff6ff"} onMouseLeave={e=>e.target.style.background="#f9fafb"}>
+                      +{label}
+                    </button>
+                  ))}
+                </div>
+              </FormField>
             </div>
-            <SummaryRow
-              label="Subtotal (items base)"
-              value={`₹${editTotals.subtotal.toFixed(2)}`}
-            />
-            {editTotals.discountAmt > 0 && (
-              <SummaryRow
-                label="Discount"
-                value={`− ₹${editTotals.discountAmt.toFixed(2)}`}
-                color="#059669"
-              />
-            )}
-            {editTotals.discountAmt > 0 && (
-              <SummaryRow
-                label="Taxable Amount"
-                value={`₹${editTotals.taxableAmount.toFixed(2)}`}
-                color="#374151"
-              />
-            )}
-            <SummaryRow
-              label="Total GST"
-              value={`₹${editTotals.taxAmount.toFixed(2)}`}
-              color="#d97706"
-            />
-            {editTotals.designCharges > 0 && (
-              <SummaryRow
-                label="Design Charges"
-                value={`₹${editTotals.designCharges.toFixed(2)}`}
-                color="#7c3aed"
-              />
-            )}
-            <SummaryRow
-              label="Delivery"
-              value={
-                editForm.free_delivery
-                  ? "Free"
-                  : `₹${editTotals.deliveryCharges.toFixed(2)}`
-              }
-              color={editForm.free_delivery ? "#059669" : undefined}
-            />
-            <Divider style={{ margin: "8px 0" }} />
-            <SummaryRow
-              label="Grand Total"
-              value={`₹${editTotals.grandTotal.toFixed(2)}`}
-              bold
-            />
+          )}
+          {editTotals.balance <= 0 && <div style={{ marginBottom:14 }} />}
+
+          {/* Notes */}
+          <SectionHeader icon={<FileTextOutlined />} title="Notes" />
+          <div style={{ marginBottom:14 }}>
+            <FormField label="Notes"><TextArea rows={3} placeholder="Additional notes…" value={editForm.notes} onChange={e=>handleEditInput("notes",e.target.value)} style={{ borderRadius:8 }} /></FormField>
+          </div>
+
+          {/* Order Summary Preview */}
+          <div style={{ background:"linear-gradient(135deg,#eff6ff 0%,#f8fafc 100%)",border:"1px solid #bfdbfe",borderRadius:10,padding:isMobile?12:"14px 16px",marginBottom:14 }}>
+            <div style={{ fontWeight:700,color:"#1e40af",marginBottom:10,fontSize:14,display:"flex",alignItems:"center",gap:6 }}><FileTextOutlined /> Order Summary</div>
+            <SummaryRow label="Subtotal (items base)" value={`₹${editTotals.subtotal.toFixed(2)}`} />
+            {editTotals.discountAmt>0 && <SummaryRow label="Discount" value={`− ₹${editTotals.discountAmt.toFixed(2)}`} color="#059669" />}
+            <SummaryRow label="Total GST" value={`₹${editTotals.taxAmount.toFixed(2)}`} color="#d97706" />
+            {editTotals.designCharges>0 && <SummaryRow label="Design Charges" value={`₹${editTotals.designCharges.toFixed(2)}`} color="#7c3aed" />}
+            <SummaryRow label="Delivery" value={editForm.free_delivery?"Free":`₹${editTotals.deliveryCharges.toFixed(2)}`} color={editForm.free_delivery?"#059669":undefined} />
+            <Divider style={{ margin:"8px 0" }} />
+            <SummaryRow label="Grand Total" value={`₹${editTotals.grandTotal.toFixed(2)}`} bold />
             {(editTotals.paid > 0 || editForm.payment_mode) && (
               <>
-                <div style={{ height: 6 }} />
-                <SummaryRow
-                  label={`Amount Paid${editForm.payment_mode ? ` (${editForm.payment_mode})` : ""}`}
-                  value={`− ₹${editTotals.paid.toFixed(2)}`}
-                  color="#059669"
-                />
-                <Divider style={{ margin: "6px 0" }} />
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    fontSize: 14,
-                    fontWeight: 800,
-                  }}
-                >
-                  <span style={{ color: "#1a1a2e" }}>Balance Due</span>
-                  <span
-                    style={{
-                      color: editTotals.balance <= 0 ? "#059669" : "#dc2626",
-                      background:
-                        editTotals.balance <= 0 ? "#f0fdf4" : "#fef2f2",
-                      padding: "2px 10px",
-                      borderRadius: 6,
-                    }}
-                  >
-                    {editTotals.balance <= 0
-                      ? `✓ Paid (Advance ₹${Math.abs(editTotals.balance).toFixed(2)})`
-                      : `₹${editTotals.balance.toFixed(2)}`}
+                <div style={{ height:6 }} />
+                <SummaryRow label={`Paid${editForm.payment_mode?` (${editForm.payment_mode})`:""}` } value={`− ₹${editTotals.paid.toFixed(2)}`} color="#059669" />
+                <Divider style={{ margin:"6px 0" }} />
+                <div style={{ display:"flex",justifyContent:"space-between",fontSize:14,fontWeight:800 }}>
+                  <span style={{ color:"#1a1a2e" }}>Balance Due</span>
+                  <span style={{ color:editTotals.balance<=0?"#059669":"#dc2626",background:editTotals.balance<=0?"#f0fdf4":"#fef2f2",padding:"2px 10px",borderRadius:6 }}>
+                    {editTotals.balance<=0?`✓ Paid${Math.abs(editTotals.balance)>0.01?` (Advance ₹${Math.abs(editTotals.balance).toFixed(2)})`:""}` : `₹${editTotals.balance.toFixed(2)}`}
                   </span>
                 </div>
+                {editTotals.balance > 0 && editForm.next_due_date && (
+                  <div style={{ marginTop:8,display:"flex",alignItems:"center",gap:8,padding:"8px 10px",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:8 }}>
+                    <CalendarOutlined style={{ color:"#d97706",fontSize:14 }} />
+                    <span style={{ fontSize:12,color:"#92400e",fontWeight:600 }}>
+                      Next payment due: {dayjs(editForm.next_due_date).format("DD MMM YYYY")}
+                      {" · "}{dayjs(editForm.next_due_date).diff(dayjs(),"day")} day{dayjs(editForm.next_due_date).diff(dayjs(),"day")!==1?"s":""} away
+                    </span>
+                  </div>
+                )}
               </>
             )}
-            <div style={{ marginTop: 8, fontSize: 10, color: "#6b7280" }}>
-              Formula: Sq.Ft items = qty × sq.ft × rate &nbsp;|&nbsp; Qty items
-              = qty × rate
-            </div>
           </div>
 
-          {/* ── Actions ── */}
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-            <Button
-              onClick={resetEditModal}
-              style={{
-                borderRadius: 8,
-                height: 40,
-                flex: isMobile ? 1 : undefined,
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="primary"
-              icon={<SaveOutlined />}
-              onClick={handleEditSubmit}
-              loading={editLoading}
-              style={{
-                background: "#2563eb",
-                border: "none",
-                borderRadius: 8,
-                height: 40,
-                fontWeight: 600,
-                flex: isMobile ? 1 : undefined,
-              }}
-            >
-              Save Changes
-            </Button>
+          {/* Actions */}
+          <div style={{ display:"flex",gap:10,justifyContent:"flex-end" }}>
+            <Button onClick={resetEditModal} style={{ borderRadius:8,height:40,flex:isMobile?1:undefined }}>Cancel</Button>
+            <Button type="primary" icon={<SaveOutlined />} onClick={handleEditSubmit} loading={editLoading} style={{ background:"#2563eb",border:"none",borderRadius:8,height:40,fontWeight:600,flex:isMobile?1:undefined }}>Save Changes</Button>
           </div>
         </Spin>
       </Modal>
 
-      {/* ════════════ APPROVE & ASSIGN MODAL ════════════ */}
+      {/* ══ APPROVE MODAL ══ */}
       <Modal
-        title={
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <CheckCircleOutlined style={{ color: "#16a34a" }} />
-            <span style={{ fontWeight: 700 }}>Approve & Assign Job</span>
-          </div>
-        }
-        open={approveModalOpen}
-        onCancel={closeApproveModal}
-        maskClosable={!approving}
-        closable={!approving}
+        title={<div style={{ display:"flex",alignItems:"center",gap:8 }}><CheckCircleOutlined style={{ color:"#16a34a" }} /><span style={{ fontWeight:700 }}>Approve & Assign Job</span></div>}
+        open={approveModalOpen} onCancel={() => { if(approving)return; setApproveModalOpen(false);setApprovingJob(null);setSelectedDesigner(null);setDesigners([]); }}
+        maskClosable={!approving} closable={!approving}
         footer={[
-          <Button key="cancel" onClick={closeApproveModal} disabled={approving}>
-            Cancel
-          </Button>,
-          <Button
-            key="submit"
-            type="primary"
-            loading={approving}
-            disabled={!selectedDesigner || designersLoading}
-            onClick={handleApproveWithDesigner}
-            style={{ background: "#16a34a", borderColor: "#16a34a" }}
-          >
-            Approve & Assign
-          </Button>,
+          <Button key="cancel" onClick={() => { if(approving)return; setApproveModalOpen(false);setApprovingJob(null);setSelectedDesigner(null);setDesigners([]); }} disabled={approving}>Cancel</Button>,
+          <Button key="submit" type="primary" loading={approving} disabled={!selectedDesigner||designersLoading} onClick={handleApproveWithDesigner} style={{ background:"#16a34a",borderColor:"#16a34a" }}>Approve & Assign</Button>,
         ]}
-        width={isMobile ? "100vw" : 480}
-        style={sheetStyle}
-        styles={{ body: sheetBodyStyle }}
-        destroyOnClose
-      >
+        width={isMobile?"100vw":480} style={sheetStyle} styles={{ body:sheetBody }} destroyOnClose>
         {approvingJob && (
           <div>
-            <div
-              style={{
-                background: "#f8fafc",
-                borderRadius: 8,
-                padding: "10px 12px",
-                marginBottom: 16,
-                border: "1px solid #e5e7eb",
-              }}
-            >
-              <div
-                style={{
-                  fontFamily: "monospace",
-                  fontWeight: 700,
-                  color: "#2563eb",
-                  fontSize: 14,
-                }}
-              >
-                {approvingJob.job_no}
-              </div>
-              <div style={{ fontSize: 13, color: "#374151", marginTop: 2 }}>
-                {approvingJob.customer_name || "—"}
-              </div>
-              <div style={{ fontSize: 11, color: "#6b7280" }}>
-                {approvingJob.customer_phone || ""}
-              </div>
-              <div style={{ marginTop: 6, fontSize: 11 }}>
-                Current status:{" "}
-                {(() => {
-                  const cfg =
-                    STATUS_CONFIG[approvingJob.job_status] ||
-                    STATUS_CONFIG.draft;
-                  return (
-                    <Tag
-                      color={cfg.color}
-                      icon={cfg.icon}
-                      style={{ fontWeight: 500 }}
-                    >
-                      {cfg.label}
-                    </Tag>
-                  );
-                })()}
-              </div>
+            <div style={{ background:"#f8fafc",borderRadius:8,padding:"10px 12px",marginBottom:16,border:"1px solid #e5e7eb" }}>
+              <div style={{ fontFamily:"monospace",fontWeight:700,color:"#2563eb",fontSize:14 }}>{approvingJob.job_no}</div>
+              <div style={{ fontSize:13,color:"#374151",marginTop:2 }}>{approvingJob.customer_name||"—"}</div>
+              <div style={{ fontSize:11,color:"#6b7280" }}>{approvingJob.customer_phone||""}</div>
+              {isSiteVisitJob(approvingJob) && (
+                <div style={{ marginTop:6,display:"flex",alignItems:"center",gap:6 }}>
+                  <CompassOutlined style={{ color:"#7c3aed",fontSize:11 }} />
+                  <span style={{ fontSize:11,color:"#7c3aed",fontWeight:600 }}>Site Visit: {approvingJob.site_visit_no||approvingJob.site_visit_id}</span>
+                </div>
+              )}
+              {(() => { const cfg=STATUS_CONFIG[approvingJob.job_status]||STATUS_CONFIG.draft; return <div style={{ marginTop:6,fontSize:11 }}>Status: <Tag color={cfg.color} icon={cfg.icon}>{cfg.label}</Tag></div>; })()}
             </div>
-
-            <div style={{ marginBottom: 16 }}>
-              <label
-                style={{
-                  display: "block",
-                  fontWeight: 600,
-                  marginBottom: 8,
-                  fontSize: 13,
-                }}
-              >
-                Select Designer to Assign{" "}
-                <span style={{ color: "#ef4444" }}>*</span>
-              </label>
-              <Select
-                placeholder={
-                  designersLoading ? "Loading designers…" : "Choose a designer"
-                }
-                style={{ width: "100%" }}
-                value={selectedDesigner?._id || undefined}
-                loading={designersLoading}
-                disabled={designersLoading}
-                onChange={(id) => {
-                  if (id === "customer_designed") {
-                    setSelectedDesigner({
-                      _id: "customer_designed",
-                      name: "Customer Designed",
-                      type: "external",
-                    });
-                  } else {
-                    setSelectedDesigner(
-                      designers.find((d) => d._id === id) || null,
-                    );
-                  }
-                }}
-                notFoundContent={
-                  designersLoading ? "Loading…" : "No designers found"
-                }
-              >
+            <div style={{ marginBottom:16 }}>
+              <label style={{ display:"block",fontWeight:600,marginBottom:8,fontSize:13 }}>Assign Designer <span style={{ color:"#ef4444" }}>*</span></label>
+              <Select placeholder={designersLoading?"Loading designers…":"Choose a designer"} style={{ width:"100%" }} value={selectedDesigner?._id||undefined} loading={designersLoading} disabled={designersLoading}
+                onChange={id => { if(id==="customer_designed") setSelectedDesigner({_id:"customer_designed",name:"Customer Designed",type:"external"}); else setSelectedDesigner(designers.find(d=>d._id===id)||null); }}
+                notFoundContent={designersLoading?"Loading…":"No designers found"}>
                 <Option value="customer_designed">
-                  <div
-                    style={{ display: "flex", alignItems: "center", gap: 8 }}
-                  >
-                    <UserOutlined style={{ color: "#f59e0b", fontSize: 12 }} />
-                    <span style={{ fontWeight: 600, color: "#d97706" }}>
-                      🎨 Designed By Customer
-                    </span>
-                    <Tag color="orange" style={{ fontSize: 10, marginLeft: 4 }}>
-                      Customer Provided
-                    </Tag>
+                  <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+                    <UserOutlined style={{ color:"#f59e0b",fontSize:12 }} />
+                    <span style={{ fontWeight:600,color:"#d97706" }}>🎨 Designed By Customer</span>
+                    <Tag color="orange" style={{ fontSize:10,marginLeft:4 }}>Customer Provided</Tag>
                   </div>
                 </Option>
-
-                {designers.length > 0 && (
-                  <Option disabled value="divider">
-                    <Divider style={{ margin: 8 }} orientation="left" plain>
-                      <span style={{ fontSize: 11, color: "#9ca3af" }}>
-                        Internal Designers
-                      </span>
-                    </Divider>
-                  </Option>
-                )}
-
-                {designers.map((d) => (
+                {designers.length>0 && <Option disabled value="divider"><Divider style={{ margin:8 }} orientation="left" plain><span style={{ fontSize:11,color:"#9ca3af" }}>Internal Designers</span></Divider></Option>}
+                {designers.map(d => (
                   <Option key={d._id} value={d._id}>
-                    <div
-                      style={{ display: "flex", alignItems: "center", gap: 6 }}
-                    >
-                      <UserOutlined
-                        style={{ color: "#6b7280", fontSize: 12 }}
-                      />
-                      <span>{d.name || d.fullName || d.username || d._id}</span>
-                    </div>
+                    <div style={{ display:"flex",alignItems:"center",gap:6 }}><UserOutlined style={{ color:"#6b7280",fontSize:12 }}/><span>{d.name||d.fullName||d.username||d._id}</span></div>
                   </Option>
                 ))}
               </Select>
-
-              {selectedDesigner?._id === "customer_designed" && (
-                <div
-                  style={{
-                    marginTop: 8,
-                    color: "#d97706",
-                    fontSize: 12,
-                    background: "#fffbeb",
-                    border: "1px solid #fde68a",
-                    borderRadius: 6,
-                    padding: "8px 12px",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                  }}
-                >
-                  <InfoCircleOutlined style={{ color: "#f59e0b" }} />
-                  <span>
-                    Design will be marked as "Customer Provided" - no internal
-                    designer assigned.
-                  </span>
-                </div>
-              )}
-
-              {!designersLoading &&
-                designers.length === 0 &&
-                selectedDesigner?._id !== "customer_designed" && (
-                  <div
-                    style={{
-                      marginTop: 8,
-                      color: "#b45309",
-                      fontSize: 12,
-                      background: "#fffbeb",
-                      border: "1px solid #fde68a",
-                      borderRadius: 6,
-                      padding: "6px 10px",
-                    }}
-                  >
-                    No designers found. Add a user with role "designing team"
-                    first.
-                  </div>
-                )}
+              {selectedDesigner?._id==="customer_designed" && <div style={{ marginTop:8,color:"#d97706",fontSize:12,background:"#fffbeb",border:"1px solid #fde68a",borderRadius:6,padding:"8px 12px",display:"flex",alignItems:"center",gap:8 }}><InfoCircleOutlined style={{ color:"#f59e0b" }}/><span>No internal designer assigned — customer-provided design.</span></div>}
+              {!designersLoading&&designers.length===0&&selectedDesigner?._id!=="customer_designed" && <div style={{ marginTop:8,color:"#b45309",fontSize:12,background:"#fffbeb",border:"1px solid #fde68a",borderRadius:6,padding:"6px 10px" }}>No designers found. Add a user with role "designing team" first.</div>}
             </div>
-
-            <div
-              style={{
-                fontSize: 12,
-                color: "#6b7280",
-                background: "#fefce8",
-                padding: "8px 10px",
-                borderRadius: 6,
-                border: "1px solid #fef08a",
-              }}
-            >
-              The job will be approved and assigned to the selected designer
-              with stage set to <strong>Design</strong>.
+            <div style={{ fontSize:12,color:"#6b7280",background:"#fefce8",padding:"8px 10px",borderRadius:6,border:"1px solid #fef08a" }}>
+              Job will be approved and assigned to the selected designer, moving to <strong>Design</strong> stage.
             </div>
           </div>
         )}
       </Modal>
 
       <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50%       { opacity: 0.4; }
-        } 
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+        .site-visit-row > td { background: linear-gradient(90deg,#f5f3ff55,transparent) !important; }
+        .site-visit-row:hover > td { background: linear-gradient(90deg,#ede9fe88,#f0f0ff44) !important; }
+        .site-visit-row > td:first-child { border-left: 3px solid #a78bfa !important; }
       `}</style>
     </div>
   );
