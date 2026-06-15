@@ -678,6 +678,8 @@ const JobLookup = ({ onJobSelected }) => {
     try {
       const res = await api(`/jobs?job_status=production&limit=100`);
       const list = res.data?.jobs || res.data || [];
+      console.log(list.map((j) => j.job_status),"test");
+      
       setJobs(Array.isArray(list) ? list : []);
     } catch (err) { show(err.message, "error"); }
     finally { setLoading(false); }
