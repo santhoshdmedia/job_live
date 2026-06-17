@@ -146,6 +146,43 @@ const getFileTypeMeta = (file) =>
 const isFileSupported = (file) => !!getFileTypeMeta(file);
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Design file normalizer
+// Two shapes exist in the data:
+//   1. `design_file` (singular, legacy) — a plain URL string, e.g. "https://...jpg"
+//   2. `design_files` (array, current)  — metadata objects:
+//      { _id, url, file_name, file_type, label, caption, uploaded_by, uploaded_at }
+// Any component that renders "a design file" should normalize through this
+// first so it never has to branch on typeof file again.
+// ─────────────────────────────────────────────────────────────────────────────
+const normalizeDesignFile = (file) => {
+  if (!file) return null;
+  if (typeof file === "string") {
+    return {
+      url: file,
+      file_name: file.split("/").pop() || file,
+      file_type: file.split(".").pop() || "",
+      label: "Other",
+      caption: "",
+      uploaded_by: null,
+      uploaded_at: null,
+      _id: null,
+      isLegacySingleFile: true,
+    };
+  }
+  return {
+    url: file.url,
+    file_name: file.file_name || file.url?.split("/").pop() || "Untitled",
+    file_type: file.file_type || file.url?.split(".").pop() || "",
+    label: file.label || "Other",
+    caption: file.caption || "",
+    uploaded_by: file.uploaded_by || null,
+    uploaded_at: file.uploaded_at || null,
+    _id: file._id || null,
+    isLegacySingleFile: false,
+  };
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Image compression
 // ─────────────────────────────────────────────────────────────────────────────
 const MAX_COMPRESSED_BYTES = 500 * 1024;
@@ -701,15 +738,18 @@ const QueuedFileItem = ({ item, onRemove, onLabelChange }) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Existing (saved) design file row
+// Accepts either a legacy plain URL string (from `design_file`) or a
+// metadata object (from `design_files`) — normalized once at the top so
+// nothing below has to branch on the shape.
 // ─────────────────────────────────────────────────────────────────────────────
 const ExistingDesignFileItem = ({ file, onRemove }) => {
-  const ftLabel = (
-    file.file_type ||
-    file.url?.split(".").pop() ||
-    ""
-  ).toUpperCase();
+  const f = normalizeDesignFile(file);
+  if (!f) return null;
+
+  const ftLabel = (f.file_type || "unknown").toUpperCase();
   const isImage = ["JPG", "JPEG", "PNG", "WEBP"].includes(ftLabel);
   const isPdf = ftLabel === "PDF";
+
   return (
     <div
       style={{
@@ -739,7 +779,7 @@ const ExistingDesignFileItem = ({ file, onRemove }) => {
       >
         {isImage ? (
           <img
-            src={file.url}
+            src={f.url}
             alt=""
             style={{ width: "100%", height: "100%", objectFit: "cover" }}
           />
@@ -759,7 +799,7 @@ const ExistingDesignFileItem = ({ file, onRemove }) => {
             flexWrap: "wrap",
           }}
         >
-          <LabelBadge label={file.label || "Other"} />
+          <LabelBadge label={f.label} />
           {ftLabel && <FileTypeBadge label={ftLabel} />}
         </div>
         <div
@@ -771,19 +811,19 @@ const ExistingDesignFileItem = ({ file, onRemove }) => {
             whiteSpace: "nowrap",
           }}
         >
-          {file.file_name || file.url?.split("/").pop()}
+          {f.file_name}
         </div>
-        {file.caption && (
+        {f.caption && (
           <div style={{ fontSize: 10, color: "#6b7280", marginTop: 2 }}>
-            {file.caption}
+            {f.caption}
           </div>
         )}
-        {file.uploaded_by?.name && (
+        {f.uploaded_by?.name && (
           <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 1 }}>
             <UserOutlined style={{ marginRight: 3 }} />
-            {file.uploaded_by.name}
-            {file.uploaded_at && (
-              <span> · {dayjs(file.uploaded_at).format("DD MMM HH:mm")}</span>
+            {f.uploaded_by.name}
+            {f.uploaded_at && (
+              <span> · {dayjs(f.uploaded_at).format("DD MMM HH:mm")}</span>
             )}
           </div>
         )}
@@ -794,7 +834,7 @@ const ExistingDesignFileItem = ({ file, onRemove }) => {
             size="small"
             type="text"
             icon={<EyeOutlined />}
-            onClick={() => window.open(file.url, "_blank")}
+            onClick={() => window.open(f.url, "_blank")}
             style={{ color: "#7c3aed", padding: "0 4px" }}
           />
         </Tooltip>
@@ -1152,6 +1192,7 @@ const ItemDesignPanel = ({
   onRejectReasonChange,
 }) => {
   const existingFiles = item.design_files || [];
+  const singleDesignFile = item.design_file;
   const designers = item.designers || [];
   const hasExisting = existingFiles.length > 0;
   const pendingCount = queuedFiles.filter(
@@ -1217,6 +1258,28 @@ const ItemDesignPanel = ({
             Assigned Designers ({designers.length})
           </div>
           <DesignersStrip designers={designers} />
+        </div>
+      )}
+
+      {singleDesignFile && (
+        <div style={{ marginBottom: 10 }}>
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              color: "#6b7280",
+              textTransform: "uppercase",
+              letterSpacing: "0.06em",
+              marginBottom: 4,
+            }}
+          >
+            <FileImageOutlined style={{ marginRight: 4 }} />
+            Single Design File
+          </div>
+          <ExistingDesignFileItem
+            file={singleDesignFile}
+            onRemove={(file) => onRemoveExistingFile(item.item_id, file)}
+          />
         </div>
       )}
 
@@ -1978,10 +2041,28 @@ const DesignerJobDashboard = () => {
   };
 
   // ── Per-item: remove existing file ────────────────────────────────────────
+  // `file` may be a metadata object (from `design_files`, has `_id`) or a
+  // legacy plain URL string (from the singular `design_file` field, no _id).
+  // Only the array-backed shape can be deleted through the design-files
+  // endpoint, since it deletes by sub-document _id.
   const handleRemoveExistingItemFile = async (itemId, file) => {
+    const fileId = typeof file === "string" ? null : file?._id;
+
+    if (!fileId) {
+      // Legacy single design_file has nothing to key the delete on.
+      // Wire this to whatever endpoint clears that field on the item
+      // (e.g. PATCH .../items/:itemId with { design_file: "" }) once it
+      // exists on the backend — left as a guard rather than a guess so it
+      // fails loudly instead of hitting a bogus URL.
+      message.warning(
+        "This file was uploaded via the legacy single design file field and can't be removed from here yet.",
+      );
+      return;
+    }
+
     try {
       const res = await fetch(
-        `${BASE}/${designJob._id}/items/${itemId}/design-files/${file._id}`,
+        `${BASE}/${designJob._id}/items/${itemId}/design-files/${fileId}`,
         { method: "DELETE", headers: jsonHeader() },
       );
       const data = await res.json();
