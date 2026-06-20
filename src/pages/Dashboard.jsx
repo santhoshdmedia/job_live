@@ -6,7 +6,7 @@ import {
   FiWifi, FiWifiOff, FiChevronDown, FiChevronUp, FiSearch,
   FiEye, FiX, FiPackage, FiTruck, FiShield, FiPhone,
   FiMapPin, FiClock, FiDollarSign, FiFileText, FiImage,
-  FiSlash, FiActivity,
+  FiSlash, FiActivity, FiGlobe, FiMap,
 } from "react-icons/fi";
 import { Spin, Empty, notification } from "antd";
 import { useSelector } from "react-redux";
@@ -64,6 +64,9 @@ const fetchDashboardData = async ({ baseURL, token, userId, user, isSuperAdmin }
 // Status & Stage Configs
 // ═══════════════════════════════════════════════════════════════════
 
+// Terminal statuses – jobs that are considered “closed”
+const TERMINAL_STATUSES = new Set(["completed", "delivery", "rejected", "converted"]);
+
 const STATUS_CONFIG = {
   draft:         { label: "Draft",         color: "#5F5E5A", bg: "#F1EFE8", icon: <FiEdit3       size={11} /> },
   accepted:      { label: "Accepted",      color: "#185FA5", bg: "#E6F1FB", icon: <FiCheckCircle size={11} /> },
@@ -79,6 +82,10 @@ const STATUS_CONFIG = {
   expired:       { label: "Expired",       color: "#993C1D", bg: "#FAECE7", icon: <FiAlertCircle size={11} /> },
   overdue:       { label: "Overdue",       color: "#9B1C1C", bg: "#FEE2E2", icon: <FiSlash       size={11} /> },
   delayed:       { label: "Delayed",       color: "#92400E", bg: "#FEF3C7", icon: <FiAlertTriangle size={11} /> },
+  // New statuses
+  outsource:     { label: "Outsource",     color: "#D97706", bg: "#FEF3C7", icon: <FiGlobe       size={11} /> },
+  pickup:        { label: "Pickup",        color: "#0D9488", bg: "#ECFDF5", icon: <FiTruck       size={11} /> },
+  sitevisit:     { label: "Site Visit",    color: "#8B5CF6", bg: "#EDE9FE", icon: <FiMap         size={11} /> },
 };
 
 const getStatusCfg = (status) =>
@@ -108,22 +115,17 @@ const daysLeft = (validUntil) => {
   return { diff, label: diff <= 0 ? "Expired" : `${diff}d left` };
 };
 
-// A job is "overdue" when estimated_delivery_date is in the past and not completed/rejected/delivered
-const TERMINAL_STATUSES = new Set(["completed", "rejected", "converted", "delivery"]);
-
+// Overdue: terminal status AND balance > 0
 const isJobOverdue = (job) => {
-  if (!job.estimated_delivery_date) return false;
-  if (TERMINAL_STATUSES.has(job.job_status)) return false;
-  return new Date(job.estimated_delivery_date) < new Date();
+  if (!TERMINAL_STATUSES.has(job.job_status)) return false;
+  return (job.balance_amount || 0) > 0;
 };
 
-// A job is "delayed" when it's been in the same stage for more than 2 days (48 hrs)
-const DELAYED_HOURS = 48;
+// Delayed: estimated_delivery_date in the past AND NOT terminal
 const isJobDelayed = (job) => {
   if (TERMINAL_STATUSES.has(job.job_status)) return false;
-  if (!job.current_stage?.since) return false;
-  const hoursInStage = (Date.now() - new Date(job.current_stage.since)) / 3_600_000;
-  return hoursInStage > DELAYED_HOURS;
+  if (!job.estimated_delivery_date) return false;
+  return new Date(job.estimated_delivery_date) < new Date();
 };
 
 const fmt = (dateStr) =>
@@ -272,8 +274,8 @@ const ViewModal = ({ job, onClose }) => {
             <FiAlertTriangle size={14} color={overdue ? "#9B1C1C" : "#92400E"} />
             <span style={{ fontSize: 12, fontWeight: 600, color: overdue ? "#9B1C1C" : "#92400E" }}>
               {overdue
-                ? `Overdue — delivery was due ${fmt(job.estimated_delivery_date)}`
-                : `Delayed — ${stageTime} (over ${DELAYED_HOURS}h threshold)`}
+                ? `Overdue — ₹${Number(job.balance_amount).toLocaleString("en-IN")} balance pending`
+                : `Delayed — estimated delivery ${fmt(job.estimated_delivery_date)} has passed`}
             </span>
           </div>
         )}
@@ -327,7 +329,7 @@ const ViewModal = ({ job, onClose }) => {
                   {job.current_stage.since && (
                     <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--color-text-tertiary)", display: "flex", alignItems: "center", gap: 4 }}>
                       <FiClock size={10} /> Since {fmtDateTime(job.current_stage.since)}
-                      {stageTime && <span style={{ color: delayed ? "#92400E" : "var(--color-text-tertiary)", fontWeight: delayed ? 700 : 400 }}> · {stageTime}</span>}
+                      {stageTime && <span style={{ color: "var(--color-text-tertiary)" }}> · {stageTime}</span>}
                     </p>
                   )}
                 </div>
@@ -512,8 +514,8 @@ const ViewModal = ({ job, onClose }) => {
               <Field label="Order Date"    value={fmtDateTime(job.order_date)} />
               <Field label="Created At"   value={fmtDateTime(job.createdAt)} />
               <Field label="Est. Delivery" value={
-                <span style={{ color: isJobOverdue(job) ? "#9B1C1C" : "var(--color-text-primary)", fontWeight: isJobOverdue(job) ? 700 : 500 }}>
-                  {fmt(job.estimated_delivery_date)}{isJobOverdue(job) ? " ⚠ Overdue" : ""}
+                <span style={{ color: isJobDelayed(job) ? "#92400E" : "var(--color-text-primary)", fontWeight: isJobDelayed(job) ? 700 : 500 }}>
+                  {fmt(job.estimated_delivery_date)}{isJobDelayed(job) ? " ⚠ Delayed" : ""}
                 </span>
               } />
               <Field label="Valid Until" value={
@@ -590,7 +592,7 @@ const JobRow = ({ job, onView }) => {
             <div>
               <StatusBadge status={stage.stage} />
               {stageTime && (
-                <p style={{ margin: "2px 0 0", fontSize: 9, color: delayed ? "#92400E" : "var(--color-text-tertiary)", fontWeight: delayed ? 700 : 400 }}>
+                <p style={{ margin: "2px 0 0", fontSize: 9, color: "var(--color-text-tertiary)" }}>
                   {stageTime}
                 </p>
               )}
@@ -702,14 +704,14 @@ const JobCard = ({ job, onView }) => {
       </div>
 
       {stageTime && (
-        <p style={{ margin: "4px 0 0", fontSize: 10, color: delayed ? "#92400E" : "var(--color-text-tertiary)", fontWeight: delayed ? 700 : 400 }}>
+        <p style={{ margin: "4px 0 0", fontSize: 10, color: "var(--color-text-tertiary)" }}>
           ⏱ {stageTime}
         </p>
       )}
 
-      {overdue && (
-        <p style={{ margin: "4px 0 0", fontSize: 10, color: "#9B1C1C", fontWeight: 600 }}>
-          ⚠ Delivery was due {fmt(job.estimated_delivery_date)}
+      {delayed && (
+        <p style={{ margin: "4px 0 0", fontSize: 10, color: "#92400E", fontWeight: 600 }}>
+          ⚠ Estimated delivery {fmt(job.estimated_delivery_date)} has passed
         </p>
       )}
 
@@ -885,13 +887,20 @@ export default function Dashboard() {
   const completedJobs  = pool.filter(j => j.job_status === "completed");
   const inProgressJobs = pool.filter(j => j.job_status === "in_progress");
   const onHoldJobs     = pool.filter(j => j.job_status === "on_hold");
+  // New statuses
+  const outsourceJobs  = pool.filter(j => j.job_status === "outsource");
+  const pickupJobs     = pool.filter(j => j.job_status === "pickup");
+  const sitevisitJobs  = pool.filter(j => j.job_status === "sitevisit");
+
+  // Overdue and delayed based on new definitions
   const overdueJobs    = pool.filter(isJobOverdue);
-  const delayedJobs    = pool.filter(j => !isJobOverdue(j) && isJobDelayed(j)); // delayed but not overdue
+  const delayedJobs    = pool.filter(isJobDelayed);
 
   const expiryIds = new Set(expiryToday.map(j => j._id));
   const myExpiryToday = expiryToday.filter(j => pool.some(pj => pj._id === j._id));
 
-  // Stats row 1: main pipeline
+  // ── Stats rows ──────────────────────────────────────────────────
+  // Pipeline: main statuses
   const STATS_PIPELINE = [
     { key: "all",           accent: "#378ADD", icon: <FiBriefcase   size={17} />, label: isSuperAdmin ? "Total Jobs" : "My Jobs",  value: pool.length },
     { key: "today",         accent: "#534AB7", icon: <FiCalendar    size={17} />, label: "Created Today",  value: todayCreated.length    },
@@ -901,14 +910,14 @@ export default function Dashboard() {
     { key: "completed",     accent: "#047857", icon: <FiCheckCircle size={17} />, label: "Completed",      value: completedJobs.length   },
   ];
 
-  // Stats row 2: alerts
+  // Alerts: overdue, delayed, expiry, on_hold
   const STATS_ALERTS = [
     {
       key: "overdue",
       accent: "#9B1C1C",
       icon: <FiSlash size={17} />,
       label: "Overdue",
-      sublabel: overdueJobs.length > 0 ? "Past delivery date" : null,
+      sublabel: overdueJobs.length > 0 ? "Payment pending for closed jobs" : null,
       value: overdueJobs.length,
     },
     {
@@ -916,7 +925,7 @@ export default function Dashboard() {
       accent: "#92400E",
       icon: <FiAlertTriangle size={17} />,
       label: "Delayed",
-      sublabel: delayedJobs.length > 0 ? `In stage >48h` : null,
+      sublabel: delayedJobs.length > 0 ? "Est. delivery date passed" : null,
       value: delayedJobs.length,
     },
     {
@@ -937,6 +946,13 @@ export default function Dashboard() {
     },
   ];
 
+  // New statuses: outsource, pickup, sitevisit
+  const STATS_EXTRA = [
+    { key: "outsource", accent: "#D97706", icon: <FiGlobe size={17} />, label: "Outsource", value: outsourceJobs.length },
+    { key: "pickup",    accent: "#0D9488", icon: <FiTruck size={17} />, label: "Pickup",    value: pickupJobs.length },
+    { key: "sitevisit", accent: "#8B5CF6", icon: <FiMap   size={17} />, label: "Site Visit", value: sitevisitJobs.length },
+  ];
+
   // ── Filter → search → sort ──────────────────────────────────────
   let displayJobs = (() => {
     switch (filter) {
@@ -951,6 +967,9 @@ export default function Dashboard() {
       case "on_hold":       return onHoldJobs;
       case "overdue":       return overdueJobs;
       case "delayed":       return delayedJobs;
+      case "outsource":     return outsourceJobs;
+      case "pickup":        return pickupJobs;
+      case "sitevisit":     return sitevisitJobs;
       default:              return pool;
     }
   })();
@@ -981,6 +1000,9 @@ export default function Dashboard() {
       overdue:       "Overdue Jobs",
       delayed:       "Delayed Jobs",
       on_hold:       "On Hold",
+      outsource:     "Outsource",
+      pickup:        "Pickup",
+      sitevisit:     "Site Visit",
     };
     return map[filter] || getStatusCfg(filter).label;
   })();
@@ -1041,7 +1063,7 @@ export default function Dashboard() {
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <FiSlash size={14} color="#9B1C1C" />
               <span style={{ fontSize: 13, color: "#7F1D1D", fontWeight: 600 }}>
-                {overdueJobs.length} overdue job{overdueJobs.length > 1 ? "s" : ""} —
+                {overdueJobs.length} overdue job{overdueJobs.length > 1 ? "s" : ""} (closed with pending payment) —
               </span>
               <span style={{ fontSize: 12, color: "#9B1C1C" }}>
                 {overdueJobs.slice(0, 4).map(j => j.job_no).join(", ")}{overdueJobs.length > 4 ? ` +${overdueJobs.length - 4} more` : ""}
@@ -1055,7 +1077,7 @@ export default function Dashboard() {
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <FiAlertTriangle size={14} color="#92400E" />
               <span style={{ fontSize: 13, color: "#78350F", fontWeight: 600 }}>
-                {delayedJobs.length} delayed job{delayedJobs.length > 1 ? "s" : ""} (stuck &gt;48h) —
+                {delayedJobs.length} delayed job{delayedJobs.length > 1 ? "s" : ""} (estimated delivery passed) —
               </span>
               <span style={{ fontSize: 12, color: "#92400E" }}>
                 {delayedJobs.slice(0, 4).map(j => j.job_no).join(", ")}{delayedJobs.length > 4 ? ` +${delayedJobs.length - 4} more` : ""}
@@ -1112,7 +1134,7 @@ export default function Dashboard() {
       <div style={{
         display: "grid",
         gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)",
-        gap: isMobile ? 8 : 10, marginBottom: 22,
+        gap: isMobile ? 8 : 10, marginBottom: 14,
       }}>
         {STATS_ALERTS.map(s => (
           <StatCard
@@ -1120,6 +1142,29 @@ export default function Dashboard() {
             icon={s.icon}
             label={s.label}
             sublabel={s.sublabel}
+            value={s.value}
+            accent={s.accent}
+            active={filter === s.key}
+            skeleton={loading && !data}
+            onClick={() => setFilter(prev => prev === s.key ? "all" : s.key)}
+          />
+        ))}
+      </div>
+
+      {/* ── Additional Statuses (outsource, pickup, sitevisit) ── */}
+      <p style={{ margin: "0 0 8px", fontSize: 10, fontWeight: 700, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+        Additional Statuses
+      </p>
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)",
+        gap: isMobile ? 8 : 10, marginBottom: 22,
+      }}>
+        {STATS_EXTRA.map(s => (
+          <StatCard
+            key={s.key}
+            icon={s.icon}
+            label={s.label}
             value={s.value}
             accent={s.accent}
             active={filter === s.key}

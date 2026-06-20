@@ -85,58 +85,14 @@ const PaymentDueBadge = ({ next_due_date, balance_amount }) => {
 };
 
 // ─── Next Due Date Helpers ────────────────────────────────────────────────────
+// `totalAmount` here means "the balance the suggestion should be based on" —
+// callers pass either (grandTotal, paidSoFar) or (remainingBalance, 0).
 const getDefaultNextDueDate = (paymentMode, paidAmount, totalAmount) => {
   const balance = totalAmount - paidAmount;
   if (balance <= 0) return null;
   const modeDefaults = { "Cash":0, "Cash on Delivery":0, "UPI":0, "Card":0, "Bank Transfer":7, "Cheque":14 };
   const days = modeDefaults[paymentMode] ?? 30;
   return days === 0 ? null : dayjs().add(days, "day");
-};
-
-const NextDueDatePreview = ({ paymentMode, paidAmount, totalAmount, nextDueDate }) => {
-  const balance = (totalAmount || 0) - (parseFloat(paidAmount) || 0);
-  if (balance <= 0) return (
-    <div style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 14px", background:"#f0fdf4", border:"1px solid #86efac", borderRadius:10, marginTop:8 }}>
-      <CheckOutlined style={{ color:"#16a34a", fontSize:16 }} />
-      <div>
-        <div style={{ fontWeight:700, color:"#15803d", fontSize:13 }}>Fully Paid</div>
-        <div style={{ fontSize:11, color:"#4ade80" }}>No outstanding balance.</div>
-      </div>
-    </div>
-  );
-  const suggested = getDefaultNextDueDate(paymentMode, parseFloat(paidAmount)||0, totalAmount||0);
-  const displayDate = nextDueDate || suggested;
-  let urgencyColor="#1e40af", urgencyBg="#eff6ff", urgencyBorder="#93c5fd", urgencyMsg="";
-  if (displayDate) {
-    const diff = dayjs(displayDate).startOf("day").diff(dayjs().startOf("day"), "day");
-    if (diff < 0) { urgencyColor="#991b1b"; urgencyBg="#fee2e2"; urgencyBorder="#fca5a5"; urgencyMsg=`Payment is already overdue by ${Math.abs(diff)} day${Math.abs(diff)>1?"s":""}!`; }
-    else if (diff === 0) { urgencyColor="#92400e"; urgencyBg="#fef3c7"; urgencyBorder="#fcd34d"; urgencyMsg="Payment is due today."; }
-    else if (diff <= 3) { urgencyColor="#c2410c"; urgencyBg="#fff7ed"; urgencyBorder="#fdba74"; urgencyMsg=`Payment is due very soon — in ${diff} day${diff>1?"s":""}.`; }
-    else { urgencyMsg=`Customer has ${diff} days to pay the balance.`; }
-  }
-  return (
-    <div style={{ marginTop:8, padding:"12px 14px", background:urgencyBg, border:`1px solid ${urgencyBorder}`, borderRadius:10 }}>
-      <div style={{ display:"flex", alignItems:"flex-start", gap:10 }}>
-        <CalendarOutlined style={{ color:urgencyColor, fontSize:18, marginTop:2, flexShrink:0 }} />
-        <div style={{ flex:1 }}>
-          <div style={{ fontWeight:700, color:urgencyColor, fontSize:13, marginBottom:4 }}>Balance Due: ₹{balance.toFixed(2)}</div>
-          {displayDate ? (
-            <>
-              <div style={{ fontSize:12, color:urgencyColor, marginBottom:4 }}>Next payment due: <strong>{dayjs(displayDate).format("dddd, DD MMM YYYY")}</strong></div>
-              <div style={{ fontSize:11, color:urgencyColor, opacity:0.85 }}>{urgencyMsg}</div>
-            </>
-          ) : (
-            <div style={{ fontSize:12, color:urgencyColor }}>Set a due date below so the customer knows when to pay.</div>
-          )}
-          {suggested && !nextDueDate && (
-            <div style={{ marginTop:6, fontSize:11, color:urgencyColor, opacity:0.75, fontStyle:"italic" }}>
-              Suggested for "{paymentMode}": {dayjs(suggested).format("DD MMM YYYY")}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
 };
 
 // ─── Site Visit Badge ─────────────────────────────────────────────────────────
@@ -210,13 +166,16 @@ const EMPTY_LABOUR_ITEM = {
   sq_ft:0, hours:0, price_per_sqft:0, price_per_hour:0, gst_percentage:0, notes:"",
 };
 
+// NOTE: payment_mode / payment_amount / next_due_date are intentionally NOT
+// part of this form anymore. Payments are recorded separately via the
+// "Collect Payment" flow (see CollectPaymentModal) so editing job items never
+// silently overwrites payment history.
 const DEFAULT_EDIT_FORM = {
   customer_name:"", customer_phone:"", company_name:"",
   estimated_delivery_date:"",
   address_line1:"", address_line2:"", city:"", state:"", pincode:"", country:"India",
   gst_no:"", delivery_charges:0, free_delivery:false,
   design_charges:0, discount_amount:0,
-  payment_mode:"", payment_amount:"", next_due_date:null,
   notes:"",
   terms_and_conditions:"Payment due within 30 days.\nPrices subject to change without notice.\nDelivery: 7-10 business days after confirmation.",
 };
@@ -284,12 +243,13 @@ const extractTotal   = (d, fb) => typeof d?.data?.pagination?.total==="number"?d
 const AUTO_REFRESH_INTERVAL = 5*60*1000;
 
 // ─── Shared UI ────────────────────────────────────────────────────────────────
-const SectionHeader = ({ icon, title, badge }) => (
+const SectionHeader = ({ icon, title, badge, action }) => (
   <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:10 }}>
     <span style={{ color:"#2563eb", fontSize:14 }}>{icon}</span>
     <span style={{ fontSize:11, fontWeight:700, color:"#374151", textTransform:"uppercase", letterSpacing:"0.06em" }}>{title}</span>
     {badge}
     <div style={{ flex:1, height:1, background:"#e5e7eb", marginLeft:6 }} />
+    {action}
   </div>
 );
 
@@ -338,13 +298,16 @@ const SiteVisitPhotosPanel = ({ photos }) => {
   );
 };
 
-// ─── Payment Info Panel ───────────────────────────────────────────────────────
-const PaymentInfoPanel = ({ job }) => {
-  const paid = parseFloat(job.payment_amount||0);
+// ─── Payment Info Panel (now history-aware) ───────────────────────────────────
+const PaymentInfoPanel = ({ job, onCollectPayment }) => {
+  const paid    = parseFloat(job.payment_amount||0);
   const balance = parseFloat(job.balance_amount||0);
   const nextDue = job.next_due_date;
   const hasDue  = nextDue && balance>0;
-  if (!job.payment_mode && paid<=0) return null;
+  const history = job.payments||[];
+
+  if (!history.length && paid<=0 && balance<=0) return null;
+
   let dueColor="#1e40af", dueBg="#eff6ff", dueBorder="#93c5fd", dueMsg="";
   if (hasDue) {
     const diff = dayjs(nextDue).startOf("day").diff(dayjs().startOf("day"), "day");
@@ -353,12 +316,20 @@ const PaymentInfoPanel = ({ job }) => {
     else if (diff<=3)  { dueColor="#c2410c"; dueBg="#fff7ed"; dueBorder="#fdba74"; dueMsg=`Due in ${diff} day${diff>1?"s":""}`; }
     else { dueMsg=`Due in ${diff} days`; }
   }
+
   return (
     <div style={{ background:"#f0fdf4", borderRadius:10, padding:"12px 14px", border:"1px solid #bbf7d0" }}>
-      <SectionHeader icon={<WalletOutlined />} title="Payment" />
+      <SectionHeader
+        icon={<WalletOutlined />}
+        title="Payment"
+        action={balance>0 && onCollectPayment && (
+          <Button size="small" type="primary" icon={<WalletOutlined />} onClick={onCollectPayment} style={{ background:"#16a34a", borderColor:"#16a34a", marginLeft:8 }}>
+            Collect Payment
+          </Button>
+        )}
+      />
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:hasDue?12:0 }}>
-        <InfoRow label="Payment Mode" value={job.payment_mode||"—"} />
-        <InfoRow label="Amount Paid" value={paid>0?`₹${paid.toFixed(2)}`:"Unpaid"} valueStyle={{ color:paid>0?"#16a34a":"#dc2626" }} />
+        <InfoRow label="Total Paid" value={paid>0?`₹${paid.toFixed(2)}`:"Unpaid"} valueStyle={{ color:paid>0?"#16a34a":"#dc2626" }} />
         {balance>0 && <InfoRow label="Balance Due" value={`₹${balance.toFixed(2)}`} valueStyle={{ color:"#dc2626", fontWeight:800 }} />}
         {hasDue && <InfoRow label="Next Due Date" value={dayjs(nextDue).format("DD MMM YYYY")} valueStyle={{ color:dueColor, fontWeight:700 }} />}
       </div>
@@ -377,31 +348,116 @@ const PaymentInfoPanel = ({ job }) => {
           <span style={{ fontWeight:700, color:"#065f46", fontSize:13 }}>Fully paid — no outstanding balance</span>
         </div>
       )}
+
+      {history.length>0 && (
+        <div style={{ marginTop:12 }}>
+          <div style={{ fontSize:10, fontWeight:700, color:"#6b7280", textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:6 }}>
+            Payment History ({history.length})
+          </div>
+          <div style={{ display:"flex", flexDirection:"column", gap:6, maxHeight:220, overflowY:"auto" }}>
+            {[...history].reverse().map((p,i)=>(
+              <div key={p._id||i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:8, fontSize:12, background:"#fff", border:"1px solid #e5e7eb", borderRadius:6, padding:"6px 10px" }}>
+                <div>
+                  <div style={{ fontWeight:700, color:"#1a1a2e" }}>
+                    ₹{parseFloat(p.amount||0).toFixed(2)}
+                    {p.method && <span style={{ fontWeight:400, color:"#6b7280" }}> · {p.method}</span>}
+                  </div>
+                  <div style={{ fontSize:10, color:"#9ca3af" }}>
+                    {p.paid_at?dayjs(p.paid_at).format("DD MMM YYYY, HH:mm"):""}{p.notes?` · ${p.notes}`:""}
+                  </div>
+                </div>
+                <div style={{ fontSize:11, color:"#6b7280", whiteSpace:"nowrap" }}>Bal after: ₹{parseFloat(p.balance_after??0).toFixed(2)}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
-// ─── DesignFileUpload (inline, no external helper needed) ─────────────────────
+// ─── Image compression helper (canvas-based, no extra deps) ───────────────────
+const compressImage = (file, { maxDimension = 1600, quality = 0.8 } = {}) =>
+  new Promise((resolve) => {
+    if (!file.type?.startsWith("image/")) { resolve(file); return; }
+    if (file.type === "image/svg+xml") { resolve(file); return; }
+
+    const img = new window.Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxDimension || height > maxDimension) {
+        const scale = maxDimension / Math.max(width, height);
+        width  = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, width, height);
+      URL.revokeObjectURL(objectUrl);
+
+      canvas.toBlob(
+        (blob) => {
+          if (!blob || blob.size >= file.size) { resolve(file); return; }
+          const compressedFile = new File(
+            [blob],
+            file.name.replace(/\.(png|webp)$/i, ".jpg"),
+            { type: "image/jpeg" }
+          );
+          resolve(compressedFile);
+        },
+        "image/jpeg",
+        quality
+      );
+    };
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); resolve(file); };
+    img.src = objectUrl;
+  });
+
+// ─── Upload to S3 via backend ──────────────────────────────────────────────────
+const uploadDesignFile = async (file) => {
+  const compressed = await compressImage(file);
+  const formData = new FormData();
+  formData.append("image", compressed);
+
+  const res = await fetch("https://api.dmedia.in/api/upload_images", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${localStorage.getItem("authToken")}` },
+    body: formData,
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) throw new Error(data.message || "Upload failed");
+  return data.data.url;
+};
+
+// ─── DesignFileUpload (uploads to S3, stores URL not base64) ──────────────────
 const DesignFileUpload = ({ value, onChange }) => {
   const fileRef   = useRef(null);
   const cameraRef = useRef(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy]   = useState(false);
+  const [error, setError] = useState("");
 
   const handleFile = async (file) => {
     if (!file) return;
     setBusy(true);
+    setError("");
     try {
-      const reader = new FileReader();
-      reader.onload = (e) => { onChange(e.target.result); setBusy(false); };
-      reader.onerror = () => setBusy(false);
-      reader.readAsDataURL(file);
-    } catch { setBusy(false); }
+      const url = await uploadDesignFile(file);
+      onChange(url);
+    } catch (err) {
+      setError(err.message || "Upload failed. Please try again.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
     <div>
-      <input ref={fileRef}   type="file" accept="image/*,application/pdf" style={{ display:"none" }} onChange={e=>handleFile(e.target.files?.[0])} />
-      <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{ display:"none" }} onChange={e=>handleFile(e.target.files?.[0])} />
+      <input ref={fileRef}   type="file" accept="image/*,application/pdf" style={{ display:"none" }} onChange={e=>{ handleFile(e.target.files?.[0]); e.target.value=""; }} />
+      <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{ display:"none" }} onChange={e=>{ handleFile(e.target.files?.[0]); e.target.value=""; }} />
       <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
         <Button size="small" icon={<UploadOutlined />} loading={busy} onClick={()=>fileRef.current?.click()} style={{ borderRadius:6, fontSize:12 }}>
           {value?"Change":"Upload Design"}
@@ -409,6 +465,7 @@ const DesignFileUpload = ({ value, onChange }) => {
         {!busy && <Button size="small" icon={<CameraOutlined />} onClick={()=>cameraRef.current?.click()} style={{ borderRadius:6, fontSize:12 }}>Camera</Button>}
         {value && !busy && <Button size="small" danger type="text" onClick={()=>onChange("")} style={{ fontSize:12 }}>Remove</Button>}
       </div>
+      {error && <div style={{ marginTop:6, fontSize:11, color:"#dc2626" }}>⚠ {error}</div>}
       {value && !busy && (
         <div style={{ marginTop:8, border:"1px solid #e5e7eb", borderRadius:8, background:"#f9fafb", padding:4, display:"flex", justifyContent:"center", maxHeight:120, overflow:"hidden" }}>
           <img src={value} alt="Design Preview" style={{ maxHeight:110, maxWidth:"100%", objectFit:"contain", borderRadius:4 }} onError={e=>{e.currentTarget.style.display="none";}} />
@@ -782,7 +839,6 @@ const JobItemsSection = ({ productItems, officeItems, labourItems, onProductChan
 };
 
 // ─── ViewCartItems ────────────────────────────────────────────────────────────
-// Read-only display of cart items in view modal
 const ViewCartItems = ({ cartItems, isMobile }) => {
   if (!cartItems?.length) return <div style={{ color:"#9ca3af", fontSize:13, padding:"8px 0" }}>No items.</div>;
   return (
@@ -824,7 +880,6 @@ const ViewCartItems = ({ cartItems, isMobile }) => {
             <div style={{ fontSize:12, color:"#6b7280", marginBottom:6 }}>{summary}</div>
             {isProduct && it.size && <div style={{ fontSize:11, color:"#374151" }}>Size: {it.size}</div>}
             {it.notes && <div style={{ marginTop:6, fontSize:12, color:"#6b7280", fontStyle:"italic", background:"#fffbeb", border:"1px solid #fde68a", borderRadius:6, padding:"4px 8px" }}>Note: "{it.notes}"</div>}
-            {/* design files */}
             {(it.design_files||[]).length>0 && (
               <div style={{ marginTop:8 }}>
                 <div style={{ fontSize:10, fontWeight:700, color:"#9ca3af", marginBottom:4, textTransform:"uppercase" }}>Design Files</div>
@@ -889,6 +944,13 @@ const AdminJobManagement = () => {
   const [approving,         setApproving]          = useState(false);
   const [designersLoading,  setDesignersLoading]   = useState(false);
 
+  // Collect Payment modal
+  const [collectPaymentModal, setCollectPaymentModal] = useState(false);
+  const [payingJob,           setPayingJob]           = useState(null);
+  const [paymentForm,         setPaymentForm]         = useState({ amount:"", method:"", notes:"", next_due_date:null });
+  const [collectingPayment,   setCollectingPayment]   = useState(false);
+  const [collectPaymentError, setCollectPaymentError] = useState("");
+
   const autoRefreshRef = useRef(null);
   const countdownRef   = useRef(null);
 
@@ -900,6 +962,7 @@ const AdminJobManagement = () => {
       const data = await res.json();
       const rows = extractJobs(data);
       setJobs(rows);
+
       setTotal(extractTotal(data, rows.length));
       setLastRefreshed(dayjs());
       setCountdown(AUTO_REFRESH_INTERVAL/1000);
@@ -954,6 +1017,57 @@ const AdminJobManagement = () => {
     finally { setApproving(false); }
   };
 
+  // ── Collect Payment ────────────────────────────────────────────────────────
+  const openCollectPaymentModal = (job) => {
+    setPayingJob(job);
+    setCollectPaymentError("");
+    setPaymentForm({ amount:"", method:job.payment_mode||"", notes:"", next_due_date:null });
+    setCollectPaymentModal(true);
+  };
+
+  const closeCollectPaymentModal = () => {
+    if (collectingPayment) return;
+    setCollectPaymentModal(false);
+    setPayingJob(null);
+    setCollectPaymentError("");
+  };
+
+  const handleCollectPayment = async () => {
+    setCollectPaymentError("");
+    const balance = parseFloat(payingJob?.balance_amount||0);
+    const amt = parseFloat(paymentForm.amount);
+
+    if (!amt || amt<=0) { setCollectPaymentError("Enter a valid payment amount."); return; }
+    if (amt > balance + 0.01) { setCollectPaymentError(`Amount cannot exceed the balance due (₹${balance.toFixed(2)}).`); return; }
+
+    setCollectingPayment(true);
+    try {
+      const remaining = parseFloat((balance-amt).toFixed(2));
+      const body = {
+        amount: amt,
+        method: paymentForm.method||"",
+        notes:  paymentForm.notes||"",
+        next_due_date: remaining>0 && paymentForm.next_due_date ? dayjs(paymentForm.next_due_date).toISOString() : null,
+      };
+      const res  = await fetch(`https://api.dmedia.in/api/jobs/${payingJob._id}/collect-payment`, { method:"POST", headers:{"Content-Type":"application/json",Authorization:`Bearer ${localStorage.getItem("authToken")}`}, body:JSON.stringify(body) });
+      const data = await res.json();
+      if (!res.ok||!data.success) throw new Error(data.message||"Failed to record payment");
+
+      SUCCESS_NOTIFICATION({ message:`₹${amt.toFixed(2)} payment recorded for ${payingJob.job_no}` });
+
+      // Keep any open View / Edit modal in sync with the freshly updated job
+      const updatedJob = data.data || null;
+      if (updatedJob) {
+        if (viewJob && viewJob._id===updatedJob._id) setViewJob(updatedJob);
+        if (editJob && editJob._id===updatedJob._id) setEditJob(updatedJob);
+      }
+
+      setCollectPaymentModal(false); setPayingJob(null);
+      loadJobs(true);
+    } catch (err) { setCollectPaymentError(err.message||"Failed to record payment"); }
+    finally { setCollectingPayment(false); }
+  };
+
   // ── Edit modal ─────────────────────────────────────────────────────────────
   const openEditModal = (record) => {
     setEditJob(record); setEditError("");
@@ -979,9 +1093,6 @@ const AdminJobManagement = () => {
       free_delivery:    record.free_delivery??false,
       design_charges:   record.design_charges??0,
       discount_amount:  storedDisc||legacyDisc||0,
-      payment_mode:     record.payment_mode||"",
-      payment_amount:   record.payment_amount||"",
-      next_due_date:    record.next_due_date?dayjs(record.next_due_date):null,
       notes:            record.notes||"",
       terms_and_conditions: record.terms_and_conditions||"Payment due within 30 days.\nPrices subject to change without notice.\nDelivery: 7-10 business days after confirmation.",
     });
@@ -1020,29 +1131,8 @@ const AdminJobManagement = () => {
 
   const handleEditInput = (k, v) => setEditForm(p=>({...p,[k]:v}));
 
-  const handlePaymentModeChange = (v) => {
-    const newMode=v||"";
-    const currentBalance=(editTotals?.grandTotal||0)-(parseFloat(editForm.payment_amount)||0);
-    if (!editForm.next_due_date && currentBalance>0) {
-      const suggested=getDefaultNextDueDate(newMode,parseFloat(editForm.payment_amount)||0,editTotals?.grandTotal||0);
-      setEditForm(p=>({...p,payment_mode:newMode,next_due_date:suggested}));
-    } else {
-      setEditForm(p=>({...p,payment_mode:newMode}));
-    }
-  };
-
-  const handlePaymentAmountChange = (v) => {
-    const paid=v||0, grandTotal=editTotals?.grandTotal||0, balance=grandTotal-paid;
-    if (balance<=0) {
-      setEditForm(p=>({...p,payment_amount:v,next_due_date:null}));
-    } else if (!editForm.next_due_date&&editForm.payment_mode) {
-      const suggested=getDefaultNextDueDate(editForm.payment_mode,paid,grandTotal);
-      setEditForm(p=>({...p,payment_amount:v,next_due_date:suggested}));
-    } else {
-      setEditForm(p=>({...p,payment_amount:v}));
-    }
-  };
-
+  // Item/pricing totals only — payments are tracked & calculated separately
+  // (server-side, from the `payments` history) and are never part of this form.
   const editTotals = useMemo(()=>{
     let subtotal=0, taxAmount=0;
     editProductItems.forEach(it=>{ const r=computeProductLineTotal(it); subtotal+=r.base; taxAmount+=r.gstAmt; });
@@ -1053,10 +1143,15 @@ const AdminJobManagement = () => {
     const designCharges  =parseFloat(editForm.design_charges)||0;
     const deliveryCharges=editForm.free_delivery?0:parseFloat(editForm.delivery_charges)||0;
     const grandTotal     =taxableAmount+taxAmount+designCharges+deliveryCharges;
-    const paid           =parseFloat(editForm.payment_amount)||0;
-    const balance        =grandTotal-paid;
-    return { subtotal, taxAmount, discountAmt, taxableAmount, designCharges, deliveryCharges, grandTotal, paid, balance };
+    return { subtotal, taxAmount, discountAmt, taxableAmount, designCharges, deliveryCharges, grandTotal };
   }, [editProductItems, editOfficeItems, editLabourItems, editForm]);
+
+  // What the balance WILL be after saving, given payments already collected
+  // on the job (editJob.payment_amount) and the (possibly changed) grand total.
+  const projectedBalanceAfterSave = useMemo(() => {
+    const alreadyPaid = parseFloat(editJob?.payment_amount||0);
+    return parseFloat((editTotals.grandTotal - alreadyPaid).toFixed(2));
+  }, [editTotals.grandTotal, editJob]);
 
   const handleEditSubmit = async () => {
     setEditLoading(true); setEditError("");
@@ -1090,6 +1185,10 @@ const AdminJobManagement = () => {
         }),
       ];
 
+      // NOTE: payment_mode / payment_amount / balance_amount / next_due_date are
+      // intentionally NOT sent here. The backend recomputes balance_amount from
+      // the job's `payments` history whenever total_amount changes (see
+      // Job.recomputePayments(), called from the pre-save hook on the model).
       const payload={
         customer_name:           editForm.customer_name.trim(),
         customer_phone:          editForm.customer_phone.trim(),
@@ -1107,10 +1206,6 @@ const AdminJobManagement = () => {
         taxable_amount:      parseFloat(editTotals.taxableAmount.toFixed(2)),
         tax_amount:          parseFloat(editTotals.taxAmount.toFixed(2)),
         total_amount:        parseFloat(editTotals.grandTotal.toFixed(2)),
-        payment_mode:        editForm.payment_mode||"",
-        payment_amount:      parseFloat(editForm.payment_amount)||0,
-        balance_amount:      parseFloat(editTotals.balance.toFixed(2)),
-        next_due_date:       editTotals.balance>0&&editForm.next_due_date?dayjs(editForm.next_due_date).toISOString():null,
         notes:               editForm.notes,
         terms_and_conditions:editForm.terms_and_conditions,
       };
@@ -1220,11 +1315,16 @@ const AdminJobManagement = () => {
       },
     },
     {
-      title:"", width:isMobile?90:150,
+      title:"", width:isMobile?90:190,
       render:(_,record)=>(
         <div style={{ display:"flex",gap:4,flexWrap:"wrap" }}>
           <Tooltip title="View Job"><Button icon={<EyeOutlined />} size="small" style={{ color:"#6b7280",borderColor:"#e5e7eb" }} onClick={()=>{ setViewJob(record); setViewModal(true); }}>{!isMobile&&"View"}</Button></Tooltip>
           <Tooltip title="Edit Job"><Button icon={<EditOutlined />} size="small" style={{ color:"#2563eb",borderColor:"#bfdbfe" }} onClick={()=>openEditModal(record)}>{!isMobile&&"Edit"}</Button></Tooltip>
+          {parseFloat(record.balance_amount||0)>0 && (
+            <Tooltip title="Collect Payment">
+              <Button icon={<WalletOutlined />} size="small" style={{ color:"#d97706",borderColor:"#fde68a" }} onClick={()=>openCollectPaymentModal(record)}>{!isMobile&&"Collect"}</Button>
+            </Tooltip>
+          )}
           {record.job_status==="draft" && <Tooltip title="Approve & Assign"><Button type="primary" icon={<CheckCircleOutlined />} size="small" style={{ background:"#16a34a",borderColor:"#16a34a" }} onClick={()=>openApproveModal(record)}>{!isMobile&&"Approve"}</Button></Tooltip>}
         </div>
       ),
@@ -1264,7 +1364,7 @@ const AdminJobManagement = () => {
 
       {/* Table */}
       <Card bodyStyle={{ padding:"0 0 8px 0" }} style={{ borderRadius:12, border:"1px solid #e5e7eb", boxShadow:"0 1px 4px rgba(0,0,0,0.06)", overflow:"hidden" }}>
-        <CustomTable dataSource={jobs} loading={loading} columns={columns} scroll={{ x:isMobile?360:820 }} rowKey={r=>r._id||r.job_no} size="small"
+        <CustomTable dataSource={jobs} loading={loading} columns={columns} scroll={{ x:isMobile?360:880 }} rowKey={r=>r._id||r.job_no} size="small"
           rowClassName={record=>isSiteVisitJob(record)?"site-visit-row":""}
           pagination={{ current:page, pageSize, total, showSizeChanger:!isMobile, pageSizeOptions:["10","25","50"], showTotal:isMobile?undefined:(t,r)=>`${r[0]}-${r[1]} of ${t}`, onChange:(pg,ps)=>{ setPage(pg); setPageSize(ps); }, style:{ padding:"8px 12px" }, size:isMobile?"small":"default" }} />
       </Card>
@@ -1380,8 +1480,8 @@ const AdminJobManagement = () => {
                 <SummaryRow label="Grand Total"       value={`₹${totals.grandTotal.toFixed(2)}`} bold />
               </div>
 
-              {/* Payment Info */}
-              <PaymentInfoPanel job={viewJob} />
+              {/* Payment Info + Collect Payment + History */}
+              <PaymentInfoPanel job={viewJob} onCollectPayment={()=>openCollectPaymentModal(viewJob)} />
 
               {/* Notes */}
               {viewJob.notes && (
@@ -1502,41 +1602,21 @@ const AdminJobManagement = () => {
             </FormField>
           </div>
 
-          {/* Payment */}
+          {/* Payment — read-only summary, actual collection happens via the
+              dedicated Collect Payment modal so it's never silently
+              overwritten by an item/pricing edit. */}
           <SectionHeader icon={<WalletOutlined />} title="Payment" />
-          <div style={{ display:"grid", gridTemplateColumns:c2, gap:g, marginBottom:10 }}>
-            <FormField label="Payment Mode" hint="Changing mode auto-suggests next due date">
-              <Select placeholder="Select payment mode" value={editForm.payment_mode||undefined} style={{ width:"100%" }} allowClear onChange={handlePaymentModeChange}>
-                {PAYMENT_MODES.map(m=><Option key={m} value={m}>{m}</Option>)}
-              </Select>
-            </FormField>
-            <FormField label="Amount Paid (₹)" hint="Balance calculated automatically">
-              <InputNumber min={0} placeholder="0.00" value={editForm.payment_amount||undefined} style={{ width:"100%", borderRadius:8 }} prefix="₹" onChange={handlePaymentAmountChange} />
-            </FormField>
-          </div>
-
-          <NextDueDatePreview paymentMode={editForm.payment_mode} paidAmount={editForm.payment_amount} totalAmount={editTotals.grandTotal} nextDueDate={editForm.next_due_date} />
-
-          {editTotals.balance>0 && (
-            <div style={{ marginTop:12, marginBottom:14 }}>
-              <FormField label="Next Payment Due Date" hint="When should the customer pay the remaining balance?">
-                <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-                  <DatePicker value={editForm.next_due_date?dayjs(editForm.next_due_date):null} onChange={d=>handleEditInput("next_due_date",d)} format="DD MMM YYYY" style={{ flex:1, borderRadius:8 }} disabledDate={d=>d&&d.isBefore(dayjs().startOf("day"))} placeholder="Pick a due date" />
-                  {editForm.next_due_date && <Button size="small" onClick={()=>handleEditInput("next_due_date",null)} style={{ color:"#6b7280" }}>Clear</Button>}
-                </div>
-                <div style={{ display:"flex", gap:6, marginTop:8, flexWrap:"wrap" }}>
-                  {[["7 days",7],["15 days",15],["30 days",30],["45 days",45]].map(([label,days])=>(
-                    <button key={days} onClick={()=>handleEditInput("next_due_date",dayjs().add(days,"day"))}
-                      style={{ fontSize:11, padding:"3px 10px", borderRadius:20, border:"1px solid #d1d5db", background:"#f9fafb", color:"#374151", cursor:"pointer", fontWeight:600 }}
-                      onMouseEnter={e=>e.target.style.background="#eff6ff"} onMouseLeave={e=>e.target.style.background="#f9fafb"}>
-                      +{label}
-                    </button>
-                  ))}
-                </div>
-              </FormField>
+          <div style={{ background:"#f9fafb", border:"1px solid #e5e7eb", borderRadius:10, padding:"12px 14px", marginBottom:6, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:12 }}>
+            <div style={{ display:"flex", gap:24, flexWrap:"wrap" }}>
+              <InfoRow label="Paid So Far" value={`₹${parseFloat(editJob?.payment_amount||0).toFixed(2)}`} valueStyle={{ color:"#16a34a" }} />
+              <InfoRow label="Current Balance" value={`₹${parseFloat(editJob?.balance_amount||0).toFixed(2)}`} valueStyle={{ color:parseFloat(editJob?.balance_amount||0)>0?"#dc2626":"#16a34a" }} />
+              {editJob?.next_due_date && parseFloat(editJob?.balance_amount||0)>0 && <InfoRow label="Next Due" value={dayjs(editJob.next_due_date).format("DD MMM YYYY")} />}
             </div>
-          )}
-          {editTotals.balance<=0 && <div style={{ marginBottom:14 }} />}
+            <Button icon={<WalletOutlined />} onClick={()=>openCollectPaymentModal(editJob)} disabled={!(parseFloat(editJob?.balance_amount||0)>0)} style={{ borderRadius:8, color:"#d97706", borderColor:"#fde68a" }}>Collect Payment</Button>
+          </div>
+          <div style={{ fontSize:11, color:"#9ca3af", marginBottom:14 }}>
+            Payments are recorded separately and won't be affected by item/price changes here — the balance below will simply recalculate after you save.
+          </div>
 
           {/* Notes */}
           <SectionHeader icon={<FileTextOutlined />} title="Notes" />
@@ -1554,25 +1634,17 @@ const AdminJobManagement = () => {
             <SummaryRow label="Delivery"              value={editForm.free_delivery?"Free":`₹${editTotals.deliveryCharges.toFixed(2)}`} color={editForm.free_delivery?"#059669":undefined} />
             <Divider style={{ margin:"8px 0" }} />
             <SummaryRow label="Grand Total"           value={`₹${editTotals.grandTotal.toFixed(2)}`} bold />
-            {(editTotals.paid>0||editForm.payment_mode) && (
+            {parseFloat(editJob?.payment_amount||0)>0 && (
               <>
                 <div style={{ height:6 }} />
-                <SummaryRow label={`Paid${editForm.payment_mode?` (${editForm.payment_mode})`:""}`} value={`− ₹${editTotals.paid.toFixed(2)}`} color="#059669" />
+                <SummaryRow label="Already Paid" value={`− ₹${parseFloat(editJob.payment_amount||0).toFixed(2)}`} color="#059669" />
                 <Divider style={{ margin:"6px 0" }} />
                 <div style={{ display:"flex", justifyContent:"space-between", fontSize:14, fontWeight:800 }}>
-                  <span style={{ color:"#1a1a2e" }}>Balance Due</span>
-                  <span style={{ color:editTotals.balance<=0?"#059669":"#dc2626", background:editTotals.balance<=0?"#f0fdf4":"#fef2f2", padding:"2px 10px", borderRadius:6 }}>
-                    {editTotals.balance<=0?`✓ Paid${Math.abs(editTotals.balance)>0.01?` (Advance ₹${Math.abs(editTotals.balance).toFixed(2)})`:""}` : `₹${editTotals.balance.toFixed(2)}`}
+                  <span style={{ color:"#1a1a2e" }}>Balance Due (after save)</span>
+                  <span style={{ color:projectedBalanceAfterSave<=0?"#059669":"#dc2626", background:projectedBalanceAfterSave<=0?"#f0fdf4":"#fef2f2", padding:"2px 10px", borderRadius:6 }}>
+                    {projectedBalanceAfterSave<=0?`✓ Paid${Math.abs(projectedBalanceAfterSave)>0.01?` (Advance ₹${Math.abs(projectedBalanceAfterSave).toFixed(2)})`:""}` : `₹${projectedBalanceAfterSave.toFixed(2)}`}
                   </span>
                 </div>
-                {editTotals.balance>0&&editForm.next_due_date && (
-                  <div style={{ marginTop:8, display:"flex", alignItems:"center", gap:8, padding:"8px 10px", background:"#fffbeb", border:"1px solid #fde68a", borderRadius:8 }}>
-                    <CalendarOutlined style={{ color:"#d97706", fontSize:14 }} />
-                    <span style={{ fontSize:12, color:"#92400e", fontWeight:600 }}>
-                      Next payment due: {dayjs(editForm.next_due_date).format("DD MMM YYYY")} · {dayjs(editForm.next_due_date).diff(dayjs(),"day")} day{dayjs(editForm.next_due_date).diff(dayjs(),"day")!==1?"s":""} away
-                    </span>
-                  </div>
-                )}
               </>
             )}
           </div>
@@ -1645,6 +1717,84 @@ const AdminJobManagement = () => {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* ══ COLLECT PAYMENT MODAL ══ */}
+      <Modal
+        title={<div style={{ display:"flex", alignItems:"center", gap:8 }}><WalletOutlined style={{ color:"#16a34a" }} /><span style={{ fontWeight:700 }}>Collect Payment</span></div>}
+        open={collectPaymentModal}
+        onCancel={closeCollectPaymentModal}
+        maskClosable={!collectingPayment} closable={!collectingPayment}
+        footer={[
+          <Button key="cancel" onClick={closeCollectPaymentModal} disabled={collectingPayment}>Cancel</Button>,
+          <Button key="submit" type="primary" loading={collectingPayment} onClick={handleCollectPayment} style={{ background:"#16a34a", borderColor:"#16a34a" }}>Record Payment</Button>,
+        ]}
+        width={isMobile?"100vw":440} style={sheetStyle} styles={{ body:sheetBody }} destroyOnClose>
+        {payingJob && (() => {
+          const balance   = parseFloat(payingJob.balance_amount||0);
+          const amt       = parseFloat(paymentForm.amount)||0;
+          const remaining = parseFloat((balance-amt).toFixed(2));
+
+          return (
+            <div>
+              <div style={{ background:"#f8fafc", borderRadius:8, padding:"10px 12px", marginBottom:16, border:"1px solid #e5e7eb" }}>
+                <div style={{ fontFamily:"monospace", fontWeight:700, color:"#2563eb", fontSize:14 }}>{payingJob.job_no}</div>
+                <div style={{ fontSize:13, color:"#374151", marginTop:2 }}>{payingJob.customer_name||"—"}</div>
+                <div style={{ display:"flex", justifyContent:"space-between", marginTop:8 }}>
+                  <span style={{ fontSize:12, color:"#6b7280" }}>Total: ₹{parseFloat(payingJob.total_amount||0).toFixed(2)}</span>
+                  <span style={{ fontSize:12, fontWeight:700, color:"#dc2626" }}>Balance Due: ₹{balance.toFixed(2)}</span>
+                </div>
+              </div>
+
+              {collectPaymentError && (
+                <div style={{ marginBottom:12, padding:"8px 12px", background:"#fef2f2", border:"1px solid #fca5a5", borderRadius:8, color:"#b91c1c", fontSize:12 }}>⚠ {collectPaymentError}</div>
+              )}
+
+              <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+                <FormField label="Amount Received (₹)" required>
+                  <InputNumber min={0} max={balance} value={paymentForm.amount} style={{ width:"100%", borderRadius:8 }} prefix="₹"
+                    onChange={v=>setPaymentForm(p=>({...p,amount:v}))} placeholder={`Max ₹${balance.toFixed(2)}`} />
+                  <div style={{ display:"flex", gap:6, marginTop:6, flexWrap:"wrap" }}>
+                    <button onClick={()=>setPaymentForm(p=>({...p,amount:balance}))} style={{ fontSize:11, padding:"3px 10px", borderRadius:20, border:"1px solid #86efac", background:"#f0fdf4", color:"#15803d", cursor:"pointer", fontWeight:600 }}>Full Balance</button>
+                    <button onClick={()=>setPaymentForm(p=>({...p,amount:parseFloat((balance/2).toFixed(2))}))} style={{ fontSize:11, padding:"3px 10px", borderRadius:20, border:"1px solid #d1d5db", background:"#f9fafb", color:"#374151", cursor:"pointer", fontWeight:600 }}>50%</button>
+                  </div>
+                </FormField>
+
+                <FormField label="Payment Mode">
+                  <Select placeholder="Select payment mode" value={paymentForm.method||undefined} style={{ width:"100%" }} allowClear onChange={v=>setPaymentForm(p=>({...p,method:v||""}))}>
+                    {PAYMENT_MODES.map(m=><Option key={m} value={m}>{m}</Option>)}
+                  </Select>
+                </FormField>
+
+                {remaining>0 && amt>0 && (
+                  <FormField label="Next Due Date for Remaining Balance" hint={`₹${remaining.toFixed(2)} will still be due`}>
+                    <DatePicker value={paymentForm.next_due_date?dayjs(paymentForm.next_due_date):null} onChange={d=>setPaymentForm(p=>({...p,next_due_date:d}))} format="DD MMM YYYY" style={{ width:"100%", borderRadius:8 }} disabledDate={d=>d&&d.isBefore(dayjs().startOf("day"))} placeholder="Pick a due date" />
+                    <div style={{ display:"flex", gap:6, marginTop:8, flexWrap:"wrap" }}>
+                      {[["7 days",7],["15 days",15],["30 days",30]].map(([label,days])=>(
+                        <button key={days} onClick={()=>setPaymentForm(p=>({...p,next_due_date:dayjs().add(days,"day")}))}
+                          style={{ fontSize:11, padding:"3px 10px", borderRadius:20, border:"1px solid #d1d5db", background:"#f9fafb", color:"#374151", cursor:"pointer", fontWeight:600 }}>
+                          +{label}
+                        </button>
+                      ))}
+                    </div>
+                  </FormField>
+                )}
+
+                <FormField label="Notes">
+                  <Input placeholder="Reference / cheque no / remarks…" value={paymentForm.notes} onChange={e=>setPaymentForm(p=>({...p,notes:e.target.value}))} style={{ borderRadius:8 }} />
+                </FormField>
+              </div>
+
+              {amt>0 && (
+                <div style={{ marginTop:14, padding:"10px 12px", background:remaining<=0?"#f0fdf4":"#fffbeb", border:`1px solid ${remaining<=0?"#86efac":"#fde68a"}`, borderRadius:8 }}>
+                  {remaining<=0
+                    ? <span style={{ fontSize:12, fontWeight:700, color:"#15803d" }}>✓ This payment fully settles the job.</span>
+                    : <span style={{ fontSize:12, fontWeight:700, color:"#92400e" }}>₹{remaining.toFixed(2)} will remain due after this payment.</span>}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </Modal>
 
       <style>{`

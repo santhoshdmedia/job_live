@@ -1,15 +1,37 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useSelector } from "react-redux";
 import {
-  Button, Input, Modal, Select, Tag, Divider, Spin,
-  InputNumber, Popconfirm, Radio, DatePicker, Tabs,
+  Button,
+  Input,
+  Modal,
+  Select,
+  Tag,
+  Divider,
+  Spin,
+  InputNumber,
+  Popconfirm,
+  Radio,
+  DatePicker,
+  Tabs,
 } from "antd";
 import {
-  PlusOutlined, DeleteOutlined, UserOutlined, PhoneOutlined,
-  EnvironmentOutlined, FileTextOutlined, ShoppingCartOutlined,
-  SaveOutlined, WalletOutlined, BankOutlined, UploadOutlined,
-  CloseCircleOutlined, CameraOutlined, ToolOutlined, AppstoreOutlined,
-  CalendarOutlined, ClockCircleOutlined, VideoCameraOutlined, PictureOutlined,
+  PlusOutlined,
+  DeleteOutlined,
+  UserOutlined,
+  PhoneOutlined,
+  EnvironmentOutlined,
+  FileTextOutlined,
+  ShoppingCartOutlined,
+  SaveOutlined,
+  WalletOutlined,
+  BankOutlined,
+  UploadOutlined,
+  CloseCircleOutlined,
+  CameraOutlined,
+  ToolOutlined,
+  AppstoreOutlined,
+  LoadingOutlined,
+  CheckCircleOutlined,
 } from "@ant-design/icons";
 import { SUCCESS_NOTIFICATION } from "../../helper/notification_helper";
 import dayjs from "dayjs";
@@ -42,42 +64,89 @@ const PRODUCTS = [
     product_name: "flex",
     printing_type: ["Solvent", "Latex", "UV"],
     variations: [
-      "Normal Flex", "Flex BB -230gsm", "Flex BB -280gsm",
-      "Flex BB -240gsm", "Flex Star Backlight", "Flex Backlight", "Flex BB Star",
+      "Normal Flex",
+      "Flex BB -230gsm",
+      "Flex BB -280gsm",
+      "Flex BB -240gsm",
+      "Flex Star Backlight",
+      "Flex Backlight",
+      "Flex BB Star",
     ],
   },
 ];
 
 const UNIT_OPTIONS = [
-  { value: "ft",   label: "ft"   },
+  { value: "ft", label: "ft" },
   { value: "inch", label: "inch" },
-  { value: "cm",   label: "cm"   },
+  { value: "cm", label: "cm" },
 ];
 
 const QTY_TYPE_OPTIONS = [
-  { value: "sq.ft",    label: "Sq. Ft"   },
+  { value: "sq.ft", label: "Sq. Ft" },
   { value: "quantity", label: "Quantity" },
 ];
 
-const GST_OPTIONS   = [0, 5, 12, 18, 28];
-const PAYMENT_MODES = ["Cash", "UPI", "Bank Transfer", "Cheque", "Card", "Cash on Delivery"];
-
-// Office Work service types
-const OFFICE_WORK_TYPES = [
-  { value: "website",      label: "Website",      icon: "🌐", calc: "days"   },
-  { value: "design",       label: "Design",       icon: "🎨", calc: "hours"  },
-  { value: "social_media", label: "Social Media", icon: "📱", calc: "counts" },
-  { value: "photo_shoot",  label: "Photo Shoot",  icon: "📷", calc: "hours"  },
+const GST_OPTIONS = [0, 5, 12, 18, 28];
+const PAYMENT_MODES = [
+  "Cash",
+  "UPI",
+  "Bank Transfer",
+  "Cheque",
+  "Card",
+  "Cash on Delivery",
 ];
+
+const OFFICE_WORK_TYPES = [
+  { value: "website", label: "Website", icon: "🌐", calc: "days" },
+  { value: "design", label: "Design", icon: "🎨", calc: "hours" },
+  { value: "social_media", label: "Social Media", icon: "📱", calc: "counts" },
+  { value: "photo_shoot", label: "Photo Shoot", icon: "📷", calc: "hours" },
+];
+
+// ─── Tamil Nadu Cities ────────────────────────────────────────────────────────
+const TN_CITIES = [
+  "Ambur", "Anaimalai", "Ariyalur", "Attur", "Batlagundu", "Bhavani",
+  "Chengalpattu", "Chennai", "Coimbatore", "Cuddalore", "Dharmapuri",
+  "Dindigul", "Erode", "Gobichettipalayam", "Gudiyatham", "Hosur",
+  "Kallakurichi", "Kanchipuram", "Karaikkudi", "Karur", "Krishnagiri",
+  "Kumbakonam", "Kumarapalayam", "Madurai", "Mayiladuthurai", "Mettupalayam",
+  "Nagapattinam", "Nagercoil", "Namakkal", "Neyveli", "Ooty",
+  "Palani", "Paramakudi", "Perambalur", "Pollachi", "Pudukkottai",
+  "Rajapalayam", "Ramanathapuram", "Ranipet", "Salem", "Sankarankovil",
+  "Sattur", "Sivaganga", "Sivakasi", "Srivilliputhur", "Thanjavur",
+  "Thoothukkudi", "Tiruchirappalli", "Tirunelveli", "Tirupathur", "Tiruppur",
+  "Tiruvannamalai", "Tiruvarur", "Tenkasi", "Udhagamandalam", "Vaniyambadi",
+  "Vellore", "Viluppuram", "Virudhunagar",
+];
+
+// ─── Pincode Lookup ───────────────────────────────────────────────────────────
+const fetchPincodeData = async (pincode) => {
+  if (pincode.length !== 6 || !/^\d{6}$/.test(pincode)) return null;
+  try {
+    const res = await fetch(
+      `https://api.postalpincode.in/pincode/${pincode}`
+    );
+    const data = await res.json();
+    if (data?.[0]?.Status === "Success" && data[0].PostOffice?.length > 0) {
+      const po = data[0].PostOffice[0];
+      return {
+        city: po.District || po.Name || "",
+        district: po.District || "",
+        state: po.State || "",
+      };
+    }
+  } catch {}
+  return null;
+};
 
 // ─── sq.ft auto-calculator ────────────────────────────────────────────────────
 const toSqFt = (w, h, unit) => {
   const wn = parseFloat(w) || 0;
   const hn = parseFloat(h) || 0;
   if (!wn || !hn) return 0;
-  if (unit === "ft")   return wn * hn;
+  if (unit === "ft") return wn * hn;
   if (unit === "inch") return (wn / 12) * (hn / 12);
-  if (unit === "cm")   return (wn / 30.48) * (hn / 30.48);
+  if (unit === "cm") return (wn / 30.48) * (hn / 30.48);
   return wn * hn;
 };
 
@@ -94,26 +163,22 @@ const computeProductLineTotal = (item) => {
 // ─── Line total for office work service ──────────────────────────────────────
 const computeOfficeServiceLineTotal = (item) => {
   let qty = 0;
-  if (item.office_type === "website") {
-    qty = item.days || 0;
-  } else if (item.office_type === "design") {
-    qty = item.hours || 0;
-  } else if (item.office_type === "social_media") {
+  if (item.office_type === "website") qty = item.days || 0;
+  else if (item.office_type === "design") qty = item.hours || 0;
+  else if (item.office_type === "social_media")
     qty = (item.reels_count || 0) + (item.post_count || 0);
-  } else if (item.office_type === "photo_shoot") {
-    qty = item.hours || 0;
-  }
-  const base   = qty * (item.price || 0);
+  else if (item.office_type === "photo_shoot") qty = item.hours || 0;
+  const base = qty * (item.price || 0);
   const gstAmt = base * ((item.gst_percentage || 0) / 100);
   return { base, gstAmt, total: base + gstAmt, qty };
 };
 
 // ─── Line total for labour work ───────────────────────────────────────────────
 const computeLabourLineTotal = (item) => {
-  const sqFtAmt   = (item.sq_ft || 0) * (item.price_per_sqft || 0);
-  const hoursAmt  = (item.hours || 0) * (item.price_per_hour || 0);
-  const base      = sqFtAmt + hoursAmt;
-  const gstAmt    = base * ((item.gst_percentage || 0) / 100);
+  const sqFtAmt = (item.sq_ft || 0) * (item.price_per_sqft || 0);
+  const hoursAmt = (item.hours || 0) * (item.price_per_hour || 0);
+  const base = sqFtAmt + hoursAmt;
+  const gstAmt = base * ((item.gst_percentage || 0) / 100);
   return { base, gstAmt, total: base + gstAmt, sqFtAmt, hoursAmt };
 };
 
@@ -121,10 +186,11 @@ const computeLabourLineTotal = (item) => {
 const compressImageFile = (file, maxKB = 500) =>
   new Promise((resolve) => {
     if (!file.type.startsWith("image/") || file.size <= maxKB * 1024) {
-      resolve(file); return;
+      resolve(file);
+      return;
     }
     const blobUrl = URL.createObjectURL(file);
-    const img     = new Image();
+    const img = new Image();
     img.onerror = () => { URL.revokeObjectURL(blobUrl); resolve(file); };
     img.onload = () => {
       URL.revokeObjectURL(blobUrl);
@@ -136,15 +202,18 @@ const compressImageFile = (file, maxKB = 500) =>
         h = Math.max(1, Math.round(h * s));
       }
       const canvas = document.createElement("canvas");
-      canvas.width = w; canvas.height = h;
+      canvas.width = w;
+      canvas.height = h;
       canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-      const outType   = file.type === "image/png" ? "image/jpeg" : file.type;
+      const outType = file.type === "image/png" ? "image/jpeg" : file.type;
       const tryQuality = (q) => {
         canvas.toBlob((blob) => {
           if (!blob) { resolve(file); return; }
-          if (blob.size <= maxKB * 1024 || q <= 0.10) {
-            resolve(new File([blob], file.name.replace(/\.\w+$/, ".jpg"), { type: blob.type, lastModified: Date.now() }));
-          } else { tryQuality(parseFloat((q - 0.05).toFixed(2))); }
+          if (blob.size <= maxKB * 1024 || q <= 0.1) {
+            resolve(new File([blob], file.name.replace(/\.\w+$/, ".jpg"), {
+              type: blob.type, lastModified: Date.now(),
+            }));
+          } else tryQuality(parseFloat((q - 0.05).toFixed(2)));
         }, outType, q);
       };
       tryQuality(0.85);
@@ -154,55 +223,111 @@ const compressImageFile = (file, maxKB = 500) =>
 
 // ─── DesignFileUpload ─────────────────────────────────────────────────────────
 const DesignFileUpload = ({ value, setImagePath }) => {
-  const fileInputRef   = useRef(null);
+  const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
-  const [busy, setBusy]         = useState(false);
-  const [error, setError]       = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const [origSize, setOrigSize] = useState(null);
   const [compSize, setCompSize] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState("");
+
+  const uploadToCloud = async (compressedFile) => {
+    const formData = new FormData();
+    formData.append("image", compressedFile);
+    const response = await fetch("https://api.dmedia.in/api/upload_images", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${localStorage.getItem("authToken")}` },
+      body: formData,
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success)
+      throw new Error(data.message || "Failed to upload image to cloud");
+    return data.data.url;
+  };
 
   const handleFile = async (file) => {
     if (!file) return;
-    setError(""); setOrigSize((file.size / 1024).toFixed(0)); setBusy(true);
+    setError("");
+    setOrigSize((file.size / 1024).toFixed(0));
+    setBusy(true);
     try {
       const compressed = await compressImageFile(file, 500);
       setCompSize((compressed.size / 1024).toFixed(0));
-      const reader = new FileReader();
-      reader.onload  = (e) => { setImagePath(e.target.result); setBusy(false); };
-      reader.onerror = ()  => { setError("Failed to read file."); setBusy(false); };
-      reader.readAsDataURL(compressed);
-    } catch { setError("Compression failed, please try again."); setBusy(false); }
+      const blobUrl = URL.createObjectURL(compressed);
+      setPreviewUrl(blobUrl);
+      const cloudUrl = await uploadToCloud(compressed);
+      setImagePath(cloudUrl);
+      setBusy(false);
+    } catch (err) {
+      setError(err.message || "Upload failed, please try again.");
+      setBusy(false);
+    }
   };
 
   const handleClear = () => {
-    setImagePath(""); setOrigSize(null); setCompSize(null); setError("");
-    if (fileInputRef.current)   fileInputRef.current.value   = "";
+    setImagePath("");
+    setOrigSize(null);
+    setCompSize(null);
+    setError("");
+    setPreviewUrl("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
     if (cameraInputRef.current) cameraInputRef.current.value = "";
   };
 
-  const formatKB = (kb) => kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`;
+  const formatKB = (kb) =>
+    kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`;
 
   return (
     <div>
-      <input ref={fileInputRef} type="file" accept="image/*,application/pdf" style={{ display:"none" }} onChange={(e) => handleFile(e.target.files?.[0])} />
-      <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" style={{ display:"none" }} onChange={(e) => handleFile(e.target.files?.[0])} />
-      <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
-        <Button size="small" icon={<UploadOutlined />} loading={busy} onClick={() => fileInputRef.current?.click()} style={{ borderRadius:6, fontSize:12 }}>
-          {busy ? "Compressing…" : value ? "Change File" : "Upload Design"}
+      <input ref={fileInputRef} type="file" accept="image/*,application/pdf"
+        style={{ display: "none" }}
+        onChange={(e) => handleFile(e.target.files?.[0])} />
+      <input ref={cameraInputRef} type="file" accept="image/*"
+        capture="environment" style={{ display: "none" }}
+        onChange={(e) => handleFile(e.target.files?.[0])} />
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <Button size="small" icon={<UploadOutlined />} loading={busy}
+          onClick={() => fileInputRef.current?.click()}
+          style={{ borderRadius: 6, fontSize: 12 }}>
+          {busy ? "Uploading…" : value ? "Change File" : "Upload Design"}
         </Button>
-        {!busy && <Button size="small" icon={<CameraOutlined />} onClick={() => cameraInputRef.current?.click()} style={{ borderRadius:6, fontSize:12 }}>Camera</Button>}
-        {value && !busy && <Button size="small" danger type="text" icon={<CloseCircleOutlined />} onClick={handleClear} style={{ fontSize:12 }}>Remove</Button>}
+        {!busy && (
+          <Button size="small" icon={<CameraOutlined />}
+            onClick={() => cameraInputRef.current?.click()}
+            style={{ borderRadius: 6, fontSize: 12 }}>
+            Camera
+          </Button>
+        )}
+        {value && !busy && (
+          <Button size="small" danger type="text" icon={<CloseCircleOutlined />}
+            onClick={handleClear} style={{ fontSize: 12 }}>
+            Remove
+          </Button>
+        )}
       </div>
       {!busy && origSize && compSize && (
-        <div style={{ marginTop:4, fontSize:10, color:"#059669", fontWeight:600 }}>
-          ✅ Compressed: {formatKB(origSize)} → {formatKB(compSize)}{compSize <= 500 ? " (≤ 500 KB ✓)" : " ⚠ Still large"}
+        <div style={{ marginTop: 4, fontSize: 10, color: "#059669", fontWeight: 600 }}>
+          ✅ Compressed & Uploaded: {formatKB(origSize)} → {formatKB(compSize)}
+          {compSize <= 500 ? " (≤ 500 KB ✓)" : " ⚠ Still large"}
         </div>
       )}
-      {busy && <div style={{ marginTop:4, fontSize:10, color:"#2563eb", fontWeight:600 }}>⏳ Compressing image…</div>}
-      {error && <div style={{ marginTop:4, fontSize:10, color:"#dc2626" }}>⚠ {error}</div>}
-      {value && !busy && (
-        <div style={{ marginTop:8, border:"1px solid #e5e7eb", borderRadius:8, background:"#f9fafb", padding:4, display:"flex", justifyContent:"center", maxHeight:120, overflow:"hidden" }}>
-          <img src={value} alt="Design Preview" style={{ maxHeight:110, maxWidth:"100%", objectFit:"contain", borderRadius:4 }} onError={(e) => { e.currentTarget.style.display="none"; }} />
+      {busy && (
+        <div style={{ marginTop: 4, fontSize: 10, color: "#2563eb", fontWeight: 600 }}>
+          ⏳ Compressing & uploading to cloud…
+        </div>
+      )}
+      {error && (
+        <div style={{ marginTop: 4, fontSize: 10, color: "#dc2626" }}>⚠ {error}</div>
+      )}
+      {previewUrl && !busy && (
+        <div style={{
+          marginTop: 8, border: "1px solid #e5e7eb", borderRadius: 8,
+          background: "#f9fafb", padding: 4, display: "flex",
+          justifyContent: "center", maxHeight: 120, overflow: "hidden",
+        }}>
+          <img src={previewUrl} alt="Design Preview"
+            style={{ maxHeight: 110, maxWidth: "100%", objectFit: "contain", borderRadius: 4 }}
+            onError={(e) => { e.currentTarget.style.display = "none"; }} />
         </div>
       )}
     </div>
@@ -211,76 +336,67 @@ const DesignFileUpload = ({ value, setImagePath }) => {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const EMPTY_PRODUCT_ITEM = {
-  item_category: "product",
-  product_id: "", product_name: "", variation: "", printing_type: "",
-  width: "", height: "", size_unit: "inch",
-  sq_ft: 0, sq_ft_manual: false,
-  quantity_type: "sq.ft", quantity: 1, price: 0,
+  item_category: "product", product_id: "", product_name: "", variation: "",
+  printing_type: "", width: "", height: "", size_unit: "inch", sq_ft: 0,
+  sq_ft_manual: false, quantity_type: "sq.ft", quantity: 1, price: 0,
   gst_percentage: 0, design_file: "", notes: "",
 };
 
 const EMPTY_OFFICE_ITEM = {
-  item_category: "service_office",
-  service_name: "",
-  office_type: "website",
-  days: 1,
-  hours: 1,
-  reels_count: 0,
-  post_count: 0,
-  price: 0,
-  gst_percentage: 0,
-  notes: "",
+  item_category: "service_office", service_name: "", office_type: "website",
+  days: 1, hours: 1, reels_count: 0, post_count: 0, price: 0,
+  gst_percentage: 0, notes: "",
 };
 
 const EMPTY_LABOUR_ITEM = {
-  item_category: "service_labour",
-  service_name: "",
-  sq_ft: 0,
-  hours: 0,
-  price_per_sqft: 0,
-  price_per_hour: 0,
-  gst_percentage: 0,
-  notes: "",
+  item_category: "service_labour", service_name: "", sq_ft: 0, hours: 0,
+  price_per_sqft: 0, price_per_hour: 0, gst_percentage: 0, notes: "",
 };
 
 const DEFAULT_FORM = {
-  customer_name: "", customer_phone: "",
-  company_name: "",
+  customer_name: "", customer_phone: "", company_name: "",
   estimated_delivery_date: null,
   address_line1: "", address_line2: "",
-  city: "", state: "", pincode: "", country: "India",
-  gst_no: "",
-  delivery_charges: 0, free_delivery: false,
-  discount_percentage: 0,
-  payment_mode: "", payment_amount: "",
-  next_due_date: null,
-  notes: "",
-  terms_and_conditions: "",
+  city: "", district: "", state: "", pincode: "", country: "India",
+  gst_no: "", delivery_charges: 0, free_delivery: false,
+  discount_percentage: 0, payment_mode: "", payment_amount: "",
+  next_due_date: null, notes: "", terms_and_conditions: "",
 };
 
 // ─── Reusable UI atoms ────────────────────────────────────────────────────────
 const SectionHeader = ({ icon, title }) => (
-  <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:10 }}>
-    <span style={{ color:"#2563eb", fontSize:14 }}>{icon}</span>
-    <span style={{ fontSize:11, fontWeight:700, color:"#374151", textTransform:"uppercase", letterSpacing:"0.06em" }}>{title}</span>
-    <div style={{ flex:1, height:1, background:"#e5e7eb", marginLeft:6 }} />
+  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
+    <span style={{ color: "#2563eb", fontSize: 14 }}>{icon}</span>
+    <span style={{
+      fontSize: 11, fontWeight: 700, color: "#374151",
+      textTransform: "uppercase", letterSpacing: "0.06em",
+    }}>{title}</span>
+    <div style={{ flex: 1, height: 1, background: "#e5e7eb", marginLeft: 6 }} />
   </div>
 );
 
 const FormField = ({ label, required, children }) => (
   <div>
-    <label style={{ display:"block", fontSize:10, fontWeight:700, color:"#6b7280", marginBottom:4, textTransform:"uppercase", letterSpacing:"0.05em" }}>
-      {label}{required && <span style={{ color:"#ef4444", marginLeft:2 }}>*</span>}
+    <label style={{
+      display: "block", fontSize: 10, fontWeight: 700, color: "#6b7280",
+      marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em",
+    }}>
+      {label}
+      {required && <span style={{ color: "#ef4444", marginLeft: 2 }}>*</span>}
     </label>
     {children}
   </div>
 );
 
 const InfoBadge = ({ label, value, green, sub }) => (
-  <div style={{ flex:1, minWidth:90 }}>
-    <div style={{ fontSize:10, color:"#6b7280", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.05em" }}>{label}</div>
-    <div style={{ fontSize:13, fontWeight:700, color:green ? "#059669" : "#374151" }}>{value}</div>
-    {sub && <div style={{ fontSize:10, color:"#9ca3af" }}>{sub}</div>}
+  <div style={{ flex: 1, minWidth: 90 }}>
+    <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+      {label}
+    </div>
+    <div style={{ fontSize: 13, fontWeight: 700, color: green ? "#059669" : "#374151" }}>
+      {value}
+    </div>
+    {sub && <div style={{ fontSize: 10, color: "#9ca3af" }}>{sub}</div>}
   </div>
 );
 
@@ -290,64 +406,105 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
   const [showSuggest, setShowSuggest] = useState(false);
   const ref = useRef(null);
 
-  const matched  = item.product_name ? PRODUCTS.filter(p => p.product_name.toLowerCase().includes(item.product_name.toLowerCase())) : [];
-  const selected = PRODUCTS.find(p => p.product_name.toLowerCase() === (item.product_name || "").toLowerCase());
+  const matched = item.product_name
+    ? PRODUCTS.filter((p) =>
+        p.product_name.toLowerCase().includes(item.product_name.toLowerCase()))
+    : [];
+  const selected = PRODUCTS.find(
+    (p) => p.product_name.toLowerCase() === (item.product_name || "").toLowerCase()
+  );
 
   useEffect(() => {
-    const fn = (e) => { if (ref.current && !ref.current.contains(e.target)) setShowSuggest(false); };
+    const fn = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setShowSuggest(false);
+    };
     document.addEventListener("mousedown", fn);
     return () => document.removeEventListener("mousedown", fn);
   }, []);
 
   const sizeChange = (field, val) => {
     const updated = { ...item, [field]: val };
-    if (!updated.sq_ft_manual) updated.sq_ft = parseFloat(toSqFt(updated.width, updated.height, updated.size_unit).toFixed(4));
+    if (!updated.sq_ft_manual)
+      updated.sq_ft = parseFloat(toSqFt(updated.width, updated.height, updated.size_unit).toFixed(4));
     onChange(idx, updated);
   };
   const set = (f, v) => onChange(idx, { ...item, [f]: v });
 
   const handleQtyTypeChange = (val) => {
-    onChange(idx, { ...item, quantity_type: val, ...(val === "quantity" ? { sq_ft:0, sq_ft_manual:false, width:"", height:"" } : {}) });
+    onChange(idx, {
+      ...item, quantity_type: val,
+      ...(val === "quantity" ? { sq_ft: 0, sq_ft_manual: false, width: "", height: "" } : {}),
+    });
   };
 
   const isSqFtMode = item.quantity_type === "sq.ft";
   const { base, gstAmt, total: lineTotal } = computeProductLineTotal(item);
   const productCols = isMobile ? "1fr" : isTablet ? "1fr 1fr" : "1fr 1fr 1fr";
-  const sqFtCols    = isMobile ? "1fr 1fr" : "1fr 1fr 90px 1fr";
-  const priceCols   = isMobile ? "1fr 1fr" : "repeat(3,1fr)";
+  const sqFtCols = isMobile ? "1fr 1fr" : "1fr 1fr 90px 1fr";
+  const priceCols = isMobile ? "1fr 1fr" : "repeat(3,1fr)";
 
   return (
-    <div style={{ background:"#f9fafb", border:"1px solid #e5e7eb", borderRadius:10, padding:isMobile?10:14 }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-        <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
-          <span style={{ fontSize:11, fontWeight:700, color:"#374151", background:"#e0e7ff", padding:"2px 10px", borderRadius:20 }}>Item {idx+1}</span>
-          <Radio.Group size="small" value={item.quantity_type} onChange={(e) => handleQtyTypeChange(e.target.value)} buttonStyle="solid">
-            {QTY_TYPE_OPTIONS.map(o => (
-              <Radio.Button key={o.value} value={o.value} style={{ fontSize:11, fontWeight:600, height:24, lineHeight:"22px", padding:"0 10px" }}>{o.label}</Radio.Button>
+    <div style={{
+      background: "#f9fafb", border: "1px solid #e5e7eb",
+      borderRadius: 10, padding: isMobile ? 10 : 14,
+    }}>
+      <div style={{
+        display: "flex", justifyContent: "space-between",
+        alignItems: "center", marginBottom: 10,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span style={{
+            fontSize: 11, fontWeight: 700, color: "#374151",
+            background: "#e0e7ff", padding: "2px 10px", borderRadius: 20,
+          }}>Item {idx + 1}</span>
+          <Radio.Group size="small" value={item.quantity_type}
+            onChange={(e) => handleQtyTypeChange(e.target.value)} buttonStyle="solid">
+            {QTY_TYPE_OPTIONS.map((o) => (
+              <Radio.Button key={o.value} value={o.value}
+                style={{ fontSize: 11, fontWeight: 600, height: 24, lineHeight: "22px", padding: "0 10px" }}>
+                {o.label}
+              </Radio.Button>
             ))}
           </Radio.Group>
         </div>
-        <Popconfirm title="Remove this item?" onConfirm={() => onRemove(idx)} disabled={isOnly} okText="Yes" cancelText="No">
+        <Popconfirm title="Remove this item?" onConfirm={() => onRemove(idx)}
+          disabled={isOnly} okText="Yes" cancelText="No">
           <Button icon={<DeleteOutlined />} size="small" danger type="text" disabled={isOnly} />
         </Popconfirm>
       </div>
 
-      <div style={{ display:"grid", gridTemplateColumns:productCols, gap:8, marginBottom:10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: productCols, gap: 8, marginBottom: 10 }}>
         <FormField label="Product Name" required>
-          <div style={{ position:"relative" }} ref={ref}>
-            <Input placeholder="Type product…" value={item.product_name} size="small" autoComplete="off" style={{ borderRadius:6 }}
-              onChange={(e) => { onChange(idx, { ...item, product_name:e.target.value, variation:"", printing_type:"" }); setShowSuggest(true); }}
+          <div style={{ position: "relative" }} ref={ref}>
+            <Input placeholder="Type product…" value={item.product_name} size="small"
+              autoComplete="off" style={{ borderRadius: 6 }}
+              onChange={(e) => {
+                onChange(idx, { ...item, product_name: e.target.value, variation: "", printing_type: "" });
+                setShowSuggest(true);
+              }}
               onFocus={() => setShowSuggest(true)} />
             {showSuggest && matched.length > 0 && (
-              <div style={{ position:"absolute", top:"100%", left:0, right:0, background:"#fff", border:"1px solid #e5e7eb", borderRadius:8, zIndex:9999, boxShadow:"0 4px 16px rgba(0,0,0,0.12)", overflow:"hidden" }}>
-                {matched.map(p => (
+              <div style={{
+                position: "absolute", top: "100%", left: 0, right: 0,
+                background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8,
+                zIndex: 9999, boxShadow: "0 4px 16px rgba(0,0,0,0.12)", overflow: "hidden",
+              }}>
+                {matched.map((p) => (
                   <div key={p.product_id}
-                    onMouseDown={() => { onChange(idx, { ...item, product_name:p.product_name, product_id:p.product_id, variation:"", printing_type:"" }); setShowSuggest(false); }}
-                    style={{ padding:"8px 12px", cursor:"pointer", fontSize:13, color:"#1a1a2e", fontWeight:600, borderBottom:"1px solid #f3f4f6" }}
-                    onMouseEnter={e => e.currentTarget.style.background="#eff6ff"}
-                    onMouseLeave={e => e.currentTarget.style.background="#fff"}>
+                    onMouseDown={() => {
+                      onChange(idx, { ...item, product_name: p.product_name, product_id: p.product_id, variation: "", printing_type: "" });
+                      setShowSuggest(false);
+                    }}
+                    style={{
+                      padding: "8px 12px", cursor: "pointer", fontSize: 13,
+                      color: "#1a1a2e", fontWeight: 600, borderBottom: "1px solid #f3f4f6",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#eff6ff")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}>
                     🖨️ {p.product_name}
-                    <span style={{ marginLeft:6, fontSize:10, color:"#6b7280", fontWeight:400 }}>{p.printing_type?.join(" · ")}</span>
+                    <span style={{ marginLeft: 6, fontSize: 10, color: "#6b7280", fontWeight: 400 }}>
+                      {p.printing_type?.join(" · ")}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -355,87 +512,143 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
           </div>
         </FormField>
         <FormField label="Material">
-          <Select placeholder={selected ? "Select variation" : "—"} value={item.variation || undefined} size="small" style={{ width:"100%" }} disabled={!selected} onChange={(v) => set("variation", v)}>
-            {(selected?.variations || []).map(v => <Option key={v} value={v}>{v}</Option>)}
+          <Select placeholder={selected ? "Select variation" : "—"}
+            value={item.variation || undefined} size="small"
+            style={{ width: "100%" }} disabled={!selected}
+            onChange={(v) => set("variation", v)}>
+            {(selected?.variations || []).map((v) => (
+              <Option key={v} value={v}>{v}</Option>
+            ))}
           </Select>
         </FormField>
         <FormField label="Printing Type">
-          <Select placeholder={selected ? "Select type" : "—"} value={item.printing_type || undefined} size="small" style={{ width:"100%" }} disabled={!selected} onChange={(v) => set("printing_type", v)}>
-            {(selected?.printing_type || []).map(t => <Option key={t} value={t}>{t}</Option>)}
+          <Select placeholder={selected ? "Select type" : "—"}
+            value={item.printing_type || undefined} size="small"
+            style={{ width: "100%" }} disabled={!selected}
+            onChange={(v) => set("printing_type", v)}>
+            {(selected?.printing_type || []).map((t) => (
+              <Option key={t} value={t}>{t}</Option>
+            ))}
           </Select>
         </FormField>
       </div>
 
       {isSqFtMode && (
-        <div style={{ display:"grid", gridTemplateColumns:sqFtCols, gap:8, marginBottom:10, alignItems:"end" }}>
+        <div style={{ display: "grid", gridTemplateColumns: sqFtCols, gap: 8, marginBottom: 10, alignItems: "end" }}>
           <FormField label="Width" required>
             <Input size="small" placeholder="0" type="number" min={0} value={item.width}
-              prefix={<span style={{ fontSize:10, color:"#6b7280", fontWeight:700 }}>W</span>} style={{ borderRadius:6 }}
+              prefix={<span style={{ fontSize: 10, color: "#6b7280", fontWeight: 700 }}>W</span>}
+              style={{ borderRadius: 6 }}
               onChange={(e) => sizeChange("width", e.target.value)} />
           </FormField>
           <FormField label="Height" required>
             <Input size="small" placeholder="0" type="number" min={0} value={item.height}
-              prefix={<span style={{ fontSize:10, color:"#6b7280", fontWeight:700 }}>H</span>} style={{ borderRadius:6 }}
+              prefix={<span style={{ fontSize: 10, color: "#6b7280", fontWeight: 700 }}>H</span>}
+              style={{ borderRadius: 6 }}
               onChange={(e) => sizeChange("height", e.target.value)} />
           </FormField>
           <FormField label="Unit">
-            <Select value={item.size_unit} size="small" style={{ width:"100%" }} onChange={(v) => sizeChange("size_unit", v)}>
-              {UNIT_OPTIONS.map(u => <Option key={u.value} value={u.value}>{u.label}</Option>)}
+            <Select value={item.size_unit} size="small" style={{ width: "100%" }}
+              onChange={(v) => sizeChange("size_unit", v)}>
+              {UNIT_OPTIONS.map((u) => (
+                <Option key={u.value} value={u.value}>{u.label}</Option>
+              ))}
             </Select>
           </FormField>
           <FormField label={
-            <span style={{ display:"flex", alignItems:"center", gap:4 }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
               Sq. Ft
               {item.sq_ft_manual && (item.width || item.height) && (
-                <span onClick={() => { const sq = toSqFt(item.width, item.height, item.size_unit); onChange(idx, { ...item, sq_ft:parseFloat(sq.toFixed(4)), sq_ft_manual:false }); }}
-                  style={{ fontSize:9, color:"#2563eb", cursor:"pointer", textTransform:"none", letterSpacing:0, fontWeight:600, background:"#eff6ff", padding:"1px 5px", borderRadius:4, marginLeft:2 }}>
-                  ↺ auto
+                <span onClick={() => {
+                  const sq = toSqFt(item.width, item.height, item.size_unit);
+                  onChange(idx, { ...item, sq_ft: parseFloat(sq.toFixed(4)), sq_ft_manual: false });
+                }} style={{
+                  fontSize: 9, color: "#2563eb", cursor: "pointer",
+                  textTransform: "none", letterSpacing: 0, fontWeight: 600,
+                  background: "#eff6ff", padding: "1px 5px", borderRadius: 4, marginLeft: 2,
+                }}>↺ auto</span>
+              )}
+              {!item.sq_ft_manual && (
+                <span style={{ fontSize: 9, color: "#6b7280", textTransform: "none", letterSpacing: 0 }}>
+                  (auto)
                 </span>
               )}
-              {!item.sq_ft_manual && <span style={{ fontSize:9, color:"#6b7280", textTransform:"none", letterSpacing:0 }}>(auto)</span>}
             </span>
           }>
-            <InputNumber size="small" min={0} step={0.01} value={item.sq_ft || undefined} placeholder="0.0000"
-              style={{ width:"100%", borderRadius:6, borderColor:item.sq_ft_manual?"#2563eb":undefined, background:item.sq_ft>0?(item.sq_ft_manual?"#eff6ff":"#ecfdf5"):undefined }}
-              onChange={(val) => onChange(idx, { ...item, sq_ft:parseFloat(val)||0, sq_ft_manual:true })} />
+            <InputNumber size="small" min={0} step={0.01}
+              value={item.sq_ft || undefined} placeholder="0.0000"
+              style={{
+                width: "100%", borderRadius: 6,
+                borderColor: item.sq_ft_manual ? "#2563eb" : undefined,
+                background: item.sq_ft > 0 ? (item.sq_ft_manual ? "#eff6ff" : "#ecfdf5") : undefined,
+              }}
+              onChange={(val) => onChange(idx, { ...item, sq_ft: parseFloat(val) || 0, sq_ft_manual: true })} />
           </FormField>
         </div>
       )}
 
-      <div style={{ marginBottom:10 }}>
+      <div style={{ marginBottom: 10 }}>
         <FormField label="Notes / Specs">
-          <Input placeholder="Custom text, specs…" value={item.notes} size="small" style={{ borderRadius:6 }} onChange={(e) => set("notes", e.target.value)} />
+          <Input placeholder="Custom text, specs…" value={item.notes} size="small"
+            style={{ borderRadius: 6 }}
+            onChange={(e) => set("notes", e.target.value)} />
         </FormField>
       </div>
 
-      <div style={{ display:"grid", gridTemplateColumns:priceCols, gap:8, marginBottom:10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: priceCols, gap: 8, marginBottom: 10 }}>
         <FormField label="Quantity" required>
-          <InputNumber min={1} value={item.quantity} size="small" style={{ width:"100%", borderRadius:6 }} onChange={(v) => set("quantity", v||1)} />
+          <InputNumber min={1} value={item.quantity} size="small"
+            style={{ width: "100%", borderRadius: 6 }}
+            onChange={(v) => set("quantity", v || 1)} />
         </FormField>
         <FormField label={isSqFtMode ? "Price / sq.ft (₹)" : "Unit Price (₹)"} required>
-          <InputNumber min={0} value={item.price} size="small" style={{ width:"100%", borderRadius:6 }} prefix="₹" onChange={(v) => set("price", v||0)} />
+          <InputNumber min={0} value={item.price} size="small"
+            style={{ width: "100%", borderRadius: 6 }} prefix="₹"
+            onChange={(v) => set("price", v || 0)} />
         </FormField>
         <FormField label="GST %">
-          <Select value={item.gst_percentage} size="small" style={{ width:"100%" }} onChange={(v) => set("gst_percentage", v)}>
-            {GST_OPTIONS.map(g => <Option key={g} value={g}>{g===0?"No GST":`${g}%`}</Option>)}
+          <Select value={item.gst_percentage} size="small" style={{ width: "100%" }}
+            onChange={(v) => set("gst_percentage", v)}>
+            {GST_OPTIONS.map((g) => (
+              <Option key={g} value={g}>{g === 0 ? "No GST" : `${g}%`}</Option>
+            ))}
           </Select>
         </FormField>
       </div>
 
-      <div style={{ marginBottom:10 }}>
+      <div style={{ marginBottom: 10 }}>
         <FormField label="Design File">
-          <DesignFileUpload value={item.design_file} setImagePath={(path) => set("design_file", path)} />
+          <DesignFileUpload value={item.design_file}
+            setImagePath={(path) => set("design_file", path)} />
         </FormField>
       </div>
 
-      <div style={{ background:"#fff", border:"1px solid #d1fae5", borderRadius:8, padding:"8px 14px", textAlign:"right" }}>
-        <div style={{ fontSize:11, color:"#6b7280", marginBottom:2 }}>
-          Base: <span style={{ fontWeight:600, color:"#374151" }}>₹{base.toFixed(2)}</span>
-          {item.gst_percentage > 0 && <span style={{ marginLeft:8 }}>GST ({item.gst_percentage}%): <span style={{ fontWeight:600, color:"#d97706" }}>₹{gstAmt.toFixed(2)}</span></span>}
+      <div style={{
+        background: "#fff", border: "1px solid #d1fae5",
+        borderRadius: 8, padding: "8px 14px", textAlign: "right",
+      }}>
+        <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 2 }}>
+          Base: <span style={{ fontWeight: 600, color: "#374151" }}>₹{base.toFixed(2)}</span>
+          {item.gst_percentage > 0 && (
+            <span style={{ marginLeft: 8 }}>
+              GST ({item.gst_percentage}%):{" "}
+              <span style={{ fontWeight: 600, color: "#d97706" }}>₹{gstAmt.toFixed(2)}</span>
+            </span>
+          )}
         </div>
-        <div style={{ fontSize:14, fontWeight:700, color:"#065f46" }}>Item Total: ₹{lineTotal.toFixed(2)}</div>
-        {isSqFtMode && item.sq_ft > 0 && <div style={{ fontSize:10, color:"#059669" }}>{item.quantity} × {item.sq_ft} ft² × ₹{item.price}</div>}
-        {!isSqFtMode && <div style={{ fontSize:10, color:"#6b7280" }}>{item.quantity} × ₹{item.price}</div>}
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#065f46" }}>
+          Item Total: ₹{lineTotal.toFixed(2)}
+        </div>
+        {isSqFtMode && item.sq_ft > 0 && (
+          <div style={{ fontSize: 10, color: "#059669" }}>
+            {item.quantity} × {item.sq_ft} ft² × ₹{item.price}
+          </div>
+        )}
+        {!isSqFtMode && (
+          <div style={{ fontSize: 10, color: "#6b7280" }}>
+            {item.quantity} × ₹{item.price}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -445,7 +658,7 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
 const OfficeServiceItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
   const { isMobile } = useBreakpoint();
   const set = (f, v) => onChange(idx, { ...item, [f]: v });
-  const selectedType = OFFICE_WORK_TYPES.find(t => t.value === item.office_type);
+  const selectedType = OFFICE_WORK_TYPES.find((t) => t.value === item.office_type);
   const { base, gstAmt, total: lineTotal, qty } = computeOfficeServiceLineTotal(item);
 
   const renderCalcFields = () => {
@@ -453,29 +666,33 @@ const OfficeServiceItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
     if (calcType === "days") {
       return (
         <FormField label="Number of Days" required>
-          <InputNumber min={1} value={item.days} size="small" style={{ width:"100%", borderRadius:6 }} addonAfter="days"
-            onChange={(v) => set("days", v||1)} />
+          <InputNumber min={1} value={item.days} size="small"
+            style={{ width: "100%", borderRadius: 6 }} addonAfter="days"
+            onChange={(v) => set("days", v || 1)} />
         </FormField>
       );
     }
     if (calcType === "hours") {
       return (
         <FormField label="Number of Hours" required>
-          <InputNumber min={0} step={0.5} value={item.hours} size="small" style={{ width:"100%", borderRadius:6 }} addonAfter="hrs"
-            onChange={(v) => set("hours", v||0)} />
+          <InputNumber min={0} step={0.5} value={item.hours} size="small"
+            style={{ width: "100%", borderRadius: 6 }} addonAfter="hrs"
+            onChange={(v) => set("hours", v || 0)} />
         </FormField>
       );
     }
     if (calcType === "counts") {
       return (
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           <FormField label="Reels Count">
-            <InputNumber min={0} value={item.reels_count} size="small" style={{ width:"100%", borderRadius:6 }} addonAfter="reels"
-              onChange={(v) => set("reels_count", v||0)} />
+            <InputNumber min={0} value={item.reels_count} size="small"
+              style={{ width: "100%", borderRadius: 6 }} addonAfter="reels"
+              onChange={(v) => set("reels_count", v || 0)} />
           </FormField>
           <FormField label="Post Count">
-            <InputNumber min={0} value={item.post_count} size="small" style={{ width:"100%", borderRadius:6 }} addonAfter="posts"
-              onChange={(v) => set("post_count", v||0)} />
+            <InputNumber min={0} value={item.post_count} size="small"
+              style={{ width: "100%", borderRadius: 6 }} addonAfter="posts"
+              onChange={(v) => set("post_count", v || 0)} />
           </FormField>
         </div>
       );
@@ -495,49 +712,73 @@ const OfficeServiceItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
     const calcType = selectedType?.calc;
     if (calcType === "days") return `${qty} day${qty !== 1 ? "s" : ""}`;
     if (calcType === "hours") return `${qty} hr${qty !== 1 ? "s" : ""}`;
-    if (calcType === "counts") return `${item.reels_count || 0} reels + ${item.post_count || 0} posts`;
+    if (calcType === "counts")
+      return `${item.reels_count || 0} reels + ${item.post_count || 0} posts`;
     return `${qty} units`;
   };
 
   return (
-    <div style={{ background:"#fafaf9", border:"1px solid #e5e7eb", borderRadius:10, padding:isMobile?10:14 }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-        <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
-          <span style={{ fontSize:11, fontWeight:700, color:"#374151", background:"#fef3c7", padding:"2px 10px", borderRadius:20 }}>
-            {selectedType?.icon} {selectedType?.label || "Office Work"} #{idx+1}
+    <div style={{
+      background: "#fafaf9", border: "1px solid #e5e7eb",
+      borderRadius: 10, padding: isMobile ? 10 : 14,
+    }}>
+      <div style={{
+        display: "flex", justifyContent: "space-between",
+        alignItems: "center", marginBottom: 10,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span style={{
+            fontSize: 11, fontWeight: 700, color: "#374151",
+            background: "#fef3c7", padding: "2px 10px", borderRadius: 20,
+          }}>
+            {selectedType?.icon} {selectedType?.label || "Office Work"} #{idx + 1}
           </span>
         </div>
-        <Popconfirm title="Remove this service?" onConfirm={() => onRemove(idx)} disabled={isOnly} okText="Yes" cancelText="No">
+        <Popconfirm title="Remove this service?" onConfirm={() => onRemove(idx)}
+          disabled={isOnly} okText="Yes" cancelText="No">
           <Button icon={<DeleteOutlined />} size="small" danger type="text" disabled={isOnly} />
         </Popconfirm>
       </div>
 
-      <div style={{ display:"grid", gridTemplateColumns:isMobile?"1fr":"1fr 1fr", gap:8, marginBottom:10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 8, marginBottom: 10 }}>
         <FormField label="Service Name">
-          <Input placeholder="e.g. Company Website…" value={item.service_name} size="small" style={{ borderRadius:6 }}
+          <Input placeholder="e.g. Company Website…" value={item.service_name} size="small"
+            style={{ borderRadius: 6 }}
             onChange={(e) => set("service_name", e.target.value)} />
         </FormField>
         <FormField label="Service Type" required>
-          <Select value={item.office_type} size="small" style={{ width:"100%" }}
-            onChange={(v) => onChange(idx, { ...item, office_type:v, days:1, hours:1, reels_count:0, post_count:0 })}>
-            {OFFICE_WORK_TYPES.map(t => <Option key={t.value} value={t.value}>{t.icon} {t.label}</Option>)}
+          <Select value={item.office_type} size="small" style={{ width: "100%" }}
+            onChange={(v) => onChange(idx, {
+              ...item, office_type: v, days: 1, hours: 1, reels_count: 0, post_count: 0,
+            })}>
+            {OFFICE_WORK_TYPES.map((t) => (
+              <Option key={t.value} value={t.value}>{t.icon} {t.label}</Option>
+            ))}
           </Select>
         </FormField>
       </div>
 
-      <div style={{ display:"grid", gridTemplateColumns:isMobile?"1fr":"1fr 1fr 1fr", gap:8, marginBottom:10, alignItems:"end" }}>
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr",
+        gap: 8, marginBottom: 10, alignItems: "end",
+      }}>
         <div style={{ gridColumn: item.office_type === "social_media" ? "1 / -1" : undefined }}>
           {renderCalcFields()}
         </div>
         {item.office_type !== "social_media" && (
           <>
             <FormField label={getUnitLabel()} required>
-              <InputNumber min={0} value={item.price} size="small" style={{ width:"100%", borderRadius:6 }} prefix="₹"
-                onChange={(v) => set("price", v||0)} />
+              <InputNumber min={0} value={item.price} size="small"
+                style={{ width: "100%", borderRadius: 6 }} prefix="₹"
+                onChange={(v) => set("price", v || 0)} />
             </FormField>
             <FormField label="GST %">
-              <Select value={item.gst_percentage} size="small" style={{ width:"100%" }} onChange={(v) => set("gst_percentage", v)}>
-                {GST_OPTIONS.map(g => <Option key={g} value={g}>{g===0?"No GST":`${g}%`}</Option>)}
+              <Select value={item.gst_percentage} size="small" style={{ width: "100%" }}
+                onChange={(v) => set("gst_percentage", v)}>
+                {GST_OPTIONS.map((g) => (
+                  <Option key={g} value={g}>{g === 0 ? "No GST" : `${g}%`}</Option>
+                ))}
               </Select>
             </FormField>
           </>
@@ -545,31 +786,48 @@ const OfficeServiceItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
       </div>
 
       {item.office_type === "social_media" && (
-        <div style={{ display:"grid", gridTemplateColumns:isMobile?"1fr":"1fr 1fr", gap:8, marginBottom:10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 8, marginBottom: 10 }}>
           <FormField label="Price / Item (₹)" required>
-            <InputNumber min={0} value={item.price} size="small" style={{ width:"100%", borderRadius:6 }} prefix="₹"
-              onChange={(v) => set("price", v||0)} />
+            <InputNumber min={0} value={item.price} size="small"
+              style={{ width: "100%", borderRadius: 6 }} prefix="₹"
+              onChange={(v) => set("price", v || 0)} />
           </FormField>
           <FormField label="GST %">
-            <Select value={item.gst_percentage} size="small" style={{ width:"100%" }} onChange={(v) => set("gst_percentage", v)}>
-              {GST_OPTIONS.map(g => <Option key={g} value={g}>{g===0?"No GST":`${g}%`}</Option>)}
+            <Select value={item.gst_percentage} size="small" style={{ width: "100%" }}
+              onChange={(v) => set("gst_percentage", v)}>
+              {GST_OPTIONS.map((g) => (
+                <Option key={g} value={g}>{g === 0 ? "No GST" : `${g}%`}</Option>
+              ))}
             </Select>
           </FormField>
         </div>
       )}
 
-      <div style={{ marginBottom:10 }}>
+      <div style={{ marginBottom: 10 }}>
         <FormField label="Notes">
-          <Input placeholder="Additional notes…" value={item.notes} size="small" style={{ borderRadius:6 }} onChange={(e) => set("notes", e.target.value)} />
+          <Input placeholder="Additional notes…" value={item.notes} size="small"
+            style={{ borderRadius: 6 }}
+            onChange={(e) => set("notes", e.target.value)} />
         </FormField>
       </div>
 
-      <div style={{ background:"#fff", border:"1px solid #fde68a", borderRadius:8, padding:"8px 14px", textAlign:"right" }}>
-        <div style={{ fontSize:11, color:"#6b7280", marginBottom:2 }}>
-          {getQtyLabel()} × ₹{item.price} = <span style={{ fontWeight:600, color:"#374151" }}>₹{base.toFixed(2)}</span>
-          {item.gst_percentage > 0 && <span style={{ marginLeft:8 }}>GST ({item.gst_percentage}%): <span style={{ fontWeight:600, color:"#d97706" }}>₹{gstAmt.toFixed(2)}</span></span>}
+      <div style={{
+        background: "#fff", border: "1px solid #fde68a",
+        borderRadius: 8, padding: "8px 14px", textAlign: "right",
+      }}>
+        <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 2 }}>
+          {getQtyLabel()} × ₹{item.price} ={" "}
+          <span style={{ fontWeight: 600, color: "#374151" }}>₹{base.toFixed(2)}</span>
+          {item.gst_percentage > 0 && (
+            <span style={{ marginLeft: 8 }}>
+              GST ({item.gst_percentage}%):{" "}
+              <span style={{ fontWeight: 600, color: "#d97706" }}>₹{gstAmt.toFixed(2)}</span>
+            </span>
+          )}
         </div>
-        <div style={{ fontSize:14, fontWeight:700, color:"#92400e" }}>Service Total: ₹{lineTotal.toFixed(2)}</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#92400e" }}>
+          Service Total: ₹{lineTotal.toFixed(2)}
+        </div>
       </div>
     </div>
   );
@@ -582,88 +840,135 @@ const LabourItemRow = ({ item, idx, onChange, onRemove, isOnly }) => {
   const { base, gstAmt, total: lineTotal, sqFtAmt, hoursAmt } = computeLabourLineTotal(item);
 
   return (
-    <div style={{ background:"#fafaf9", border:"1px solid #e5e7eb", borderRadius:10, padding:isMobile?10:14 }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-        <span style={{ fontSize:11, fontWeight:700, color:"#374151", background:"#f3e8ff", padding:"2px 10px", borderRadius:20 }}>
-          🔧 Labour #{idx+1}
-        </span>
-        <Popconfirm title="Remove this labour entry?" onConfirm={() => onRemove(idx)} disabled={isOnly} okText="Yes" cancelText="No">
+    <div style={{
+      background: "#fafaf9", border: "1px solid #e5e7eb",
+      borderRadius: 10, padding: isMobile ? 10 : 14,
+    }}>
+      <div style={{
+        display: "flex", justifyContent: "space-between",
+        alignItems: "center", marginBottom: 10,
+      }}>
+        <span style={{
+          fontSize: 11, fontWeight: 700, color: "#374151",
+          background: "#f3e8ff", padding: "2px 10px", borderRadius: 20,
+        }}>🔧 Labour #{idx + 1}</span>
+        <Popconfirm title="Remove this labour entry?" onConfirm={() => onRemove(idx)}
+          disabled={isOnly} okText="Yes" cancelText="No">
           <Button icon={<DeleteOutlined />} size="small" danger type="text" disabled={isOnly} />
         </Popconfirm>
       </div>
 
-      <div style={{ marginBottom:10 }}>
+      <div style={{ marginBottom: 10 }}>
         <FormField label="Work Description">
-          <Input placeholder="e.g. Flex installation, cutting, finishing…" value={item.service_name} size="small" style={{ borderRadius:6 }}
+          <Input placeholder="e.g. Flex installation, cutting, finishing…"
+            value={item.service_name} size="small" style={{ borderRadius: 6 }}
             onChange={(e) => set("service_name", e.target.value)} />
         </FormField>
       </div>
 
-      <div style={{ display:"grid", gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)", gap:8, marginBottom:10 }}>
+      <div style={{
+        display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4,1fr)",
+        gap: 8, marginBottom: 10,
+      }}>
         <FormField label="Sq. Ft">
-          <InputNumber min={0} step={0.5} value={item.sq_ft || undefined} placeholder="0" size="small" style={{ width:"100%", borderRadius:6 }} addonAfter="ft²"
-            onChange={(v) => set("sq_ft", v||0)} />
+          <InputNumber min={0} step={0.5} value={item.sq_ft || undefined}
+            placeholder="0" size="small" style={{ width: "100%", borderRadius: 6 }}
+            addonAfter="ft²" onChange={(v) => set("sq_ft", v || 0)} />
         </FormField>
         <FormField label="Price / Sq. Ft (₹)">
-          <InputNumber min={0} value={item.price_per_sqft || undefined} placeholder="0" size="small" style={{ width:"100%", borderRadius:6 }} prefix="₹"
-            onChange={(v) => set("price_per_sqft", v||0)} />
+          <InputNumber min={0} value={item.price_per_sqft || undefined}
+            placeholder="0" size="small" style={{ width: "100%", borderRadius: 6 }}
+            prefix="₹" onChange={(v) => set("price_per_sqft", v || 0)} />
         </FormField>
         <FormField label="Hours">
-          <InputNumber min={0} step={0.5} value={item.hours || undefined} placeholder="0" size="small" style={{ width:"100%", borderRadius:6 }} addonAfter="hrs"
-            onChange={(v) => set("hours", v||0)} />
+          <InputNumber min={0} step={0.5} value={item.hours || undefined}
+            placeholder="0" size="small" style={{ width: "100%", borderRadius: 6 }}
+            addonAfter="hrs" onChange={(v) => set("hours", v || 0)} />
         </FormField>
         <FormField label="Price / Hour (₹)">
-          <InputNumber min={0} value={item.price_per_hour || undefined} placeholder="0" size="small" style={{ width:"100%", borderRadius:6 }} prefix="₹"
-            onChange={(v) => set("price_per_hour", v||0)} />
+          <InputNumber min={0} value={item.price_per_hour || undefined}
+            placeholder="0" size="small" style={{ width: "100%", borderRadius: 6 }}
+            prefix="₹" onChange={(v) => set("price_per_hour", v || 0)} />
         </FormField>
       </div>
 
-      <div style={{ display:"grid", gridTemplateColumns:isMobile?"1fr":"1fr 1fr", gap:8, marginBottom:10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 8, marginBottom: 10 }}>
         <FormField label="GST %">
-          <Select value={item.gst_percentage} size="small" style={{ width:"100%" }} onChange={(v) => set("gst_percentage", v)}>
-            {GST_OPTIONS.map(g => <Option key={g} value={g}>{g===0?"No GST":`${g}%`}</Option>)}
+          <Select value={item.gst_percentage} size="small" style={{ width: "100%" }}
+            onChange={(v) => set("gst_percentage", v)}>
+            {GST_OPTIONS.map((g) => (
+              <Option key={g} value={g}>{g === 0 ? "No GST" : `${g}%`}</Option>
+            ))}
           </Select>
         </FormField>
         <FormField label="Notes">
-          <Input placeholder="Notes…" value={item.notes} size="small" style={{ borderRadius:6 }} onChange={(e) => set("notes", e.target.value)} />
+          <Input placeholder="Notes…" value={item.notes} size="small"
+            style={{ borderRadius: 6 }}
+            onChange={(e) => set("notes", e.target.value)} />
         </FormField>
       </div>
 
-      <div style={{ background:"#fff", border:"1px solid #e9d5ff", borderRadius:8, padding:"8px 14px", textAlign:"right" }}>
-        <div style={{ fontSize:11, color:"#6b7280", marginBottom:2 }}>
-          {item.sq_ft > 0 && <span>{item.sq_ft} ft² × ₹{item.price_per_sqft} = ₹{sqFtAmt.toFixed(2)}</span>}
-          {item.sq_ft > 0 && item.hours > 0 && <span style={{ margin:"0 6px", color:"#9ca3af" }}>+</span>}
-          {item.hours > 0 && <span>{item.hours} hrs × ₹{item.price_per_hour} = ₹{hoursAmt.toFixed(2)}</span>}
+      <div style={{
+        background: "#fff", border: "1px solid #e9d5ff",
+        borderRadius: 8, padding: "8px 14px", textAlign: "right",
+      }}>
+        <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 2 }}>
+          {item.sq_ft > 0 && (
+            <span>{item.sq_ft} ft² × ₹{item.price_per_sqft} = ₹{sqFtAmt.toFixed(2)}</span>
+          )}
+          {item.sq_ft > 0 && item.hours > 0 && (
+            <span style={{ margin: "0 6px", color: "#9ca3af" }}>+</span>
+          )}
+          {item.hours > 0 && (
+            <span>{item.hours} hrs × ₹{item.price_per_hour} = ₹{hoursAmt.toFixed(2)}</span>
+          )}
         </div>
-        <div style={{ fontSize:11, color:"#6b7280", marginBottom:2 }}>
-          Base: <span style={{ fontWeight:600, color:"#374151" }}>₹{base.toFixed(2)}</span>
-          {item.gst_percentage > 0 && <span style={{ marginLeft:8 }}>GST ({item.gst_percentage}%): <span style={{ fontWeight:600, color:"#d97706" }}>₹{gstAmt.toFixed(2)}</span></span>}
+        <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 2 }}>
+          Base: <span style={{ fontWeight: 600, color: "#374151" }}>₹{base.toFixed(2)}</span>
+          {item.gst_percentage > 0 && (
+            <span style={{ marginLeft: 8 }}>
+              GST ({item.gst_percentage}%):{" "}
+              <span style={{ fontWeight: 600, color: "#d97706" }}>₹{gstAmt.toFixed(2)}</span>
+            </span>
+          )}
         </div>
-        <div style={{ fontSize:14, fontWeight:700, color:"#6b21a8" }}>Labour Total: ₹{lineTotal.toFixed(2)}</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#6b21a8" }}>
+          Labour Total: ₹{lineTotal.toFixed(2)}
+        </div>
       </div>
     </div>
   );
 };
 
 // ─── Job Items Section with Tabs ──────────────────────────────────────────────
-const JobItemsSection = ({ productItems, officeItems, labourItems, onProductChange, onOfficeChange, onLabourChange,
-  onAddProduct, onAddOffice, onAddLabour, onRemoveProduct, onRemoveOffice, onRemoveLabour }) => {
-
+const JobItemsSection = ({
+  productItems, officeItems, labourItems,
+  onProductChange, onOfficeChange, onLabourChange,
+  onAddProduct, onAddOffice, onAddLabour,
+  onRemoveProduct, onRemoveOffice, onRemoveLabour,
+}) => {
   const tabItems = [
     {
       key: "product",
       label: (
-        <span style={{ display:"flex", alignItems:"center", gap:6 }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <AppstoreOutlined /> Product
-          {productItems.length > 0 && <Tag color="blue" style={{ margin:0, fontSize:10, lineHeight:"16px", padding:"0 5px" }}>{productItems.length}</Tag>}
+          {productItems.length > 0 && (
+            <Tag color="blue" style={{ margin: 0, fontSize: 10, lineHeight: "16px", padding: "0 5px" }}>
+              {productItems.length}
+            </Tag>
+          )}
         </span>
       ),
       children: (
-        <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {productItems.map((item, idx) => (
-            <ProductItemRow key={idx} item={item} idx={idx} onChange={onProductChange} onRemove={onRemoveProduct} isOnly={productItems.length===1 && officeItems.length===0 && labourItems.length===0} />
+            <ProductItemRow key={idx} item={item} idx={idx}
+              onChange={onProductChange} onRemove={onRemoveProduct}
+              isOnly={productItems.length === 1 && officeItems.length === 0 && labourItems.length === 0} />
           ))}
-          <Button icon={<PlusOutlined />} onClick={onAddProduct} style={{ borderStyle:"dashed", borderRadius:8, color:"#6b7280", height:40, borderColor:"#93c5fd" }}>
+          <Button icon={<PlusOutlined />} onClick={onAddProduct}
+            style={{ borderStyle: "dashed", borderRadius: 8, color: "#6b7280", height: 40, borderColor: "#93c5fd" }}>
             Add Product Item
           </Button>
         </div>
@@ -672,10 +977,12 @@ const JobItemsSection = ({ productItems, officeItems, labourItems, onProductChan
     {
       key: "service",
       label: (
-        <span style={{ display:"flex", alignItems:"center", gap:6 }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <ToolOutlined /> Service
-          {(officeItems.length + labourItems.length) > 0 && (
-            <Tag color="orange" style={{ margin:0, fontSize:10, lineHeight:"16px", padding:"0 5px" }}>{officeItems.length + labourItems.length}</Tag>
+          {officeItems.length + labourItems.length > 0 && (
+            <Tag color="orange" style={{ margin: 0, fontSize: 10, lineHeight: "16px", padding: "0 5px" }}>
+              {officeItems.length + labourItems.length}
+            </Tag>
           )}
         </span>
       ),
@@ -684,17 +991,24 @@ const JobItemsSection = ({ productItems, officeItems, labourItems, onProductChan
           {
             key: "office",
             label: (
-              <span style={{ display:"flex", alignItems:"center", gap:5 }}>
-                <AppstoreOutlined style={{ fontSize:12 }} /> Office Work
-                {officeItems.length > 0 && <Tag color="gold" style={{ margin:0, fontSize:10, lineHeight:"14px", padding:"0 4px" }}>{officeItems.length}</Tag>}
+              <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <AppstoreOutlined style={{ fontSize: 12 }} /> Office Work
+                {officeItems.length > 0 && (
+                  <Tag color="gold" style={{ margin: 0, fontSize: 10, lineHeight: "14px", padding: "0 4px" }}>
+                    {officeItems.length}
+                  </Tag>
+                )}
               </span>
             ),
             children: (
-              <div style={{ display:"flex", flexDirection:"column", gap:10, paddingTop:8 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 8 }}>
                 {officeItems.map((item, idx) => (
-                  <OfficeServiceItemRow key={idx} item={item} idx={idx} onChange={onOfficeChange} onRemove={onRemoveOffice} isOnly={officeItems.length===1} />
+                  <OfficeServiceItemRow key={idx} item={item} idx={idx}
+                    onChange={onOfficeChange} onRemove={onRemoveOffice}
+                    isOnly={officeItems.length === 1} />
                 ))}
-                <Button icon={<PlusOutlined />} onClick={onAddOffice} style={{ borderStyle:"dashed", borderRadius:8, color:"#6b7280", height:40, borderColor:"#fcd34d" }}>
+                <Button icon={<PlusOutlined />} onClick={onAddOffice}
+                  style={{ borderStyle: "dashed", borderRadius: 8, color: "#6b7280", height: 40, borderColor: "#fcd34d" }}>
                   Add Office Work
                 </Button>
               </div>
@@ -703,17 +1017,24 @@ const JobItemsSection = ({ productItems, officeItems, labourItems, onProductChan
           {
             key: "labour",
             label: (
-              <span style={{ display:"flex", alignItems:"center", gap:5 }}>
-                <ToolOutlined style={{ fontSize:12 }} /> Labour Work
-                {labourItems.length > 0 && <Tag color="purple" style={{ margin:0, fontSize:10, lineHeight:"14px", padding:"0 4px" }}>{labourItems.length}</Tag>}
+              <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <ToolOutlined style={{ fontSize: 12 }} /> Labour Work
+                {labourItems.length > 0 && (
+                  <Tag color="purple" style={{ margin: 0, fontSize: 10, lineHeight: "14px", padding: "0 4px" }}>
+                    {labourItems.length}
+                  </Tag>
+                )}
               </span>
             ),
             children: (
-              <div style={{ display:"flex", flexDirection:"column", gap:10, paddingTop:8 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 8 }}>
                 {labourItems.map((item, idx) => (
-                  <LabourItemRow key={idx} item={item} idx={idx} onChange={onLabourChange} onRemove={onRemoveLabour} isOnly={labourItems.length===1} />
+                  <LabourItemRow key={idx} item={item} idx={idx}
+                    onChange={onLabourChange} onRemove={onRemoveLabour}
+                    isOnly={labourItems.length === 1} />
                 ))}
-                <Button icon={<PlusOutlined />} onClick={onAddLabour} style={{ borderStyle:"dashed", borderRadius:8, color:"#6b7280", height:40, borderColor:"#c4b5fd" }}>
+                <Button icon={<PlusOutlined />} onClick={onAddLabour}
+                  style={{ borderStyle: "dashed", borderRadius: 8, color: "#6b7280", height: 40, borderColor: "#c4b5fd" }}>
                   Add Labour Work
                 </Button>
               </div>
@@ -725,13 +1046,8 @@ const JobItemsSection = ({ productItems, officeItems, labourItems, onProductChan
   ];
 
   return (
-    <Tabs
-      defaultActiveKey="product"
-      type="card"
-      size="middle"
-      style={{ marginBottom:14 }}
-      items={tabItems}
-    />
+    <Tabs defaultActiveKey="product" type="card" size="middle"
+      style={{ marginBottom: 14 }} items={tabItems} />
   );
 };
 
@@ -740,16 +1056,70 @@ const JobItemsSection = ({ productItems, officeItems, labourItems, onProductChan
 // ════════════════════════════════════════════════════════════════════════════
 const CreateJobModal = ({ open, onClose, onCreated }) => {
   const { isMobile, isTablet } = useBreakpoint();
-  const { user: adminUser }    = useSelector((state) => state.authSlice);
+  const { user: adminUser } = useSelector((state) => state.authSlice);
 
   const [formLoading, setFormLoading] = useState(false);
-  const [formError,   setFormError]   = useState("");
-  const [formData,    setFormData]    = useState({ ...DEFAULT_FORM });
+  const [formError, setFormError] = useState("");
+  const [formData, setFormData] = useState({ ...DEFAULT_FORM });
   const [productItems, setProductItems] = useState([{ ...EMPTY_PRODUCT_ITEM }]);
-  const [officeItems,  setOfficeItems]  = useState([]);
-  const [labourItems,  setLabourItems]  = useState([]);
+  const [officeItems, setOfficeItems] = useState([]);
+  const [labourItems, setLabourItems] = useState([]);
 
-  const orderDate  = dayjs();
+  // ── Pincode & City state ──────────────────────────────────────────────────
+  const [pincodeLoading, setPincodeLoading] = useState(false);
+  const [pincodeFilled, setPincodeFilled] = useState(false);
+  const [citySuggestions, setCitySuggestions] = useState([]);
+  const [showCitySuggest, setShowCitySuggest] = useState(false);
+  const cityRef = useRef(null);
+
+  useEffect(() => {
+    const fn = (e) => {
+      if (cityRef.current && !cityRef.current.contains(e.target))
+        setShowCitySuggest(false);
+    };
+    document.addEventListener("mousedown", fn);
+    return () => document.removeEventListener("mousedown", fn);
+  }, []);
+
+  const handlePincodeChange = async (val) => {
+    // Only allow digits
+    const digits = val.replace(/\D/g, "").slice(0, 6);
+    handleInput("pincode", digits);
+    setPincodeFilled(false);
+
+    if (digits.length === 6) {
+      setPincodeLoading(true);
+      const result = await fetchPincodeData(digits);
+      if (result) {
+        setFormData((p) => ({
+          ...p,
+          city: result.city,
+          district: result.district,
+          state: result.state,
+          pincode: digits,
+        }));
+        setPincodeFilled(true);
+      }
+      setPincodeLoading(false);
+    }
+  };
+
+  const handleCityInput = (val) => {
+    handleInput("city", val);
+    setPincodeFilled(false);
+    if (val.length >= 2) {
+      const filtered = TN_CITIES.filter((c) =>
+        c.toLowerCase().startsWith(val.toLowerCase())
+      );
+      setCitySuggestions(filtered.slice(0, 8));
+      setShowCitySuggest(filtered.length > 0);
+    } else {
+      setCitySuggestions([]);
+      setShowCitySuggest(false);
+    }
+  };
+
+  const orderDate = dayjs();
   const validUntil = dayjs().add(30, "day");
 
   const resetForm = () => {
@@ -758,57 +1128,65 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
     setOfficeItems([]);
     setLabourItems([]);
     setFormError("");
+    setPincodeLoading(false);
+    setPincodeFilled(false);
+    setCitySuggestions([]);
+    setShowCitySuggest(false);
   };
 
-  useEffect(() => { if (open) resetForm(); }, [open]);
+  useEffect(() => {
+    if (open) resetForm();
+  }, [open]);
 
-  const handleInput = (k, v) => setFormData(p => ({ ...p, [k]: v }));
+  const handleInput = (k, v) => setFormData((p) => ({ ...p, [k]: v }));
 
-  const handleProductChange  = (i, u) => setProductItems(p => p.map((it,j) => j===i?u:it));
-  const handleOfficeChange   = (i, u) => setOfficeItems(p => p.map((it,j) => j===i?u:it));
-  const handleLabourChange   = (i, u) => setLabourItems(p => p.map((it,j) => j===i?u:it));
+  const handleProductChange = (i, u) =>
+    setProductItems((p) => p.map((it, j) => (j === i ? u : it)));
+  const handleOfficeChange = (i, u) =>
+    setOfficeItems((p) => p.map((it, j) => (j === i ? u : it)));
+  const handleLabourChange = (i, u) =>
+    setLabourItems((p) => p.map((it, j) => (j === i ? u : it)));
 
-  const addProduct  = () => setProductItems(p => [...p, { ...EMPTY_PRODUCT_ITEM }]);
-  const addOffice   = () => setOfficeItems(p => [...p, { ...EMPTY_OFFICE_ITEM }]);
-  const addLabour   = () => setLabourItems(p => [...p, { ...EMPTY_LABOUR_ITEM }]);
+  const addProduct = () => setProductItems((p) => [...p, { ...EMPTY_PRODUCT_ITEM }]);
+  const addOffice = () => setOfficeItems((p) => [...p, { ...EMPTY_OFFICE_ITEM }]);
+  const addLabour = () => setLabourItems((p) => [...p, { ...EMPTY_LABOUR_ITEM }]);
 
-  const removeProduct = (i) => setProductItems(p => p.filter((_,j) => j!==i));
-  const removeOffice  = (i) => setOfficeItems(p => p.filter((_,j) => j!==i));
-  const removeLabour  = (i) => setLabourItems(p => p.filter((_,j) => j!==i));
+  const removeProduct = (i) => setProductItems((p) => p.filter((_, j) => j !== i));
+  const removeOffice = (i) => setOfficeItems((p) => p.filter((_, j) => j !== i));
+  const removeLabour = (i) => setLabourItems((p) => p.filter((_, j) => j !== i));
 
   const disabledDate = (current) => current && current < dayjs().startOf("day");
   const disabledTime = (current) => {
     if (!current || !current.isSame(dayjs(), "day")) return {};
     const now = dayjs();
     return {
-      disabledHours:   () => Array.from({ length: now.hour() }, (_, i) => i),
-      disabledMinutes: (h) => h === now.hour() ? Array.from({ length: now.minute() }, (_,i) => i) : [],
+      disabledHours: () => Array.from({ length: now.hour() }, (_, i) => i),
+      disabledMinutes: (h) =>
+        h === now.hour() ? Array.from({ length: now.minute() }, (_, i) => i) : [],
     };
   };
 
   const calcTotals = useCallback(() => {
     let subTotal = 0, totalGst = 0;
-
-    productItems.forEach(it => {
+    productItems.forEach((it) => {
       const { base, gstAmt } = computeProductLineTotal(it);
       subTotal += base; totalGst += gstAmt;
     });
-    officeItems.forEach(it => {
+    officeItems.forEach((it) => {
       const { base, gstAmt } = computeOfficeServiceLineTotal(it);
       subTotal += base; totalGst += gstAmt;
     });
-    labourItems.forEach(it => {
+    labourItems.forEach((it) => {
       const { base, gstAmt } = computeLabourLineTotal(it);
       subTotal += base; totalGst += gstAmt;
     });
-
-    const discPct   = parseFloat(formData.discount_percentage) || 0;
-    const discAmt   = subTotal * (discPct / 100);
+    const discPct = parseFloat(formData.discount_percentage) || 0;
+    const discAmt = subTotal * (discPct / 100);
     const afterDisc = subTotal - discAmt;
-    const del       = formData.free_delivery ? 0 : parseFloat(formData.delivery_charges) || 0;
+    const del = formData.free_delivery ? 0 : parseFloat(formData.delivery_charges) || 0;
     const grandTotal = afterDisc + totalGst + del;
-    const paid       = parseFloat(formData.payment_amount) || 0;
-    const balance    = grandTotal - paid;
+    const paid = parseFloat(formData.payment_amount) || 0;
+    const balance = grandTotal - paid;
     return { subTotal, totalGst, discAmt, afterDisc, del, grandTotal, paid, balance };
   }, [productItems, officeItems, labourItems, formData]);
 
@@ -816,21 +1194,21 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
     setFormLoading(true);
     setFormError("");
     try {
-      if (!formData.customer_name.trim())    throw new Error("Customer name is required");
-      if (!formData.customer_phone.trim())   throw new Error("Phone number is required");
+      if (!formData.customer_name.trim()) throw new Error("Customer name is required");
+      if (!formData.customer_phone.trim()) throw new Error("Phone number is required");
       if (!formData.estimated_delivery_date) throw new Error("Estimated delivery date is required");
-      if (!formData.notes.trim())            throw new Error("Notes is required");
+      if (!formData.notes.trim()) throw new Error("Notes is required");
 
       const allItems = [...productItems, ...officeItems, ...labourItems];
       if (!allItems.length) throw new Error("Add at least one item or service");
 
-      const validProducts = productItems.filter(it => {
+      const validProducts = productItems.filter((it) => {
         if (!it.product_name || !it.quantity_type) return false;
         if (it.quantity_type === "sq.ft" && (it.sq_ft || 0) <= 0) return false;
         return (it.quantity || 0) > 0 && (it.price || 0) > 0;
       });
-      const validOffice  = officeItems.filter(it => it.office_type && (it.price || 0) > 0);
-      const validLabour  = labourItems.filter(it => (it.sq_ft > 0 || it.hours > 0));
+      const validOffice = officeItems.filter((it) => it.office_type && (it.price || 0) > 0);
+      const validLabour = labourItems.filter((it) => it.sq_ft > 0 || it.hours > 0);
 
       if (!validProducts.length && !validOffice.length && !validLabour.length) {
         throw new Error("Add at least one valid item with price/qty");
@@ -838,121 +1216,133 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
 
       const t = calcTotals();
 
-      // Build cart_items array with unified schema
       const cartItems = [
-        ...validProducts.map(it => {
+        ...validProducts.map((it) => {
           const { base, gstAmt, total } = computeProductLineTotal(it);
           return {
-            item_category:  "product",
-            product_id:     it.product_id || "",
-            product_name:   it.product_name,
-            variation:      it.variation || "",
-            printing_type:  it.printing_type || "",
-            quantity:       it.quantity,
-            quantity_type:  it.quantity_type,
-            price:          it.price,
+            item_category: "product",
+            product_id: it.product_id || "",
+            product_name: it.product_name,
+            variation: it.variation || "",
+            printing_type: it.printing_type || "",
+            quantity: it.quantity,
+            quantity_type: it.quantity_type,
+            price: it.price,
             gst_percentage: it.gst_percentage || 0,
-            gst_amount:     parseFloat(gstAmt.toFixed(2)),
-            line_base:      parseFloat(base.toFixed(2)),
-            line_total:     parseFloat(total.toFixed(2)),
-            design_file:    it.design_file || "",
-            notes:          it.notes || "",
-            width:          it.quantity_type === "sq.ft" ? it.width : "",
-            height:         it.quantity_type === "sq.ft" ? it.height : "",
-            size_unit:      it.quantity_type === "quantity" ? "pcs" : it.size_unit,
-            sq_ft:          it.quantity_type === "sq.ft" ? it.sq_ft : 0,
-            sq_ft_manual:   it.sq_ft_manual || false,
-            size:           it.quantity_type === "sq.ft" && it.width && it.height
+            gst_amount: parseFloat(gstAmt.toFixed(2)),
+            line_base: parseFloat(base.toFixed(2)),
+            line_total: parseFloat(total.toFixed(2)),
+            design_file: it.design_file || "",
+            notes: it.notes || "",
+            width: it.quantity_type === "sq.ft" ? it.width : "",
+            height: it.quantity_type === "sq.ft" ? it.height : "",
+            size_unit: it.quantity_type === "quantity" ? "pcs" : it.size_unit,
+            sq_ft: it.quantity_type === "sq.ft" ? it.sq_ft : 0,
+            sq_ft_manual: it.sq_ft_manual || false,
+            size: it.quantity_type === "sq.ft" && it.width && it.height
               ? `${it.width}×${it.height} ${it.size_unit} (${it.sq_ft} sq.ft)` : "",
           };
         }),
-        ...validOffice.map(it => {
+        ...validOffice.map((it) => {
           const { base, gstAmt, total, qty } = computeOfficeServiceLineTotal(it);
           return {
-            item_category:  "service_office",
-            product_name:   it.service_name || it.office_type,
-            office_type:    it.office_type,
-            days:           it.days || 0,
-            hours:          it.hours || 0,
-            reels_count:    it.reels_count || 0,
-            post_count:     it.post_count || 0,
-            quantity:       qty,
-            quantity_type:  it.office_type === "website" ? "days" : it.office_type === "social_media" ? "items" : "hours",
-            price:          it.price,
+            item_category: "service_office",
+            product_name: it.service_name || it.office_type,
+            office_type: it.office_type,
+            days: it.days || 0,
+            hours: it.hours || 0,
+            reels_count: it.reels_count || 0,
+            post_count: it.post_count || 0,
+            quantity: qty,
+            quantity_type: it.office_type === "website" ? "days"
+              : it.office_type === "social_media" ? "items" : "hours",
+            price: it.price,
             gst_percentage: it.gst_percentage || 0,
-            gst_amount:     parseFloat(gstAmt.toFixed(2)),
-            line_base:      parseFloat(base.toFixed(2)),
-            line_total:     parseFloat(total.toFixed(2)),
-            notes:          it.notes || "",
+            gst_amount: parseFloat(gstAmt.toFixed(2)),
+            line_base: parseFloat(base.toFixed(2)),
+            line_total: parseFloat(total.toFixed(2)),
+            notes: it.notes || "",
           };
         }),
-        ...validLabour.map(it => {
+        ...validLabour.map((it) => {
           const { base, gstAmt, total } = computeLabourLineTotal(it);
           return {
-            item_category:  "service_labour",
-            product_name:   it.service_name || "Labour Work",
-            sq_ft:          it.sq_ft || 0,
-            hours:          it.hours || 0,
+            item_category: "service_labour",
+            product_name: it.service_name || "Labour Work",
+            sq_ft: it.sq_ft || 0,
+            hours: it.hours || 0,
             price_per_sqft: it.price_per_sqft || 0,
             price_per_hour: it.price_per_hour || 0,
-            quantity:       1,
-            quantity_type:  "labour",
-            price:          base || 0,
+            quantity: 1,
+            quantity_type: "labour",
+            price: base || 0,
             gst_percentage: it.gst_percentage || 0,
-            gst_amount:     parseFloat(gstAmt.toFixed(2)),
-            line_base:      parseFloat(base.toFixed(2)),
-            line_total:     parseFloat(total.toFixed(2)),
-            notes:          it.notes || "",
+            gst_amount: parseFloat(gstAmt.toFixed(2)),
+            line_base: parseFloat(base.toFixed(2)),
+            line_total: parseFloat(total.toFixed(2)),
+            notes: it.notes || "",
           };
         }),
       ];
 
       const payload = {
-        order_date:              orderDate.toISOString(),
-        valid_until:             validUntil.toISOString(),
+        order_date: orderDate.toISOString(),
+        valid_until: validUntil.toISOString(),
         estimated_delivery_date: formData.estimated_delivery_date.toISOString(),
-        customer_name:  formData.customer_name.trim(),
+        customer_name: formData.customer_name.trim(),
         customer_phone: formData.customer_phone.trim(),
-        company_name:   (formData.company_name || "").trim(),
+        company_name: (formData.company_name || "").trim(),
         delivery_address: {
-          street:  [formData.address_line1, formData.address_line2].filter(Boolean).join(", "),
-          city:    formData.city,
-          state:   formData.state,
+          street: [formData.address_line1, formData.address_line2].filter(Boolean).join(", "),
+          city: formData.city,
+          district: formData.district || "",
+          state: formData.state,
           pincode: formData.pincode,
           country: formData.country,
         },
         cart_items: cartItems,
         gst_no: formData.gst_no.trim(),
-        subtotal:            parseFloat(t.subTotal.toFixed(2)),
-        discount_amount:     parseFloat(t.discAmt.toFixed(2)),
-        taxable_amount:      parseFloat(t.afterDisc.toFixed(2)),
-        tax_amount:          parseFloat(t.totalGst.toFixed(2)),
-        delivery_charges:    formData.free_delivery ? 0 : parseFloat(formData.delivery_charges) || 0,
-        free_delivery:       formData.free_delivery,
+        subtotal: parseFloat(t.subTotal.toFixed(2)),
+        discount_amount: parseFloat(t.discAmt.toFixed(2)),
+        taxable_amount: parseFloat(t.afterDisc.toFixed(2)),
+        tax_amount: parseFloat(t.totalGst.toFixed(2)),
+        delivery_charges: formData.free_delivery ? 0 : parseFloat(formData.delivery_charges) || 0,
+        free_delivery: formData.free_delivery,
         discount_percentage: parseFloat(formData.discount_percentage || 0),
-        total_amount:        parseFloat(t.grandTotal.toFixed(2)),
-        payment_mode:        formData.payment_mode || "",
-        payment_amount:      parseFloat(formData.payment_amount) || 0,
-        balance_amount:      parseFloat(t.balance.toFixed(2)),
-        next_due_date:       formData.next_due_date ? formData.next_due_date.toISOString() : null,
-        notes:                formData.notes.trim(),
+        total_amount: parseFloat(t.grandTotal.toFixed(2)),
+        payments: t.paid > 0 ? [{
+          amount: parseFloat(t.paid.toFixed(2)),
+          method: formData.payment_mode || "",
+          notes: "",
+          next_due_date: t.balance > 0 && formData.next_due_date
+            ? formData.next_due_date.toISOString() : null,
+        }] : [],
+        notes: formData.notes.trim(),
         terms_and_conditions: formData.terms_and_conditions.trim(),
-        created_by:          adminUser?.name || "Admin",
+        created_by: adminUser?.name || "Admin",
         created_by_admin_id: adminUser?._id ?? null,
-        job_status:          "draft",
+        job_status: "draft",
       };
 
-      const res  = await fetch("https://api.dmedia.in/api/jobs", {
+      const res = await fetch("https://api.dmedia.in/api/jobs", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("authToken")}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+        },
         body: JSON.stringify(payload),
       });
 
       const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.message || "Failed to create job");
+      if (!res.ok || !data.success)
+        throw new Error(data.message || "Failed to create job");
 
       const createdJob = data.job || data.data;
-      SUCCESS_NOTIFICATION({ message: createdJob?.job_no ? `Job ${createdJob.job_no} created successfully!` : "Job created successfully!" });
+      SUCCESS_NOTIFICATION({
+        message: createdJob?.job_no
+          ? `Job ${createdJob.job_no} created successfully!`
+          : "Job created successfully!",
+      });
 
       onClose();
       onCreated?.();
@@ -964,12 +1354,11 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
   };
 
   const totals = calcTotals();
-  const g  = isMobile ? 8 : 12;
+  const g = isMobile ? 8 : 12;
   const c2 = isMobile ? "1fr" : "1fr 1fr";
   const c3 = isMobile ? "1fr" : isTablet ? "1fr 1fr" : "1fr 1fr 1fr";
-  const c4 = isMobile ? "1fr 1fr" : "repeat(4,1fr)";
-  const modalWidth      = isMobile ? "100vw" : isTablet ? "94vw" : "min(96vw,920px)";
-  const mobileFullStyle = isMobile ? { top:0, margin:0, maxWidth:"100vw", padding:0 } : {};
+  const modalWidth = isMobile ? "100vw" : isTablet ? "94vw" : "min(96vw,920px)";
+  const mobileFullStyle = isMobile ? { top: 0, margin: 0, maxWidth: "100vw", padding: 0 } : {};
 
   return (
     <Modal
@@ -977,85 +1366,220 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
       onCancel={() => { onClose(); resetForm(); }}
       footer={null}
       title={
-        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          <FileTextOutlined style={{ color:"#2563eb" }} />
-          <span style={{ fontWeight:700, fontSize:isMobile?14:15 }}>Create New Job</span>
-          <Tag color="blue" style={{ fontFamily:"monospace", marginLeft:4 }}>New Job</Tag>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <FileTextOutlined style={{ color: "#2563eb" }} />
+          <span style={{ fontWeight: 700, fontSize: isMobile ? 14 : 15 }}>Create New Job</span>
+          <Tag color="blue" style={{ fontFamily: "monospace", marginLeft: 4 }}>New Job</Tag>
         </div>
       }
       width={modalWidth}
       style={mobileFullStyle}
       styles={{
-        body: { maxHeight:isMobile?"calc(100dvh - 56px)":"85vh", overflowY:"auto", padding:isMobile?10:16 },
-        header: { padding:`${isMobile?10:14}px ${isMobile?12:16}px`, borderBottom:"1px solid #f0f0f0" },
+        body: {
+          maxHeight: isMobile ? "calc(100dvh - 56px)" : "85vh",
+          overflowY: "auto",
+          padding: isMobile ? 10 : 16,
+        },
+        header: {
+          padding: `${isMobile ? 10 : 14}px ${isMobile ? 12 : 16}px`,
+          borderBottom: "1px solid #f0f0f0",
+        },
       }}
-      destroyOnClose
-    >
+      destroyOnClose>
       <Spin spinning={formLoading}>
 
         {/* Order info banner */}
-        <div style={{ background:"linear-gradient(135deg,#eff6ff 0%,#f0fdf4 100%)", border:"1px solid #bfdbfe", borderRadius:10, padding:isMobile?"10px 12px":"10px 14px", marginBottom:14, display:"flex", flexWrap:"wrap", gap:isMobile?8:16, alignItems:"center" }}>
-          <InfoBadge label="Order Date"  value={orderDate.format("DD MMM YYYY")} />
+        <div style={{
+          background: "linear-gradient(135deg,#eff6ff 0%,#f0fdf4 100%)",
+          border: "1px solid #bfdbfe", borderRadius: 10,
+          padding: isMobile ? "10px 12px" : "10px 14px", marginBottom: 14,
+          display: "flex", flexWrap: "wrap", gap: isMobile ? 8 : 16, alignItems: "center",
+        }}>
+          <InfoBadge label="Order Date" value={orderDate.format("DD MMM YYYY")} />
           <InfoBadge label="Valid Until" value={validUntil.format("DD MMM YYYY")} green sub="30 days" />
           {adminUser?.name && <InfoBadge label="Created By" value={adminUser.name} />}
         </div>
 
         {/* Error */}
         {formError && (
-          <div style={{ marginBottom:12, padding:"10px 14px", background:"#fef2f2", border:"1px solid #fca5a5", borderRadius:8, color:"#b91c1c", fontSize:13 }}>
+          <div style={{
+            marginBottom: 12, padding: "10px 14px", background: "#fef2f2",
+            border: "1px solid #fca5a5", borderRadius: 8, color: "#b91c1c", fontSize: 13,
+          }}>
             ⚠ {formError}
           </div>
         )}
 
         {/* ── Customer Info ── */}
         <SectionHeader icon={<UserOutlined />} title="Customer Info" />
-        <div style={{ display:"grid", gridTemplateColumns:c3, gap:g, marginBottom:g }}>
+        <div style={{ display: "grid", gridTemplateColumns: c3, gap: g, marginBottom: g }}>
           <FormField label="Customer Name" required>
-            <Input prefix={<UserOutlined style={{ color:"#9ca3af" }} />} placeholder="Full name" value={formData.customer_name}
-              onChange={(e) => handleInput("customer_name", e.target.value)} style={{ borderRadius:8 }} />
+            <Input prefix={<UserOutlined style={{ color: "#9ca3af" }} />}
+              placeholder="Full name" value={formData.customer_name}
+              onChange={(e) => handleInput("customer_name", e.target.value)}
+              style={{ borderRadius: 8 }} />
           </FormField>
           <FormField label="Phone" required>
-            <Input prefix={<PhoneOutlined style={{ color:"#9ca3af" }} />} placeholder="10-digit mobile" value={formData.customer_phone}
-              maxLength={10} onChange={(e) => handleInput("customer_phone", e.target.value)} style={{ borderRadius:8 }} />
+            <Input prefix={<PhoneOutlined style={{ color: "#9ca3af" }} />}
+              placeholder="10-digit mobile" value={formData.customer_phone}
+              maxLength={10}
+              onChange={(e) => handleInput("customer_phone", e.target.value)}
+              style={{ borderRadius: 8 }} />
           </FormField>
           <FormField label="Est. Delivery Date" required>
-            <DatePicker showTime={{ format:"hh:mm A", use12Hours:true }} format="DD MMM YYYY  hh:mm A" placeholder="Select date & time"
-              value={formData.estimated_delivery_date} disabledDate={disabledDate} disabledTime={disabledTime}
+            <DatePicker showTime={{ format: "hh:mm A", use12Hours: true }}
+              format="DD MMM YYYY  hh:mm A" placeholder="Select date & time"
+              value={formData.estimated_delivery_date}
+              disabledDate={disabledDate} disabledTime={disabledTime}
               onChange={(dayjsVal) => handleInput("estimated_delivery_date", dayjsVal)}
-              style={{ width:"100%", borderRadius:8 }} size="middle" needConfirm getPopupContainer={(trigger) => trigger.parentElement} />
+              style={{ width: "100%", borderRadius: 8 }} size="middle" needConfirm
+              getPopupContainer={(trigger) => trigger.parentElement} />
           </FormField>
         </div>
 
-        <div style={{ display:"grid", gridTemplateColumns:c2, gap:g, marginBottom:14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: c2, gap: g, marginBottom: 14 }}>
           <FormField label="Company Name">
-            <Input prefix={<BankOutlined style={{ color:"#9ca3af" }} />} placeholder="Company / Business name" value={formData.company_name}
-              onChange={(e) => handleInput("company_name", e.target.value)} style={{ borderRadius:8 }} />
+            <Input prefix={<BankOutlined style={{ color: "#9ca3af" }} />}
+              placeholder="Company / Business name" value={formData.company_name}
+              onChange={(e) => handleInput("company_name", e.target.value)}
+              style={{ borderRadius: 8 }} />
           </FormField>
           <FormField label="GST Number">
             <Input placeholder="GSTIN (15 chars)" maxLength={15} value={formData.gst_no}
-              onChange={(e) => handleInput("gst_no", e.target.value.toUpperCase())} style={{ borderRadius:8 }} />
+              onChange={(e) => handleInput("gst_no", e.target.value.toUpperCase())}
+              style={{ borderRadius: 8 }} />
           </FormField>
         </div>
 
         {/* ── Delivery Address ── */}
         <SectionHeader icon={<EnvironmentOutlined />} title="Delivery Address" />
-        <div style={{ display:"flex", flexDirection:"column", gap:g, marginBottom:14 }}>
-          <div style={{ display:"grid", gridTemplateColumns:c2, gap:g }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: g, marginBottom: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: c2, gap: g }}>
             <FormField label="Address Line 1">
-              <Input placeholder="Flat / Door No, Building" value={formData.address_line1}
-                onChange={(e) => handleInput("address_line1", e.target.value)} style={{ borderRadius:8 }} />
+              <Input placeholder="Flat / Door No, Building"
+                value={formData.address_line1}
+                onChange={(e) => handleInput("address_line1", e.target.value)}
+                style={{ borderRadius: 8 }} />
             </FormField>
             <FormField label="Address Line 2">
-              <Input placeholder="Street, Area, Landmark" value={formData.address_line2}
-                onChange={(e) => handleInput("address_line2", e.target.value)} style={{ borderRadius:8 }} />
+              <Input placeholder="Street, Area, Landmark"
+                value={formData.address_line2}
+                onChange={(e) => handleInput("address_line2", e.target.value)}
+                style={{ borderRadius: 8 }} />
             </FormField>
           </div>
-          <div style={{ display:"grid", gridTemplateColumns:c4, gap:g }}>
-            {[["city","City","City"],["state","State","State"],["pincode","Pincode","6-digit"],["country","Country","Country"]].map(([k,label,ph]) => (
-              <FormField key={k} label={label}>
-                <Input placeholder={ph} value={formData[k]} onChange={(e) => handleInput(k, e.target.value)} style={{ borderRadius:8 }} />
-              </FormField>
-            ))}
+
+          {/* Pincode → auto-fills city, district, state */}
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(5,1fr)", gap: g }}>
+
+            {/* Pincode */}
+            <FormField label="Pincode">
+              <Input
+                placeholder="6-digit"
+                value={formData.pincode}
+                maxLength={6}
+                onChange={(e) => handlePincodeChange(e.target.value)}
+                style={{ borderRadius: 8, borderColor: pincodeFilled ? "#059669" : undefined }}
+                suffix={
+                  pincodeLoading
+                    ? <LoadingOutlined style={{ color: "#2563eb", fontSize: 12 }} spin />
+                    : pincodeFilled
+                      ? <CheckCircleOutlined style={{ color: "#059669", fontSize: 12 }} />
+                      : null
+                }
+              />
+              {pincodeLoading && (
+                <div style={{ fontSize: 10, color: "#2563eb", marginTop: 3, fontWeight: 600 }}>
+                  🔍 Looking up pincode…
+                </div>
+              )}
+              {pincodeFilled && !pincodeLoading && (
+                <div style={{ fontSize: 10, color: "#059669", marginTop: 3, fontWeight: 600 }}>
+                  ✅ Auto-filled from pincode
+                </div>
+              )}
+            </FormField>
+
+            {/* City with Tamil Nadu suggestions */}
+            <FormField label="City">
+              <div style={{ position: "relative" }} ref={cityRef}>
+                <Input
+                  placeholder="City"
+                  value={formData.city}
+                  autoComplete="off"
+                  onChange={(e) => handleCityInput(e.target.value)}
+                  onFocus={() => {
+                    if (citySuggestions.length > 0) setShowCitySuggest(true);
+                  }}
+                  style={{ borderRadius: 8 }}
+                />
+                {showCitySuggest && citySuggestions.length > 0 && (
+                  <div style={{
+                    position: "absolute", top: "100%", left: 0, right: 0,
+                    background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8,
+                    zIndex: 9999, boxShadow: "0 6px 20px rgba(0,0,0,0.13)",
+                    maxHeight: 220, overflowY: "auto",
+                  }}>
+                    <div style={{
+                      padding: "5px 12px 4px", fontSize: 10, fontWeight: 700,
+                      color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em",
+                      borderBottom: "1px solid #f3f4f6", background: "#fafafa",
+                    }}>
+                      Tamil Nadu Cities
+                    </div>
+                    {citySuggestions.map((city) => (
+                      <div key={city}
+                        onMouseDown={() => {
+                          handleInput("city", city);
+                          setShowCitySuggest(false);
+                          setCitySuggestions([]);
+                        }}
+                        style={{
+                          padding: "7px 12px", cursor: "pointer", fontSize: 13,
+                          color: "#1a1a2e", borderBottom: "1px solid #f9fafb",
+                          display: "flex", alignItems: "center", gap: 6,
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = "#eff6ff")}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}>
+                        <span style={{ fontSize: 11 }}>📍</span>
+                        <span style={{ fontWeight: 600 }}>{city}</span>
+                        <span style={{ fontSize: 10, color: "#9ca3af", marginLeft: "auto" }}>TN</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </FormField>
+
+            {/* District — auto-filled from pincode, editable */}
+            <FormField label="District">
+              <Input
+                placeholder="District"
+                value={formData.district || ""}
+                onChange={(e) => handleInput("district", e.target.value)}
+                style={{ borderRadius: 8 }}
+              />
+            </FormField>
+
+            {/* State — auto-filled from pincode, editable */}
+            <FormField label="State">
+              <Input
+                placeholder="State"
+                value={formData.state}
+                onChange={(e) => handleInput("state", e.target.value)}
+                style={{ borderRadius: 8 }}
+              />
+            </FormField>
+
+            {/* Country */}
+            <FormField label="Country">
+              <Input
+                placeholder="Country"
+                value={formData.country}
+                onChange={(e) => handleInput("country", e.target.value)}
+                style={{ borderRadius: 8 }}
+              />
+            </FormField>
           </div>
         </div>
 
@@ -1063,57 +1587,92 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
         <SectionHeader icon={<ShoppingCartOutlined />} title="Job Items" />
         <JobItemsSection
           productItems={productItems} officeItems={officeItems} labourItems={labourItems}
-          onProductChange={handleProductChange} onOfficeChange={handleOfficeChange} onLabourChange={handleLabourChange}
+          onProductChange={handleProductChange} onOfficeChange={handleOfficeChange}
+          onLabourChange={handleLabourChange}
           onAddProduct={addProduct} onAddOffice={addOffice} onAddLabour={addLabour}
-          onRemoveProduct={removeProduct} onRemoveOffice={removeOffice} onRemoveLabour={removeLabour}
-        />
+          onRemoveProduct={removeProduct} onRemoveOffice={removeOffice} onRemoveLabour={removeLabour} />
 
         {/* ── Payment ── */}
         <SectionHeader icon={<WalletOutlined />} title="Payment" />
-        <div style={{ display:"grid", gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)", gap:g, marginBottom:g }}>
+        <div style={{
+          display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3,1fr)",
+          gap: g, marginBottom: g,
+        }}>
           <FormField label="Payment Mode">
-            <Select placeholder="Select mode" value={formData.payment_mode || undefined} style={{ width:"100%" }} allowClear onChange={(v) => handleInput("payment_mode", v??"")}>
-              {PAYMENT_MODES.map(m => <Option key={m} value={m}>{m}</Option>)}
+            <Select placeholder="Select mode" value={formData.payment_mode || undefined}
+              style={{ width: "100%" }} allowClear
+              onChange={(v) => handleInput("payment_mode", v ?? "")}>
+              {PAYMENT_MODES.map((m) => <Option key={m} value={m}>{m}</Option>)}
             </Select>
           </FormField>
           <FormField label="Amount Paid (₹)">
-            <InputNumber min={0} placeholder="0.00" value={formData.payment_amount || undefined} style={{ width:"100%", borderRadius:8 }} prefix="₹"
-              onChange={(v) => handleInput("payment_amount", v??"")} />
+            <InputNumber min={0} placeholder="0.00"
+              value={formData.payment_amount || undefined}
+              style={{ width: "100%", borderRadius: 8 }} prefix="₹"
+              onChange={(v) => handleInput("payment_amount", v ?? "")} />
           </FormField>
           <FormField label="Delivery Charges (₹)">
-            <div style={{ display:"flex", gap:6, alignItems:"center" }}>
-              <InputNumber min={0} placeholder="0.00" value={formData.free_delivery ? 0 : (formData.delivery_charges || undefined)}
-                disabled={formData.free_delivery} style={{ flex:1, borderRadius:8 }} prefix="₹"
-                onChange={(v) => handleInput("delivery_charges", v??0)} />
-              <Button size="small" type={formData.free_delivery?"primary":"default"}
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <InputNumber min={0} placeholder="0.00"
+                value={formData.free_delivery ? 0 : formData.delivery_charges || undefined}
+                disabled={formData.free_delivery}
+                style={{ flex: 1, borderRadius: 8 }} prefix="₹"
+                onChange={(v) => handleInput("delivery_charges", v ?? 0)} />
+              <Button size="small"
+                type={formData.free_delivery ? "primary" : "default"}
                 onClick={() => handleInput("free_delivery", !formData.free_delivery)}
-                style={{ borderRadius:6, fontSize:11, height:32, padding:"0 8px", background:formData.free_delivery?"#059669":undefined, borderColor:formData.free_delivery?"#059669":undefined, color:formData.free_delivery?"#fff":undefined, whiteSpace:"nowrap" }}>
+                style={{
+                  borderRadius: 6, fontSize: 11, height: 32, padding: "0 8px",
+                  background: formData.free_delivery ? "#059669" : undefined,
+                  borderColor: formData.free_delivery ? "#059669" : undefined,
+                  color: formData.free_delivery ? "#fff" : undefined,
+                  whiteSpace: "nowrap",
+                }}>
                 {formData.free_delivery ? "🎉 Free" : "Free?"}
               </Button>
             </div>
           </FormField>
         </div>
 
-        {/* Next Due Date — shows only when balance > 0 */}
+        {/* Discount */}
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 2fr", gap: g, marginBottom: g }}>
+          <FormField label="Discount %">
+            <InputNumber min={0} max={100} placeholder="0"
+              value={formData.discount_percentage || undefined}
+              style={{ width: "100%", borderRadius: 8 }} addonAfter="%"
+              onChange={(v) => handleInput("discount_percentage", v ?? 0)} />
+          </FormField>
+        </div>
+
+        {/* Next Due Date */}
         {totals.balance > 0 && (
-          <div style={{ display:"grid", gridTemplateColumns:isMobile?"1fr":"1fr 2fr", gap:g, marginBottom:g, padding:"10px 14px", background:"#fff7ed", border:"1px solid #fed7aa", borderRadius:8 }}>
+          <div style={{
+            display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 2fr",
+            gap: g, marginBottom: g, padding: "10px 14px",
+            background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 8,
+          }}>
             <FormField label="Next Due Date">
-              <DatePicker
-                format="DD MMM YYYY"
-                placeholder="Select due date"
+              <DatePicker format="DD MMM YYYY" placeholder="Select due date"
                 value={formData.next_due_date}
                 disabledDate={(d) => d && d < dayjs().startOf("day")}
                 onChange={(dayjsVal) => handleInput("next_due_date", dayjsVal)}
-                style={{ width:"100%", borderRadius:8 }}
-                getPopupContainer={(trigger) => trigger.parentElement}
-              />
+                style={{ width: "100%", borderRadius: 8 }}
+                getPopupContainer={(trigger) => trigger.parentElement} />
             </FormField>
-            <div style={{ display:"flex", alignItems:"center", gap:8, paddingTop:20 }}>
-              <div style={{ padding:"6px 12px", background:"#fef2f2", border:"1px solid #fca5a5", borderRadius:8, fontSize:13, fontWeight:700, color:"#b91c1c" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, paddingTop: 20 }}>
+              <div style={{
+                padding: "6px 12px", background: "#fef2f2",
+                border: "1px solid #fca5a5", borderRadius: 8,
+                fontSize: 13, fontWeight: 700, color: "#b91c1c",
+              }}>
                 ⚠ Balance Due: ₹{totals.balance.toFixed(2)}
               </div>
               {formData.next_due_date && (
-                <div style={{ padding:"6px 12px", background:"#fefce8", border:"1px solid #fde047", borderRadius:8, fontSize:12, color:"#854d0e" }}>
+                <div style={{
+                  padding: "6px 12px", background: "#fefce8",
+                  border: "1px solid #fde047", borderRadius: 8,
+                  fontSize: 12, color: "#854d0e",
+                }}>
                   📅 Due on {formData.next_due_date.format("DD MMM YYYY")}
                 </div>
               )}
@@ -1123,67 +1682,104 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
 
         {/* ── Notes ── */}
         <SectionHeader icon={<FileTextOutlined />} title="Notes" />
-        <div style={{ marginBottom:14 }}>
+        <div style={{ marginBottom: 14 }}>
           <FormField label="Notes" required>
-            <TextArea rows={3} placeholder="Additional notes, special instructions…" value={formData.notes}
-              onChange={(e) => handleInput("notes", e.target.value)} style={{ borderRadius:8, resize:"vertical" }} />
+            <TextArea rows={3} placeholder="Additional notes, special instructions…"
+              value={formData.notes}
+              onChange={(e) => handleInput("notes", e.target.value)}
+              style={{ borderRadius: 8, resize: "vertical" }} />
           </FormField>
         </div>
 
         {/* ── Order Summary ── */}
-        <div style={{ background:"linear-gradient(135deg,#eff6ff 0%,#f8fafc 100%)", border:"1px solid #bfdbfe", borderRadius:10, padding:isMobile?12:"14px 16px", marginBottom:14 }}>
-          <div style={{ fontWeight:700, color:"#1e40af", marginBottom:10, fontSize:14, display:"flex", alignItems:"center", gap:6 }}>
+        <div style={{
+          background: "linear-gradient(135deg,#eff6ff 0%,#f8fafc 100%)",
+          border: "1px solid #bfdbfe", borderRadius: 10,
+          padding: isMobile ? 12 : "14px 16px", marginBottom: 14,
+        }}>
+          <div style={{
+            fontWeight: 700, color: "#1e40af", marginBottom: 10, fontSize: 14,
+            display: "flex", alignItems: "center", gap: 6,
+          }}>
             <FileTextOutlined /> Order Summary
           </div>
-          {/* Item breakdown */}
           {productItems.length > 0 && (
-            <div style={{ fontSize:11, color:"#6b7280", marginBottom:4, paddingLeft:4 }}>
-              📦 {productItems.length} product item{productItems.length!==1?"s":""}
+            <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4, paddingLeft: 4 }}>
+              📦 {productItems.length} product item{productItems.length !== 1 ? "s" : ""}
             </div>
           )}
           {officeItems.length > 0 && (
-            <div style={{ fontSize:11, color:"#6b7280", marginBottom:4, paddingLeft:4 }}>
-              💼 {officeItems.length} office service{officeItems.length!==1?"s":""}
+            <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 4, paddingLeft: 4 }}>
+              💼 {officeItems.length} office service{officeItems.length !== 1 ? "s" : ""}
             </div>
           )}
           {labourItems.length > 0 && (
-            <div style={{ fontSize:11, color:"#6b7280", marginBottom:8, paddingLeft:4 }}>
-              🔧 {labourItems.length} labour work item{labourItems.length!==1?"s":""}
+            <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 8, paddingLeft: 4 }}>
+              🔧 {labourItems.length} labour work item{labourItems.length !== 1 ? "s" : ""}
             </div>
           )}
           {[
-            { label:"Subtotal (before GST & discount)", value:`₹${totals.subTotal.toFixed(2)}` },
-            ...(totals.discAmt > 0 ? [{ label:`Discount (${formData.discount_percentage}%)`, value:`− ₹${totals.discAmt.toFixed(2)}`, color:"#059669" }] : []),
-            { label:"Total GST (per item)", value:`₹${totals.totalGst.toFixed(2)}`, color:"#d97706" },
-            { label:"Delivery Charges", value:formData.free_delivery?"Free 🎉":`₹${totals.del.toFixed(2)}`, color:formData.free_delivery?"#059669":undefined },
+            { label: "Subtotal (before GST & discount)", value: `₹${totals.subTotal.toFixed(2)}` },
+            ...(totals.discAmt > 0 ? [{
+              label: `Discount (${formData.discount_percentage}%)`,
+              value: `− ₹${totals.discAmt.toFixed(2)}`, color: "#059669",
+            }] : []),
+            { label: "Total GST (per item)", value: `₹${totals.totalGst.toFixed(2)}`, color: "#d97706" },
+            {
+              label: "Delivery Charges",
+              value: formData.free_delivery ? "Free 🎉" : `₹${totals.del.toFixed(2)}`,
+              color: formData.free_delivery ? "#059669" : undefined,
+            },
           ].map(({ label, value, color }) => (
-            <div key={label} style={{ display:"flex", justifyContent:"space-between", fontSize:13, color:color||"#4b5563", marginBottom:4 }}>
-              <span>{label}</span><span style={{ fontWeight:600 }}>{value}</span>
+            <div key={label} style={{
+              display: "flex", justifyContent: "space-between",
+              fontSize: 13, color: color || "#4b5563", marginBottom: 4,
+            }}>
+              <span>{label}</span>
+              <span style={{ fontWeight: 600 }}>{value}</span>
             </div>
           ))}
-          <Divider style={{ margin:"8px 0" }} />
-          <div style={{ display:"flex", justifyContent:"space-between", fontSize:isMobile?14:15, fontWeight:800, marginBottom:6 }}>
-            <span style={{ color:"#1a1a2e" }}>Grand Total</span>
-            <span style={{ color:"#2563eb" }}>₹{totals.grandTotal.toFixed(2)}</span>
+          <Divider style={{ margin: "8px 0" }} />
+          <div style={{
+            display: "flex", justifyContent: "space-between",
+            fontSize: isMobile ? 14 : 15, fontWeight: 800, marginBottom: 6,
+          }}>
+            <span style={{ color: "#1a1a2e" }}>Grand Total</span>
+            <span style={{ color: "#2563eb" }}>₹{totals.grandTotal.toFixed(2)}</span>
           </div>
           {(totals.paid > 0 || formData.payment_mode) && (
-            <div style={{ display:"flex", justifyContent:"space-between", fontSize:13, color:"#059669", marginBottom:4 }}>
-              <span>Amount Paid {formData.payment_mode?`(${formData.payment_mode})`:""}</span>
-              <span style={{ fontWeight:700 }}>− ₹{totals.paid.toFixed(2)}</span>
+            <div style={{
+              display: "flex", justifyContent: "space-between",
+              fontSize: 13, color: "#059669", marginBottom: 4,
+            }}>
+              <span>Amount Paid {formData.payment_mode ? `(${formData.payment_mode})` : ""}</span>
+              <span style={{ fontWeight: 700 }}>− ₹{totals.paid.toFixed(2)}</span>
             </div>
           )}
           {(totals.paid > 0 || formData.payment_mode) && (
             <>
-              <Divider style={{ margin:"6px 0" }} />
-              <div style={{ display:"flex", justifyContent:"space-between", fontSize:isMobile?14:15, fontWeight:800 }}>
-                <span style={{ color:"#1a1a2e" }}>Balance Due</span>
-                <span style={{ color:totals.balance<=0?"#059669":"#dc2626", background:totals.balance<=0?"#f0fdf4":"#fef2f2", padding:"2px 10px", borderRadius:6 }}>
-                  {totals.balance<=0 ? `✓ Paid (Advance ₹${Math.abs(totals.balance).toFixed(2)})` : `₹${totals.balance.toFixed(2)}`}
+              <Divider style={{ margin: "6px 0" }} />
+              <div style={{
+                display: "flex", justifyContent: "space-between",
+                fontSize: isMobile ? 14 : 15, fontWeight: 800,
+              }}>
+                <span style={{ color: "#1a1a2e" }}>Balance Due</span>
+                <span style={{
+                  color: totals.balance <= 0 ? "#059669" : "#dc2626",
+                  background: totals.balance <= 0 ? "#f0fdf4" : "#fef2f2",
+                  padding: "2px 10px", borderRadius: 6,
+                }}>
+                  {totals.balance <= 0
+                    ? `✓ Paid (Advance ₹${Math.abs(totals.balance).toFixed(2)})`
+                    : `₹${totals.balance.toFixed(2)}`}
                 </span>
               </div>
               {totals.balance > 0 && formData.next_due_date && (
-                <div style={{ display:"flex", justifyContent:"flex-end", marginTop:6 }}>
-                  <span style={{ fontSize:11, color:"#854d0e", background:"#fefce8", border:"1px solid #fde047", padding:"2px 10px", borderRadius:6 }}>
+                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
+                  <span style={{
+                    fontSize: 11, color: "#854d0e", background: "#fefce8",
+                    border: "1px solid #fde047", padding: "2px 10px", borderRadius: 6,
+                  }}>
                     📅 Next due: {formData.next_due_date.format("DD MMM YYYY")}
                   </span>
                 </div>
@@ -1193,14 +1789,20 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
         </div>
 
         {/* ── Actions ── */}
-        <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
-          <Button onClick={() => { onClose(); resetForm(); }} style={{ borderRadius:8, height:40, flex:isMobile?1:undefined }}>Cancel</Button>
-          <Button type="primary" icon={<SaveOutlined />} onClick={handleSubmit} loading={formLoading}
-            style={{ background:"#2563eb", border:"none", borderRadius:8, height:40, fontWeight:600, flex:isMobile?1:undefined }}>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <Button onClick={() => { onClose(); resetForm(); }}
+            style={{ borderRadius: 8, height: 40, flex: isMobile ? 1 : undefined }}>
+            Cancel
+          </Button>
+          <Button type="primary" icon={<SaveOutlined />}
+            onClick={handleSubmit} loading={formLoading}
+            style={{
+              background: "#2563eb", border: "none", borderRadius: 8,
+              height: 40, fontWeight: 600, flex: isMobile ? 1 : undefined,
+            }}>
             Create Job
           </Button>
         </div>
-
       </Spin>
     </Modal>
   );
