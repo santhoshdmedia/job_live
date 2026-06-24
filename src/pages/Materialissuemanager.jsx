@@ -33,7 +33,6 @@ const UNIT_OPTIONS = [
   { value: "cm", label: "cm" },
 ];
 
-// Labels that require no material (skip silently)
 const NO_MATERIAL_LABELS = ["Cutting File"];
 
 const FILE_TYPE_ICON = (ft = "") => {
@@ -417,53 +416,53 @@ const Modal = ({ open, title, onClose, children, size = "md" }) => {
 };
 
 // ─── Add Material Modal ───────────────────────────────────────────────────────
-const AddMaterialModal = ({ open, onClose, onAdded, show }) => {
-  const [name,    setName]    = useState("");
-  const [code,    setCode]    = useState("");
-  const [stock,   setStock]   = useState("");
-  const [width,   setWidth]   = useState("");
-  const [wUnit,   setWUnit]   = useState("ft");
-  const [height,  setHeight]  = useState("");
-  const [hUnit,   setHUnit]   = useState("ft");
-  const [loading, setLoading] = useState(false);
+// const AddMaterialModal = ({ open, onClose, onAdded, show }) => {
+//   const [name,    setName]    = useState("");
+//   const [code,    setCode]    = useState("");
+//   const [stock,   setStock]   = useState("");
+//   const [width,   setWidth]   = useState("");
+//   const [wUnit,   setWUnit]   = useState("ft");
+//   const [height,  setHeight]  = useState("");
+//   const [hUnit,   setHUnit]   = useState("ft");
+//   const [loading, setLoading] = useState(false);
 
-  const reset = () => { setName(""); setCode(""); setStock(""); setWidth(""); setWUnit("ft"); setHeight(""); setHUnit("ft"); };
+//   const reset = () => { setName(""); setCode(""); setStock(""); setWidth(""); setWUnit("ft"); setHeight(""); setHUnit("ft"); };
 
-  const handleSubmit = async () => {
-    if (!name.trim()) return show("Product name is required", "error");
-    setLoading(true);
-    try {
-      const payload = {
-        name: name.trim(),
-        product_code: code.trim(),
-        stock_count: parseFloat(stock) || 0,
-        size: (width && height) ? { width: parseFloat(width), width_unit: wUnit, height: parseFloat(height), height_unit: hUnit } : undefined,
-      };
-      const res = await api("/product/add_product", { method: "POST", body: JSON.stringify(payload) });
-      show(res.message || "Material added!", "success");
-      onAdded(res.data);
-      reset();
-      onClose();
-    } catch (err) { show(err.message, "error"); }
-    finally { setLoading(false); }
-  };
+//   const handleSubmit = async () => {
+//     if (!name.trim()) return show("Product name is required", "error");
+//     setLoading(true);
+//     try {
+//       const payload = {
+//         name: name.trim(),
+//         product_code: code.trim(),
+//         stock_count: parseFloat(stock) || 0,
+//         size: (width && height) ? { width: parseFloat(width), width_unit: wUnit, height: parseFloat(height), height_unit: hUnit } : undefined,
+//       };
+//       const res = await api("/product/add_product", { method: "POST", body: JSON.stringify(payload) });
+//       show(res.message || "Material added!", "success");
+//       onAdded(res.data);
+//       reset();
+//       onClose();
+//     } catch (err) { show(err.message, "error"); }
+//     finally { setLoading(false); }
+//   };
 
-  return (
-    <Modal open={open} title="Add New Material" onClose={() => { reset(); onClose(); }} size="md">
-      <div className="space-y-4">
-        <InputField label="Product Name *" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Backlit Flex 280gsm" />
-        <InputField label="Product Code"   value={code} onChange={e => setCode(e.target.value)} placeholder="e.g. DMBF280" />
-        <InputField label="Initial Stock (sqft)" value={stock} onChange={e => setStock(e.target.value)} type="number" min="0" step="0.1" suffix="sqft" placeholder="0.00" />
-        <Divider label="Roll / Sheet Size (optional)" />
-        <div className="grid grid-cols-2 gap-3">
-          <DimensionInput label="Width"  value={width}  onChange={setWidth}  unit={wUnit} onUnitChange={setWUnit} />
-          <DimensionInput label="Height" value={height} onChange={setHeight} unit={hUnit} onUnitChange={setHUnit} />
-        </div>
-        <Btn variant="primary" fullWidth loading={loading} onClick={handleSubmit}>Add Material</Btn>
-      </div>
-    </Modal>
-  );
-};
+//   return (
+//     <Modal open={open} title="Add New Material" onClose={() => { reset(); onClose(); }} size="md">
+//       <div className="space-y-4">
+//         <InputField label="Product Name *" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Backlit Flex 280gsm" />
+//         <InputField label="Product Code"   value={code} onChange={e => setCode(e.target.value)} placeholder="e.g. DMBF280" />
+//         <InputField label="Initial Stock (sqft)" value={stock} onChange={e => setStock(e.target.value)} type="number" min="0" step="0.1" suffix="sqft" placeholder="0.00" />
+//         <Divider label="Roll / Sheet Size (optional)" />
+//         <div className="grid grid-cols-2 gap-3">
+//           <DimensionInput label="Width"  value={width}  onChange={setWidth}  unit={wUnit} onUnitChange={setWUnit} />
+//           <DimensionInput label="Height" value={height} onChange={setHeight} unit={hUnit} onUnitChange={setHUnit} />
+//         </div>
+//         <Btn variant="primary" fullWidth loading={loading} onClick={handleSubmit}>Add Material</Btn>
+//       </div>
+//     </Modal>
+//   );
+// };
 
 // ─── Material Search Select ───────────────────────────────────────────────────
 const MaterialSearchSelect = ({ products, value, onChange, label, required, onAddNew }) => {
@@ -669,15 +668,37 @@ const JobLookup = ({ onJobSelected }) => {
   const fetchJobs = useCallback(async () => {
     setLoading(true);
     try {
+      // Fetch production jobs with approved designs
       const res  = await api(`/jobs?job_status=production&limit=200`);
       const list = res.data?.jobs || res.data || [];
       const approved = Array.isArray(list) ? list.filter(allDesignsApproved) : [];
-      setJobs(approved);
+
+      // ✅ HIDE ISSUED JOBS: Fetch all in-house material issues to identify already-issued jobs
+      try {
+        const issuesRes = await api("/material?limit=500");
+        const allIssues = issuesRes.data?.issues || [];
+        
+        // Filter to in-house only and get unique job IDs that have material issued
+        const issuedJobIds = new Set(
+          allIssues
+            .filter(i => i.calc_mode !== "outsource" && i.status === "issued")
+            .map(i => i.job_id?._id || i.job_id)
+            .filter(Boolean)
+        );
+
+        // Hide jobs that already have material issues issued
+        const availableJobs = approved.filter(job => !issuedJobIds.has(job._id?.toString()));
+        setJobs(availableJobs);
+      } catch (issueErr) {
+        // If fetching issues fails, just show all approved jobs (graceful fallback)
+        console.warn("Could not fetch material issues, showing all approved jobs:", issueErr);
+        setJobs(approved);
+      }
     } catch (err) { show(err.message, "error"); }
     finally { setLoading(false); }
-  }, []);
+  }, [show]);
 
-  useEffect(() => { fetchJobs(); }, []);
+  useEffect(() => { fetchJobs(); }, [fetchJobs]);
 
   const filtered = useMemo(() => {
     if (!filter.trim()) return jobs;
@@ -704,7 +725,7 @@ const JobLookup = ({ onJobSelected }) => {
           </div>
           <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2">
             <span className="text-emerald-500 text-xs">✓</span>
-            <span className="text-xs text-emerald-700 font-medium">Only jobs where all designs are approved</span>
+            <span className="text-xs text-emerald-700 font-medium">All designs approved · Materials not yet issued</span>
           </div>
           {jobs.length > 3 && (
             <InputField value={filter} onChange={e => setFilter(e.target.value)} placeholder="Filter by job no or customer…" />
@@ -714,7 +735,7 @@ const JobLookup = ({ onJobSelected }) => {
               <Spinner size={16} /><span className="text-sm">Fetching jobs…</span>
             </div>
           ) : filtered.length === 0 ? (
-            <EmptyState icon="🎨" title="No ready jobs" subtitle="Jobs appear here once all designs are approved" />
+            <EmptyState icon="🎨" title="No available jobs" subtitle="All production jobs have materials already issued, or no jobs with approved designs exist" />
           ) : (
             <div className="border border-slate-200 rounded-xl overflow-hidden">
               {filtered.map((job, idx) => (
@@ -762,9 +783,6 @@ const JobLookup = ({ onJobSelected }) => {
 };
 
 // ─── Determine file mode ──────────────────────────────────────────────────────
-// "skip"      → Cutting File label — no material, no action
-// "outsource" → assigned_to.role === "outsource" — vendor only
-// "inhouse"   → real assignee — full material selection
 const getFileMode = (file) => {
   if (NO_MATERIAL_LABELS.includes(file.label)) return "skip";
   if (file.assigned_to?.role === "outsource" || file.assigned_to?.name?.toLowerCase() === "outsource")
@@ -787,7 +805,6 @@ const InHouseFileForm = ({ file, item, products, onAddMaterial, stateRef, stateK
   const [issuedQty,  setIssuedQty]  = useState("");
   const [notes,      setNotes]      = useState("");
 
-  // Pre-fill size from item if available
   useEffect(() => {
     if (item?.size) {
       const m = item.size.match(/^(\d+(?:\.\d+)?)\s*[xX×]\s*(\d+(?:\.\d+)?)/);
@@ -816,14 +833,12 @@ const InHouseFileForm = ({ file, item, products, onAddMaterial, stateRef, stateK
   const totalRequired = mediaSqFt + bufferSqFt;
   const wastageSqFt   = mediaSqFt - printSqFt;
 
-  // Auto-fill issued qty from media + buffer
   useEffect(() => {
     if (mediaSqFt > 0) setIssuedQty(totalRequired.toFixed(2));
   }, [mediaSqFt, buffer]);
 
   const selectedProduct = products.find(p => p._id === productId);
 
-  // Register state into shared ref
   useEffect(() => {
     stateRef.current[stateKey] = {
       mode: "inhouse", file, item,
@@ -854,46 +869,44 @@ const InHouseFileForm = ({ file, item, products, onAddMaterial, stateRef, stateK
           <span className="font-mono text-slate-500">{selectedProduct.product_code}</span>
         </div>
       )}
-<div className="flex gap-6">
-      {/* Printing Dimensions */}
-      <div >
-        <div className="flex items-center gap-2 mb-2">
-          <div className="w-5 h-5 rounded bg-violet-600 flex items-center justify-center">
-            <span className="text-white text-[9px] font-black">P</span>
+
+      <div className="flex gap-6">
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-5 h-5 rounded bg-violet-600 flex items-center justify-center">
+              <span className="text-white text-[9px] font-black">P</span>
+            </div>
+            <p className="text-xs font-bold text-violet-700 uppercase tracking-wide">Printing Dimensions</p>
+            <span className="text-[10px] text-slate-400">Actual artwork size</span>
           </div>
-          <p className="text-xs font-bold text-violet-700 uppercase tracking-wide">Printing Dimensions</p>
-          <span className="text-[10px] text-slate-400">Actual artwork size</span>
+          <div className="grid grid-cols-2 gap-3">
+            <DimensionInput label="Width"  value={printW} onChange={setPrintW} unit={printWUnit} onUnitChange={setPrintWUnit} />
+            <DimensionInput label="Height" value={printH} onChange={setPrintH} unit={printHUnit} onUnitChange={setPrintHUnit} />
+          </div>
+          {printSqFt > 0 && <p className="text-xs font-bold text-violet-600 mt-1.5">Area: {printSqFt.toFixed(2)} sq.ft</p>}
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <DimensionInput label="Width"  value={printW} onChange={setPrintW} unit={printWUnit} onUnitChange={setPrintWUnit} />
-          <DimensionInput label="Height" value={printH} onChange={setPrintH} unit={printHUnit} onUnitChange={setPrintHUnit} />
+
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-5 h-5 rounded bg-sky-600 flex items-center justify-center">
+              <span className="text-white text-[9px] font-black">M</span>
+            </div>
+            <p className="text-xs font-bold text-sky-700 uppercase tracking-wide">Media Dimensions</p>
+            <span className="text-[10px] text-slate-400">Roll / sheet cut size</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <DimensionInput label="Width"  value={mediaW} onChange={setMediaW} unit={mediaWUnit} onUnitChange={setMediaWUnit} />
+            <DimensionInput label="Height" value={mediaH} onChange={setMediaH} unit={mediaHUnit} onUnitChange={setMediaHUnit} />
+          </div>
+          {mediaSqFt > 0 && <p className="text-xs font-bold text-sky-600 mt-1.5">Area: {mediaSqFt.toFixed(2)} sq.ft</p>}
         </div>
-        {printSqFt > 0 && <p className="text-xs font-bold text-violet-600 mt-1.5">Area: {printSqFt.toFixed(2)} sq.ft</p>}
       </div>
 
-      {/* Media Dimensions */}
-      <div >
-        <div className="flex items-center gap-2 mb-2">
-          <div className="w-5 h-5 rounded bg-sky-600 flex items-center justify-center">
-            <span className="text-white text-[9px] font-black">M</span>
-          </div>
-          <p className="text-xs font-bold text-sky-700 uppercase tracking-wide">Media Dimensions</p>
-          <span className="text-[10px] text-slate-400">Roll / sheet cut size</span>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <DimensionInput label="Width"  value={mediaW} onChange={setMediaW} unit={mediaWUnit} onUnitChange={setMediaWUnit} />
-          <DimensionInput label="Height" value={mediaH} onChange={setMediaH} unit={mediaHUnit} onUnitChange={setMediaHUnit} />
-        </div>
-        {mediaSqFt > 0 && <p className="text-xs font-bold text-sky-600 mt-1.5">Area: {mediaSqFt.toFixed(2)} sq.ft</p>}
-      </div>
-</div>
       <DimensionCalcCard
         printW={printW} printWUnit={printWUnit} printH={printH} printHUnit={printHUnit}
         mediaW={mediaW} mediaWUnit={mediaWUnit} mediaH={mediaH} mediaHUnit={mediaHUnit}
         bufferPct={buffer}
       />
-
-     
 
       <InputField
         label="Notes"
@@ -954,8 +967,6 @@ const OutsourceFileForm = ({ file, item, stateRef, stateKey }) => {
 
       <Divider label="Dimensions (optional)" />
 
-
-
       <DimensionCalcCard
         printW={printW} printWUnit={printWUnit} printH={printH} printHUnit={printHUnit}
         mediaW={mediaW} mediaWUnit={mediaWUnit} mediaH={mediaH} mediaHUnit={mediaHUnit}
@@ -968,7 +979,6 @@ const OutsourceFileForm = ({ file, item, stateRef, stateKey }) => {
 
 // ─── Skip File Row ────────────────────────────────────────────────────────────
 const SkipFileRow = ({ file, stateRef, stateKey }) => {
-  // Register as skip so submit knows to ignore
   useEffect(() => {
     stateRef.current[stateKey] = { mode: "skip", file };
   });
@@ -986,7 +996,6 @@ const SkipFileRow = ({ file, stateRef, stateKey }) => {
 };
 
 // ─── Single Design File Row ───────────────────────────────────────────────────
-// Wraps the three possible modes in a consistent card shell with file header
 const DesignFileRow = ({ file, fileIdx, item, itemIdx, products, onAddMaterial, stateRef }) => {
   const stateKey = `item_${itemIdx}_file_${file._id || fileIdx}`;
   const mode = getFileMode(file);
@@ -996,7 +1005,6 @@ const DesignFileRow = ({ file, fileIdx, item, itemIdx, products, onAddMaterial, 
 
   return (
     <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white">
-      {/* File header */}
       <div className={`px-4 py-3 border-b border-slate-100 flex items-center gap-3
         ${mode === "inhouse" ? "bg-gradient-to-r from-violet-50 to-slate-50" :
           mode === "outsource" ? "bg-gradient-to-r from-indigo-50 to-slate-50" :
@@ -1015,7 +1023,6 @@ const DesignFileRow = ({ file, fileIdx, item, itemIdx, products, onAddMaterial, 
             <span className="text-xs font-semibold text-slate-700 truncate max-w-[180px]">{file.file_name}</span>
           </div>
 
-          {/* Assigned person chip */}
           {file.assigned_to?.name && (
             <div className="flex items-center gap-1.5 mt-1.5">
               <Avatar name={file.assigned_to.name} size="sm" />
@@ -1030,7 +1037,6 @@ const DesignFileRow = ({ file, fileIdx, item, itemIdx, products, onAddMaterial, 
         <Badge variant={modeBadge[mode]}>{modeLabel[mode]}</Badge>
       </div>
 
-      {/* Form body */}
       <div className="p-4">
         {mode === "skip" && (
           <SkipFileRow file={file} stateRef={stateRef} stateKey={stateKey} />
@@ -1053,7 +1059,6 @@ const DesignFileRow = ({ file, fileIdx, item, itemIdx, products, onAddMaterial, 
 };
 
 // ─── Cart Item Panel ──────────────────────────────────────────────────────────
-// Groups all design files for a single cart item
 const CartItemPanel = ({ item, itemIdx, products, onAddMaterial, stateRef }) => {
   const files = (item.design_files || []).length > 0
     ? item.design_files
@@ -1066,7 +1071,6 @@ const CartItemPanel = ({ item, itemIdx, products, onAddMaterial, stateRef }) => 
 
   return (
     <div className="rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-      {/* Item header */}
       <div className="bg-gradient-to-r from-slate-900 to-slate-800 px-4 py-3 flex items-start justify-between gap-3 flex-wrap">
         <div>
           <div className="font-bold text-sm text-white flex items-center gap-2">
@@ -1118,7 +1122,6 @@ const IssuePanel = ({ products, onIssued, onAddMaterial }) => {
 
   const cartItems = job?.cart_items || [];
 
-  // Count issuable files (non-skip)
   const fileCounts = useMemo(() => {
     if (!job) return { inhouse: 0, outsource: 0, skip: 0, total: 0 };
     let inhouse = 0, outsource = 0, skip = 0;
@@ -1134,7 +1137,7 @@ const IssuePanel = ({ products, onIssued, onAddMaterial }) => {
       }
     }
     return { inhouse, outsource, skip, total: inhouse + outsource + skip };
-  }, [job]);
+  }, [job, cartItems]);
 
   const handleIssueAll = async () => {
     if (!job) return show("Select a job first", "error");
@@ -1145,7 +1148,6 @@ const IssuePanel = ({ products, onIssued, onAddMaterial }) => {
     const issuable = entries.filter(e => e.mode !== "skip");
     if (issuable.length === 0) return show("All files are cutting files — nothing to issue", "warning");
 
-    // Validate
     for (const entry of issuable) {
       if (entry.mode === "inhouse") {
         if (!entry.productId)
@@ -1171,7 +1173,6 @@ const IssuePanel = ({ products, onIssued, onAddMaterial }) => {
       for (const entry of issuable) {
         const { mode, file, item } = entry;
 
-        // Find cart item index
         const itemIdx = cartItems.findIndex(ci =>
           ci._id?.toString() === item._id?.toString() ||
           ci.item_id === item.item_id
@@ -1208,7 +1209,6 @@ const IssuePanel = ({ products, onIssued, onAddMaterial }) => {
           wastage_buffer_pct:  isOut ? 0 : parseFloat(entry.buffer) || 20,
           outsource_type:      isOut ? (entry.outType || "other") : "none",
           outsource_vendor:    isOut ? entry.vendor.trim() : "",
-          // issued_to is resolved from design file's assigned_to on the backend
           issued_to: isOut
             ? { user_id: null, name: entry.vendor.trim(), role: "outsource" }
             : (file.assigned_to?.user_id
@@ -1277,16 +1277,13 @@ const IssuePanel = ({ products, onIssued, onAddMaterial }) => {
     <div className="space-y-4">
       <ToastContainer toasts={toasts} dismiss={dismiss} />
 
-      {/* Job Selector */}
       <Card className="p-5">
         <SectionHeader icon="🏭" title="Select Production Job" subtitle="Only jobs with all designs approved are shown" />
         <JobLookup onJobSelected={handleJobSelected} />
       </Card>
 
-      {/* Per-file assignment panels */}
       {job && cartItems.length > 0 && (
         <>
-          {/* Legend */}
           <div className="grid grid-cols-3 gap-2 text-center">
             {[
               ["🏠", "In-House", fileCounts.inhouse, "violet", "Material + dimensions"],
@@ -1313,7 +1310,6 @@ const IssuePanel = ({ products, onIssued, onAddMaterial }) => {
             />
           ))}
 
-          {/* Sticky footer CTA */}
           <div className="sticky bottom-0 sm:static bg-white sm:bg-transparent border-t sm:border-0 border-slate-100 px-4 py-4 sm:px-0 sm:py-0 -mx-4 sm:mx-0">
             <div className="bg-slate-900 rounded-2xl p-4 flex items-center justify-between gap-4">
               <div>
@@ -1337,17 +1333,22 @@ const IssuePanel = ({ products, onIssued, onAddMaterial }) => {
   );
 };
 
-// ─── Issues Panel ─────────────────────────────────────────────────────────────
+// ─── Issues Panel (FILTERED: EXCLUDE OUTSOURCE) ─────────────────────────────────────────────────────────────────────────────────────────
 const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
   const [statusFilter, setStatusFilter] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage]     = useState(1);
   const PER_PAGE = 10;
 
+  // ✅ FILTER: Only show in-house issues (calc_mode !== "outsource")
   const filtered = useMemo(() => {
-    let list = issues;
-    if (statusFilter === "flagged") list = list.filter(i => i.return?.is_flagged && !i.return?.manager_reviewed);
-    else if (statusFilter) list = list.filter(i => i.status === statusFilter);
+    let list = issues.filter(i => i.calc_mode !== "outsource");
+    
+    if (statusFilter === "flagged") 
+      list = list.filter(i => i.return?.is_flagged && !i.return?.manager_reviewed);
+    else if (statusFilter) 
+      list = list.filter(i => i.status === statusFilter);
+    
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(i =>
@@ -1385,7 +1386,7 @@ const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
 
       <div className="flex items-center justify-between">
         <p className="text-xs text-slate-400 font-medium">{filtered.length} record{filtered.length !== 1 ? "s" : ""}</p>
-        {filtered.length !== issues.length && (
+        {filtered.length !== issues.filter(i => i.calc_mode !== "outsource").length && (
           <button onClick={() => { setStatusFilter(""); setSearch(""); }} className="text-xs text-sky-500 font-semibold">Clear filters</button>
         )}
       </div>
@@ -1395,8 +1396,6 @@ const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           {paginated.map(issue => {
-            const isOutCard = issue.outsource_type && issue.outsource_type !== "none";
-            const outsourceLabel = OUTSOURCE_TYPES.find(o => o.value === issue.outsource_type)?.label || issue.outsource_type;
             const calc = issue.calculation;
             return (
               <Card key={issue._id} hoverable className="p-4" onClick={() => onViewIssue(issue, "view")}>
@@ -1405,7 +1404,6 @@ const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xs font-black text-sky-600 font-mono tracking-wide">{issue.issue_no}</span>
                       {issue.return?.is_flagged && !issue.return?.manager_reviewed && <Badge variant="red">🚩 Review</Badge>}
-                      {isOutCard && <Badge variant="indigo">🔗 {outsourceLabel}</Badge>}
                     </div>
                     <p className="text-sm font-bold text-slate-800 mt-0.5">{issue.job_no}</p>
                     {issue.cart_item_name && (
@@ -1427,7 +1425,7 @@ const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
                   <Avatar name={issue.issued_to?.name || "?"} />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold text-slate-700 truncate">{issue.issued_to?.name}</p>
-                    <p className="text-xs text-slate-400">{isOutCard ? "External vendor" : issue.issued_to?.role}</p>
+                    <p className="text-xs text-slate-400">{issue.issued_to?.role}</p>
                   </div>
                   <div className="text-right flex-shrink-0">
                     <p className="text-xs font-semibold text-slate-700 truncate max-w-[100px]">{issue.material?.product_name}</p>
@@ -1435,7 +1433,7 @@ const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
                   </div>
                 </div>
 
-                {calc && !isOutCard && (calc.print_sqft || calc.media_sqft) && (
+                {calc && (calc.print_sqft || calc.media_sqft) && (
                   <div className="grid grid-cols-3 gap-1.5 mb-3">
                     {[["🖨 Print", calc.print_sqft], ["📐 Media", calc.media_sqft], ["⚠ Waste", calc.wastage_sqft]].map(([k, v]) => (
                       <div key={k} className="bg-slate-50 rounded-lg p-1.5 text-center">
@@ -1443,14 +1441,6 @@ const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
                         <p className="text-xs font-bold text-slate-700">{parseFloat(v || 0).toFixed(1)}<span className="text-[9px] font-normal text-slate-400 ml-0.5">sqft</span></p>
                       </div>
                     ))}
-                  </div>
-                )}
-
-                {isOutCard && (
-                  <div className="bg-indigo-50 rounded-lg px-3 py-2 mb-3 flex items-center gap-2">
-                    <span className="text-indigo-400 text-xs">🏭</span>
-                    <span className="text-xs font-semibold text-indigo-700 truncate">{issue.outsource_vendor || "External vendor"}</span>
-                    <Badge variant="indigo">{outsourceLabel}</Badge>
                   </div>
                 )}
 
@@ -1469,9 +1459,7 @@ const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
                   {issue.return?.is_flagged && !issue.return?.manager_reviewed && (
                     <Btn size="xs" variant="danger" onClick={e => { e.stopPropagation(); onViewIssue(issue, "review"); }}>Review</Btn>
                   )}
-                  {!isOutCard && (
-                    <Btn size="xs" variant="ghost" className="ml-auto" onClick={e => { e.stopPropagation(); generateSlipPDF(issue, null); }}>📄 Slip</Btn>
-                  )}
+                  <Btn size="xs" variant="ghost" className="ml-auto" onClick={e => { e.stopPropagation(); generateSlipPDF(issue, null); }}>📄 Slip</Btn>
                 </div>
               </Card>
             );
@@ -1516,9 +1504,9 @@ const ReportPanel = () => {
       setReport(res.data);
     } catch (e) { show(e.message, "error"); }
     finally { setLoading(false); }
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, show]);
 
-  useEffect(() => { fetchReport(); }, []);
+  useEffect(() => { fetchReport(); }, [fetchReport]);
 
   const o = report?.overall;
   return (
@@ -1568,29 +1556,6 @@ const ReportPanel = () => {
         </Card>
       )}
 
-      {report?.by_outsource_type?.length > 0 && (
-        <Card className="p-5">
-          <SectionHeader icon="🔗" title="Outsource Breakdown" />
-          <div className="space-y-3">
-            {report.by_outsource_type.map(r => {
-              const label = OUTSOURCE_TYPES.find(o => o.value === r._id)?.label || r._id || "Unknown";
-              const max   = Math.max(...report.by_outsource_type.map(x => x.count));
-              return (
-                <div key={r._id}>
-                  <div className="flex justify-between text-xs mb-1.5">
-                    <span className="text-slate-600 font-medium">{label}</span>
-                    <span className="text-slate-400 font-semibold">{r.count}× · {parseFloat((r.total_issued || 0).toFixed(1))} sqft</span>
-                  </div>
-                  <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-indigo-500 rounded-full transition-all duration-700" style={{ width: `${(r.count / max) * 100}%` }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-      )}
-
       {!o && !loading && <EmptyState icon="📊" title="No report data" subtitle="Issue some materials first to see analytics" />}
     </div>
   );
@@ -1622,34 +1587,28 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
     finally { setLoading(false); }
   };
 
-  const r        = issue.return;
-  const calc     = issue.calculation;
-  const isOutModal = issue.outsource_type && issue.outsource_type !== "none";
-  const outsideLabel = OUTSOURCE_TYPES.find(o => o.value === issue.outsource_type)?.label || issue.outsource_type;
+  const r    = issue.return;
+  const calc = issue.calculation;
 
   return (
     <Modal open title={`${issue.issue_no} · ${issue.job_no}`} onClose={onClose} size="md">
       <ToastContainer toasts={toasts} dismiss={dismiss} />
       <div className="space-y-5">
 
-        {/* Item + file breadcrumb */}
-        <div className="flex flex-col gap-1.5">
-          {issue.cart_item_name && (
-            <div className="flex items-center gap-2 bg-violet-50 border border-violet-100 rounded-xl px-3 py-2">
-              <span className="text-violet-500">▣</span>
-              <span className="text-xs font-semibold text-violet-700">{issue.cart_item_name}</span>
-            </div>
-          )}
-          {issue.design_file_label && (
-            <div className="flex items-center gap-2 bg-sky-50 border border-sky-100 rounded-xl px-3 py-2">
-              <span className="text-sky-500">{FILE_TYPE_ICON("")}</span>
-              <span className="text-xs font-semibold text-sky-700">{issue.design_file_label}</span>
-              {issue.design_file_name && <span className="text-xs text-slate-400">· {issue.design_file_name}</span>}
-            </div>
-          )}
-        </div>
+        {issue.cart_item_name && (
+          <div className="flex items-center gap-2 bg-violet-50 border border-violet-100 rounded-xl px-3 py-2">
+            <span className="text-violet-500">▣</span>
+            <span className="text-xs font-semibold text-violet-700">{issue.cart_item_name}</span>
+          </div>
+        )}
+        {issue.design_file_label && (
+          <div className="flex items-center gap-2 bg-sky-50 border border-sky-100 rounded-xl px-3 py-2">
+            <span className="text-sky-500">{FILE_TYPE_ICON("")}</span>
+            <span className="text-xs font-semibold text-sky-700">{issue.design_file_label}</span>
+            {issue.design_file_name && <span className="text-xs text-slate-400">· {issue.design_file_name}</span>}
+          </div>
+        )}
 
-        {/* Summary */}
         <div>
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Issue Summary</p>
           <div className="space-y-1">
@@ -1668,26 +1627,21 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
               <StatusBadge status={issue.status} />
             </div>
             <div className="flex justify-between items-center py-2 border-b border-slate-50">
-              <span className="text-xs text-slate-400">{isOutModal ? "Vendor" : "Assigned To"}</span>
+              <span className="text-xs text-slate-400">Assigned To</span>
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold text-slate-800">{issue.issued_to?.name || "—"}</span>
-                {issue.issued_to?.role && !isOutModal && (
+                {issue.issued_to?.role && (
                   <span className="text-[10px] text-slate-400">({issue.issued_to.role})</span>
                 )}
-                {isOutModal && <Badge variant="indigo">External</Badge>}
               </div>
             </div>
             <div className="flex justify-between items-center py-2">
               <span className="text-xs text-slate-400">Source</span>
-              {isOutModal
-                ? <div className="flex items-center gap-2"><span className="text-sm font-semibold text-indigo-700">{outsideLabel}</span><Badge variant="indigo">Outsource</Badge></div>
-                : <span className="text-sm font-semibold text-slate-800">In-House</span>
-              }
+              <span className="text-sm font-semibold text-slate-800">In-House</span>
             </div>
           </div>
         </div>
 
-        {/* Dimension breakdown */}
         {calc && (calc.print_sqft || calc.media_sqft) && (
           <div>
             <Divider label="Dimension Breakdown" />
@@ -1712,18 +1666,8 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
           </div>
         )}
 
-        {!isOutModal && (
-          <Btn variant="ghost" size="sm" fullWidth onClick={() => generateSlipPDF(issue, user)}>📄 Download / Print Slip</Btn>
-        )}
+        <Btn variant="ghost" size="sm" fullWidth onClick={() => generateSlipPDF(issue, user)}>📄 Download / Print Slip</Btn>
 
-        {isOutModal && (
-          <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2.5">
-            <span className="text-indigo-400">🔗</span>
-            <span className="text-xs text-indigo-600 font-medium">Outsourced — no material slip generated</span>
-          </div>
-        )}
-
-        {/* Return details */}
         {r && (
           <div>
             <Divider label="Return Details" />
@@ -1753,7 +1697,6 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
           </div>
         )}
 
-        {/* Manager review */}
         {mode === "review" && r && (
           <div>
             <Divider label="Manager Review" />
@@ -1795,20 +1738,38 @@ export default function MaterialIssueManager() {
   const { toasts, show, dismiss }   = useToast();
 
   const fetchProducts = useCallback(async () => {
-    try { const res = await api("/product/get_product"); setProducts(res.data || []); } catch {}
+    try { 
+      const res = await api("/product/get_product"); 
+      setProducts(res.data || []); 
+    } catch {}
   }, []);
 
+  // ✅ FIX: Properly filter outsource issues on fetch
   const fetchIssues = useCallback(async () => {
     setIssLoading(true);
-    try { const res = await api("/material?limit=100"); setIssues(res.data?.issues || []); }
-    catch (e) { show(e.message, "error"); }
-    finally { setIssLoading(false); }
-  }, []);
+    try { 
+      const res = await api("/material?limit=100");
+      // Filter on NEWLY fetched data, not stale issues state
+      const allIssues = res.data?.issues || [];
+      const inHouseIssues = allIssues.filter(i => i.calc_mode !== "outsource");
+      setIssues(inHouseIssues);
+    } catch (e) { 
+      show(e.message, "error"); 
+    } finally { 
+      setIssLoading(false); 
+    }
+  }, [show]);
 
-  useEffect(() => { fetchProducts(); fetchIssues(); }, []);
+  useEffect(() => { 
+    fetchProducts(); 
+    fetchIssues(); 
+  }, [fetchProducts, fetchIssues]);
 
   const handleIssued = useCallback((newIssue, productId, qty, _jobId, isOut) => {
-    setIssues(prev => [newIssue, ...prev]);
+    // Only add non-outsource issues
+    if (!isOut) {
+      setIssues(prev => [newIssue, ...prev]);
+    }
     if (!isOut && productId) {
       setProducts(prev => prev.map(p =>
         p._id === productId ? { ...p, stock_count: Math.max(0, (p.stock_count || 0) - qty) } : p
@@ -1829,13 +1790,22 @@ export default function MaterialIssueManager() {
     ));
   };
 
+  // ✅ STATS: Only count in-house issues
   const stats = useMemo(() => ({
-    pending:     issues.filter(i => i.status === "issued").length,
-    flagged:     issues.filter(i => i.return?.is_flagged && !i.return?.manager_reviewed).length,
-    totalIssued: parseFloat(issues.reduce((s, i) => s + (i.issued_qty || 0), 0).toFixed(1)),
-    avgWaste:    (() => {
+    pending: issues
+      .filter(i => i.status === "issued")
+      .length,
+    flagged: issues
+      .filter(i => i.return?.is_flagged && !i.return?.manager_reviewed)
+      .length,
+    totalIssued: parseFloat(
+      issues.reduce((s, i) => s + (i.issued_qty || 0), 0).toFixed(1)
+    ),
+    avgWaste: (() => {
       const ret = issues.filter(i => i.return);
-      return ret.length ? parseFloat((ret.reduce((s, i) => s + (i.return.wastage_ratio_pct || 0), 0) / ret.length).toFixed(1)) : 0;
+      return ret.length 
+        ? parseFloat((ret.reduce((s, i) => s + (i.return.wastage_ratio_pct || 0), 0) / ret.length).toFixed(1))
+        : 0;
     })(),
   }), [issues]);
 
@@ -1857,14 +1827,13 @@ export default function MaterialIssueManager() {
       <div className="min-h-screen bg-slate-50 flex flex-col">
         <ToastContainer toasts={toasts} dismiss={dismiss} />
 
-        <AddMaterialModal
+        {/* <AddMaterialModal
           open={addMatOpen}
           onClose={() => setAddMatOpen(false)}
           onAdded={handleMaterialAdded}
           show={show}
-        />
+        /> */}
 
-        {/* Header */}
         <header className="bg-white border-b border-slate-100 sticky top-0 z-30 shadow-sm">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between py-4">
@@ -1874,7 +1843,7 @@ export default function MaterialIssueManager() {
                 </div>
                 <div>
                   <h1 className="text-base font-black text-slate-900 leading-tight tracking-tight">Material Issuance</h1>
-                  <p className="text-xs text-slate-400 hidden sm:block">Issue per design file · Print · Outsource tracking</p>
+                  <p className="text-xs text-slate-400 hidden sm:block">Issue per design file · Print · Tracking</p>
                 </div>
               </div>
               <div className="flex items-center gap-2 sm:gap-3">
@@ -1884,12 +1853,7 @@ export default function MaterialIssueManager() {
                     <span className="text-xs font-bold text-rose-600">{stats.flagged} to review</span>
                   </button>
                 )}
-                <button onClick={() => setAddMatOpen(true)}
-                  className="flex items-center gap-1.5 bg-sky-600 text-white rounded-xl px-3 py-2 hover:bg-sky-700 active:scale-95 transition-all shadow-sm">
-                  <span className="text-sm leading-none font-bold">+</span>
-                  <span className="text-xs font-bold hidden sm:inline">Add Material</span>
-                  <span className="text-xs font-bold sm:hidden">Material</span>
-                </button>
+               
                 <button onClick={() => navigate("/add-product")}
                   className="flex items-center gap-1.5 bg-slate-900 text-white rounded-xl px-3 py-2 hover:bg-slate-700 active:scale-95 transition-all shadow-sm">
                   <span className="text-sm leading-none font-bold">+</span>
@@ -1905,7 +1869,6 @@ export default function MaterialIssueManager() {
               </div>
             </div>
 
-            {/* Stats strip */}
             <div className="grid grid-cols-4 gap-2 pb-3">
               {[
                 { label: "Issued",    value: stats.totalIssued, suffix: "sqft", color: "text-sky-600" },
@@ -1920,7 +1883,6 @@ export default function MaterialIssueManager() {
               ))}
             </div>
 
-            {/* Desktop tabs */}
             <div className="hidden sm:flex gap-1 pb-0">
               {TABS.map(t => (
                 <button key={t.key} onClick={() => setTab(t.key)}
@@ -1933,7 +1895,6 @@ export default function MaterialIssueManager() {
           </div>
         </header>
 
-        {/* Main */}
         <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-4 pb-24 sm:pb-6">
           {tab === "issue" && (
             <IssuePanel
@@ -1953,7 +1914,6 @@ export default function MaterialIssueManager() {
           {tab === "report" && <ReportPanel />}
         </main>
 
-        {/* Mobile nav */}
         <nav className="sm:hidden fixed bottom-0 inset-x-0 bg-white border-t border-slate-100 z-30 shadow-[0_-1px_20px_rgba(0,0,0,0.06)]">
           <div className="grid grid-cols-3 max-w-md mx-auto">
             {TABS.map(t => (
