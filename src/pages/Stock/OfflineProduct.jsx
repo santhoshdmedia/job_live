@@ -14,7 +14,7 @@ const ROLES = [
 const ALL_PAGES = [
   "dashboard", "admin-job-management", "users", "my-jobs",
   "material-issue-manager", "admin-designer-job-dashboard", "production-panel", "staff",
-  "quality-check-dashboard", "delivery-panel","site-visit-dashboard",
+  "quality-check-dashboard", "delivery-panel","site-visit-dashboard","pickup-dashboard"
 ];
 
 const ROLE_DEFAULT_PERMS = {

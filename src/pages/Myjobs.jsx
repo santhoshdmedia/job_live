@@ -525,38 +525,57 @@ const drawVoucherCanvas = async (canvas, { job, couponCode, couponDiscount, disc
   ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
   ctx.fillText("https://printe.in", lcx, H-16);
 
-  // ═══ RIGHT PANEL ═══════════════════════════════════════════════════════════
+// ═══ RIGHT PANEL ═══════════════════════════════════════════════════════════
+
+  // Logo above "YOUR DISCOUNT"
+  const RIGHT_LOGO_URL = "https://dmedia.in/assets/images/edit_white_logo1.png";
+  const rLogoW = 110, rLogoH = 32;
+  const rLogoX = rcx - rLogoW / 2;
+  const rLogoY = 14;
+  try {
+    const rLogoImg = await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.setAttribute("crossOrigin", "anonymous");
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = RIGHT_LOGO_URL;
+    });
+    ctx.drawImage(rLogoImg, rLogoX, rLogoY, rLogoW, rLogoH);
+  } catch {
+    // Fallback: skip logo silently
+  }
+
   ctx.strokeStyle = YELLOW; ctx.lineWidth = 1; ctx.globalAlpha = 0.5;
-  ctx.beginPath(); ctx.moveTo(rcx-80,38); ctx.lineTo(rcx+80,38); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(rcx-80,58); ctx.lineTo(rcx+80,58); ctx.stroke();
   ctx.globalAlpha = 1;
 
   ctx.fillStyle = YELLOW;
   ctx.font = "700 10px Arial, sans-serif";
   ctx.letterSpacing = "4px";
   ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
-  ctx.fillText("YOUR", rcx, 62);
+  ctx.fillText("YOUR", rcx, 78);
   ctx.letterSpacing = "0px";
 
   ctx.fillStyle = WHITE;
   ctx.font = "bold 30px Arial, sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText("DISCOUNT", rcx, 96);
+  ctx.fillText("DISCOUNT", rcx, 112);
 
   ctx.strokeStyle = "rgba(255,255,255,0.12)"; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(rcx-90,108); ctx.lineTo(rcx+90,108); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(rcx-90,124); ctx.lineTo(rcx+90,124); ctx.stroke();
 
   ctx.fillStyle = YELLOW;
   ctx.font = "bold 78px Arial Black, Arial, sans-serif";
   ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
-  ctx.fillText(discDisplay, rcx, 216);
+  ctx.fillText(discDisplay, rcx, 226);
 
   ctx.fillStyle = "rgba(255,255,255,0.70)";
   ctx.font = "bold 20px Arial, sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText(discountType==="fixed"?"FLAT OFF":"OFF", rcx, 248);
+  ctx.fillText(discountType==="fixed"?"FLAT OFF":"OFF", rcx, 258);
 
   ctx.strokeStyle = YELLOW; ctx.lineWidth = 1; ctx.globalAlpha = 0.35;
-  ctx.beginPath(); ctx.moveTo(rcx-90,264); ctx.lineTo(rcx+90,264); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(rcx-90,274); ctx.lineTo(rcx+90,274); ctx.stroke();
   ctx.globalAlpha = 1;
 
   // Customer details
