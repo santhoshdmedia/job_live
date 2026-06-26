@@ -914,7 +914,7 @@ const DesignerJobDashboard = () => {
   const user            = profile();
   const userId          = user._id;
   const userName        = user.name || user.fullName || user.username || "Designer";
-  const isSuperAdmin    = user.role === "super admin";
+  const isSuperAdmin    = user.role === "super admin"||user.email=="hari@dmedia.in";
   const isAdmin         = user.role === "admin";
   const canManageDesign = isSuperAdmin || isAdmin;
   const isSpecialUser   = user?.email?.toLowerCase().trim() === "hari@dmedia.in";
