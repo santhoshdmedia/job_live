@@ -65,6 +65,13 @@ const toFeet = (val, unit) => {
   }
 };
 
+// ─── Determine if product is quantity or sqft based ─────────────────────────
+const getProductType = (product) => {
+  if (!product) return "sqft"; // default
+  const unit = product.primary_unit || product.unit || "sqft";
+  return unit === "sqft" ? "sqft" : "quantity";
+};
+
 // ─── API helper ───────────────────────────────────────────────────────────────
 const api = async (url, opts = {}) => {
   const token =
@@ -157,7 +164,7 @@ const generateSlipPDF = (issue, user) => {
   <div class="highlight">
     <div class="unit">Issued Quantity</div>
     <div class="big">${issue?.issued_qty ?? "—"}</div>
-    <div class="unit">sqft</div>
+    <div class="unit">${issue?.material?.unit || "sqft"}</div>
   </div>
   <div class="section">
     <div class="section-title">Personnel</div>
@@ -334,6 +341,20 @@ const DimensionInput = ({ label, value, onChange, unit, onUnitChange, placeholde
   </div>
 );
 
+const QuantityInput = ({ label, value, onChange, unit = "pcs", placeholder = "0" }) => (
+  <div>
+    {label && <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">{label}</label>}
+    <div className="flex items-stretch bg-white border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-sky-500/20 focus-within:border-sky-400 transition-all">
+      <input type="number" min="0" step="1" value={value} placeholder={placeholder}
+        onChange={e => onChange(e.target.value)}
+        className="flex-1 px-3 py-2.5 text-sm bg-transparent outline-none min-w-0" />
+      <span className="px-3 py-2.5 text-xs bg-slate-50 border-l border-slate-200 text-slate-600 font-semibold flex items-center">
+        {unit}
+      </span>
+    </div>
+  </div>
+);
+
 const SelectField = ({ label, value, onChange, options = [], placeholder, required, disabled }) => (
   <div>
     {label && <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">{label}{required && <span className="text-rose-400 ml-0.5">*</span>}</label>}
@@ -415,55 +436,6 @@ const Modal = ({ open, title, onClose, children, size = "md" }) => {
   );
 };
 
-// ─── Add Material Modal ───────────────────────────────────────────────────────
-// const AddMaterialModal = ({ open, onClose, onAdded, show }) => {
-//   const [name,    setName]    = useState("");
-//   const [code,    setCode]    = useState("");
-//   const [stock,   setStock]   = useState("");
-//   const [width,   setWidth]   = useState("");
-//   const [wUnit,   setWUnit]   = useState("ft");
-//   const [height,  setHeight]  = useState("");
-//   const [hUnit,   setHUnit]   = useState("ft");
-//   const [loading, setLoading] = useState(false);
-
-//   const reset = () => { setName(""); setCode(""); setStock(""); setWidth(""); setWUnit("ft"); setHeight(""); setHUnit("ft"); };
-
-//   const handleSubmit = async () => {
-//     if (!name.trim()) return show("Product name is required", "error");
-//     setLoading(true);
-//     try {
-//       const payload = {
-//         name: name.trim(),
-//         product_code: code.trim(),
-//         stock_count: parseFloat(stock) || 0,
-//         size: (width && height) ? { width: parseFloat(width), width_unit: wUnit, height: parseFloat(height), height_unit: hUnit } : undefined,
-//       };
-//       const res = await api("/product/add_product", { method: "POST", body: JSON.stringify(payload) });
-//       show(res.message || "Material added!", "success");
-//       onAdded(res.data);
-//       reset();
-//       onClose();
-//     } catch (err) { show(err.message, "error"); }
-//     finally { setLoading(false); }
-//   };
-
-//   return (
-//     <Modal open={open} title="Add New Material" onClose={() => { reset(); onClose(); }} size="md">
-//       <div className="space-y-4">
-//         <InputField label="Product Name *" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Backlit Flex 280gsm" />
-//         <InputField label="Product Code"   value={code} onChange={e => setCode(e.target.value)} placeholder="e.g. DMBF280" />
-//         <InputField label="Initial Stock (sqft)" value={stock} onChange={e => setStock(e.target.value)} type="number" min="0" step="0.1" suffix="sqft" placeholder="0.00" />
-//         <Divider label="Roll / Sheet Size (optional)" />
-//         <div className="grid grid-cols-2 gap-3">
-//           <DimensionInput label="Width"  value={width}  onChange={setWidth}  unit={wUnit} onUnitChange={setWUnit} />
-//           <DimensionInput label="Height" value={height} onChange={setHeight} unit={hUnit} onUnitChange={setHUnit} />
-//         </div>
-//         <Btn variant="primary" fullWidth loading={loading} onClick={handleSubmit}>Add Material</Btn>
-//       </div>
-//     </Modal>
-//   );
-// };
-
 // ─── Material Search Select ───────────────────────────────────────────────────
 const MaterialSearchSelect = ({ products, value, onChange, label, required, onAddNew }) => {
   const [query, setQuery] = useState("");
@@ -539,6 +511,7 @@ const MaterialSearchSelect = ({ products, value, onChange, label, required, onAd
           <div className="flex-1 px-3 py-2.5 min-w-0">
             <p className="text-sm font-semibold text-slate-800 truncate">{selectedProduct.name}</p>
             <p className="text-[10px] text-slate-400 font-mono truncate">{selectedProduct.product_code}</p>
+            <p className="text-[10px] text-emerald-600 font-semibold mt-0.5">Unit: {selectedProduct.primary_unit || "sqft"}</p>
           </div>
         )}
         {selectedProduct && (
@@ -565,6 +538,7 @@ const MaterialSearchSelect = ({ products, value, onChange, label, required, onAd
           ) : (
             filtered.map(p => {
               const isSelected = p._id === value;
+              const unitType = p.primary_unit || p.unit || "sqft";
               return (
                 <div key={p._id} onClick={() => handleSelect(p)}
                   className={`px-4 py-3 cursor-pointer transition-colors border-b border-slate-50 last:border-0 ${isSelected ? "bg-sky-50" : "hover:bg-slate-50"}`}>
@@ -575,7 +549,8 @@ const MaterialSearchSelect = ({ products, value, onChange, label, required, onAd
                         {isSelected && <span className="ml-2 text-sky-500 text-[10px]">✓ selected</span>}
                       </p>
                       <p className="text-[11px] font-mono text-slate-500 mt-0.5">{highlight(p.product_code || "", query)}</p>
-                      {p.size && (
+                      <p className="text-[10px] text-emerald-600 font-semibold mt-0.5">Unit: {unitType}</p>
+                      {p.size && unitType === "sqft" && (
                         <p className="text-[10px] text-slate-400 mt-0.5">
                           {p.size.width}{p.size.width_unit} × {p.size.height}{p.size.height_unit}
                         </p>
@@ -583,7 +558,7 @@ const MaterialSearchSelect = ({ products, value, onChange, label, required, onAd
                     </div>
                     <div className="flex-shrink-0 text-right">
                       <span className={`inline-block text-[11px] font-bold px-2 py-0.5 rounded-lg ${stockColor(p.stock_count || 0)}`}>
-                        {p.stock_count || 0} sqft
+                        {p.stock_count || 0} {unitType}
                       </span>
                     </div>
                   </div>
@@ -597,7 +572,7 @@ const MaterialSearchSelect = ({ products, value, onChange, label, required, onAd
   );
 };
 
-// ─── Dimension Calc Card ──────────────────────────────────────────────────────
+// ─── Dimension Calc Card (SQFT) ───────────────────────────────────────────────
 const DimensionCalcCard = ({ printW, printWUnit, printH, printHUnit, mediaW, mediaWUnit, mediaH, mediaHUnit, bufferPct }) => {
   const pFtW = toFeet(printW, printWUnit), pFtH = toFeet(printH, printHUnit);
   const mFtW = toFeet(mediaW, mediaWUnit), mFtH = toFeet(mediaH, mediaHUnit);
@@ -651,6 +626,56 @@ const DimensionCalcCard = ({ printW, printWUnit, printH, printHUnit, mediaW, med
   );
 };
 
+// ─── Quantity Calc Card ──────────────────────────────────────────────────────
+const QuantityCalcCard = ({ printQty, mediaQty, unit = "pcs" }) => {
+  const pQty = parseInt(printQty) || 0;
+  const mQty = parseInt(mediaQty) || 0;
+  const wastage = mQty - pQty;
+  const wastageRatio = mQty > 0 ? (wastage / mQty) * 100 : 0;
+
+  const hasPrint = pQty > 0;
+  const hasMedia = mQty > 0;
+  if (!hasPrint && !hasMedia) return null;
+
+  return (
+    <div className="bg-gradient-to-br from-slate-50 to-teal-50 border border-teal-100 rounded-2xl p-4 mt-2 space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-bold text-teal-700 uppercase tracking-wide">Quantity Breakdown</p>
+        <Badge variant="teal">Live Calc</Badge>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className={`rounded-xl p-3 border text-center ${hasPrint ? "bg-violet-50 border-violet-100" : "bg-slate-50 border-slate-100 opacity-50"}`}>
+          <p className="text-[10px] font-bold text-violet-600 uppercase tracking-wide mb-1">📦 Printing Qty</p>
+          <p className="text-xl font-black text-violet-700 mt-1">{hasPrint ? pQty : "—"}</p>
+          <p className="text-[10px] text-slate-400">{unit}</p>
+        </div>
+        <div className={`rounded-xl p-3 border text-center ${hasMedia ? "bg-teal-50 border-teal-100" : "bg-slate-50 border-slate-100 opacity-50"}`}>
+          <p className="text-[10px] font-bold text-teal-600 uppercase tracking-wide mb-1">📋 Test Qty</p>
+          <p className="text-xl font-black text-teal-700 mt-1">{hasMedia ? mQty : "—"}</p>
+          <p className="text-[10px] text-slate-400">{unit}</p>
+        </div>
+      </div>
+      {hasPrint && hasMedia && (
+        <div className={`rounded-xl border p-3 ${wastage > 0 ? "bg-amber-50 border-amber-100" : "bg-emerald-50 border-emerald-100"}`}>
+          <div className="flex items-center justify-between mb-1">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Wastage</p>
+              <p className="text-xs text-slate-400">Test − Printing</p>
+            </div>
+            <div className="text-right">
+              <p className={`text-xl font-black ${wastage > 0 ? "text-amber-700" : "text-emerald-700"}`}>
+                {wastage > 0 ? `+${wastage}` : wastage}
+              </p>
+              <p className="text-[10px] text-slate-400">{unit} ({wastageRatio.toFixed(1)}%)</p>
+            </div>
+          </div>
+          <WastageBar pct={Math.max(0, wastageRatio)} />
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ─── Job Lookup ───────────────────────────────────────────────────────────────
 const JobLookup = ({ onJobSelected }) => {
   const [loading,  setLoading]  = useState(false);
@@ -668,17 +693,14 @@ const JobLookup = ({ onJobSelected }) => {
   const fetchJobs = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch production jobs with approved designs
       const res  = await api(`/jobs?job_status=production&limit=200`);
       const list = res.data?.jobs || res.data || [];
       const approved = Array.isArray(list) ? list.filter(allDesignsApproved) : [];
 
-      // ✅ HIDE ISSUED JOBS: Fetch all in-house material issues to identify already-issued jobs
       try {
         const issuesRes = await api("/material?limit=500");
         const allIssues = issuesRes.data?.issues || [];
         
-        // Filter to in-house only and get unique job IDs that have material issued
         const issuedJobIds = new Set(
           allIssues
             .filter(i => i.calc_mode !== "outsource" && i.status === "issued")
@@ -686,12 +708,10 @@ const JobLookup = ({ onJobSelected }) => {
             .filter(Boolean)
         );
 
-        // Hide jobs that already have material issues issued
         const availableJobs = approved.filter(job => !issuedJobIds.has(job._id?.toString()));
         setJobs(availableJobs);
       } catch (issueErr) {
-        // If fetching issues fails, just show all approved jobs (graceful fallback)
-        console.warn("Could not fetch material issues, showing all approved jobs:", issueErr);
+        console.warn("Could not fetch material issues:", issueErr);
         setJobs(approved);
       }
     } catch (err) { show(err.message, "error"); }
@@ -790,7 +810,7 @@ const getFileMode = (file) => {
   return "inhouse";
 };
 
-// ─── In-House File Form ───────────────────────────────────────────────────────
+// ─── In-House File Form (DUAL UNIT SUPPORT) ───────────────────────────────────
 const InHouseFileForm = ({ file, item, products, onAddMaterial, stateRef, stateKey }) => {
   const [productId,  setProductId]  = useState("");
   const [printW,     setPrintW]     = useState("");
@@ -804,6 +824,13 @@ const InHouseFileForm = ({ file, item, products, onAddMaterial, stateRef, stateK
   const [buffer,     setBuffer]     = useState("20");
   const [issuedQty,  setIssuedQty]  = useState("");
   const [notes,      setNotes]      = useState("");
+
+  // Quantity-based fields
+  const [printQty,   setPrintQty]   = useState("");
+  const [mediaQty,   setMediaQty]   = useState("");
+
+  const selectedProduct = products.find(p => p._id === productId);
+  const productType = getProductType(selectedProduct);
 
   useEffect(() => {
     if (item?.size) {
@@ -820,31 +847,42 @@ const InHouseFileForm = ({ file, item, products, onAddMaterial, stateRef, stateK
   }, [item]);
 
   const printSqFt = useMemo(() => {
+    if (productType === "quantity") return 0;
     const w = toFeet(printW, printWUnit), h = toFeet(printH, printHUnit);
     return w > 0 && h > 0 ? w * h : 0;
-  }, [printW, printWUnit, printH, printHUnit]);
+  }, [printW, printWUnit, printH, printHUnit, productType]);
 
   const mediaSqFt = useMemo(() => {
+    if (productType === "quantity") return 0;
     const w = toFeet(mediaW, mediaWUnit), h = toFeet(mediaH, mediaHUnit);
     return w > 0 && h > 0 ? w * h : 0;
-  }, [mediaW, mediaWUnit, mediaH, mediaHUnit]);
+  }, [mediaW, mediaWUnit, mediaH, mediaHUnit, productType]);
+
+  const pQty = parseInt(printQty) || 0;
+  const mQty = parseInt(mediaQty) || 0;
+  const qtyWastage = mQty - pQty;
 
   const bufferSqFt    = mediaSqFt * ((parseFloat(buffer) || 0) / 100);
-  const totalRequired = mediaSqFt + bufferSqFt;
-  const wastageSqFt   = mediaSqFt - printSqFt;
+  const totalRequired = productType === "sqft" ? mediaSqFt + bufferSqFt : mQty;
+  const wastageSqFt   = productType === "sqft" ? mediaSqFt - printSqFt : 0;
 
   useEffect(() => {
-    if (mediaSqFt > 0) setIssuedQty(totalRequired.toFixed(2));
-  }, [mediaSqFt, buffer]);
-
-  const selectedProduct = products.find(p => p._id === productId);
+    if (productType === "sqft" && mediaSqFt > 0) {
+      setIssuedQty(totalRequired.toFixed(2));
+    } else if (productType === "quantity" && mQty > 0) {
+      setIssuedQty(mQty.toString());
+    }
+  }, [mediaSqFt, buffer, totalRequired, productType, mQty]);
 
   useEffect(() => {
     stateRef.current[stateKey] = {
       mode: "inhouse", file, item,
-      productId, printW, printWUnit, printH, printHUnit,
+      productId, productType,
+      printW, printWUnit, printH, printHUnit,
       mediaW, mediaWUnit, mediaH, mediaHUnit,
+      printQty, mediaQty,
       printSqFt, mediaSqFt, bufferSqFt, totalRequired, wastageSqFt,
+      qtyWastage,
       buffer, issuedQty, notes,
     };
   });
@@ -864,49 +902,81 @@ const InHouseFileForm = ({ file, item, products, onAddMaterial, stateRef, stateK
         <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold
           ${selectedProduct.stock_count > 50 ? "bg-emerald-50 text-emerald-700" : selectedProduct.stock_count > 10 ? "bg-amber-50 text-amber-700" : "bg-rose-50 text-rose-700"}`}>
           <span>{selectedProduct.stock_count > 50 ? "●" : selectedProduct.stock_count > 10 ? "◆" : "▲"}</span>
-          <span>{selectedProduct.stock_count} sqft in stock</span>
+          <span>{selectedProduct.stock_count} {selectedProduct.primary_unit || "sqft"} in stock</span>
           <span className="text-slate-400 mx-1">·</span>
           <span className="font-mono text-slate-500">{selectedProduct.product_code}</span>
         </div>
       )}
 
-      <div className="flex gap-6">
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-5 h-5 rounded bg-violet-600 flex items-center justify-center">
-              <span className="text-white text-[9px] font-black">P</span>
+      {productType === "sqft" ? (
+        <>
+          <div className="flex gap-6">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-5 h-5 rounded bg-violet-600 flex items-center justify-center">
+                  <span className="text-white text-[9px] font-black">P</span>
+                </div>
+                <p className="text-xs font-bold text-violet-700 uppercase tracking-wide">Printing Dimensions</p>
+                <span className="text-[10px] text-slate-400">Actual artwork size</span>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <DimensionInput label="Width"  value={printW} onChange={setPrintW} unit={printWUnit} onUnitChange={setPrintWUnit} />
+                <DimensionInput label="Height" value={printH} onChange={setPrintH} unit={printHUnit} onUnitChange={setPrintHUnit} />
+              </div>
+              {printSqFt > 0 && <p className="text-xs font-bold text-violet-600 mt-1.5">Area: {printSqFt.toFixed(2)} sq.ft</p>}
             </div>
-            <p className="text-xs font-bold text-violet-700 uppercase tracking-wide">Printing Dimensions</p>
-            <span className="text-[10px] text-slate-400">Actual artwork size</span>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <DimensionInput label="Width"  value={printW} onChange={setPrintW} unit={printWUnit} onUnitChange={setPrintWUnit} />
-            <DimensionInput label="Height" value={printH} onChange={setPrintH} unit={printHUnit} onUnitChange={setPrintHUnit} />
-          </div>
-          {printSqFt > 0 && <p className="text-xs font-bold text-violet-600 mt-1.5">Area: {printSqFt.toFixed(2)} sq.ft</p>}
-        </div>
 
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-5 h-5 rounded bg-sky-600 flex items-center justify-center">
-              <span className="text-white text-[9px] font-black">M</span>
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-5 h-5 rounded bg-sky-600 flex items-center justify-center">
+                  <span className="text-white text-[9px] font-black">M</span>
+                </div>
+                <p className="text-xs font-bold text-sky-700 uppercase tracking-wide">Media Dimensions</p>
+                <span className="text-[10px] text-slate-400">Roll / sheet cut size</span>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <DimensionInput label="Width"  value={mediaW} onChange={setMediaW} unit={mediaWUnit} onUnitChange={setMediaWUnit} />
+                <DimensionInput label="Height" value={mediaH} onChange={setMediaH} unit={mediaHUnit} onUnitChange={setMediaHUnit} />
+              </div>
+              {mediaSqFt > 0 && <p className="text-xs font-bold text-sky-600 mt-1.5">Area: {mediaSqFt.toFixed(2)} sq.ft</p>}
             </div>
-            <p className="text-xs font-bold text-sky-700 uppercase tracking-wide">Media Dimensions</p>
-            <span className="text-[10px] text-slate-400">Roll / sheet cut size</span>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <DimensionInput label="Width"  value={mediaW} onChange={setMediaW} unit={mediaWUnit} onUnitChange={setMediaWUnit} />
-            <DimensionInput label="Height" value={mediaH} onChange={setMediaH} unit={mediaHUnit} onUnitChange={setMediaHUnit} />
-          </div>
-          {mediaSqFt > 0 && <p className="text-xs font-bold text-sky-600 mt-1.5">Area: {mediaSqFt.toFixed(2)} sq.ft</p>}
-        </div>
-      </div>
 
-      <DimensionCalcCard
-        printW={printW} printWUnit={printWUnit} printH={printH} printHUnit={printHUnit}
-        mediaW={mediaW} mediaWUnit={mediaWUnit} mediaH={mediaH} mediaHUnit={mediaHUnit}
-        bufferPct={buffer}
-      />
+          <DimensionCalcCard
+            printW={printW} printWUnit={printWUnit} printH={printH} printHUnit={printHUnit}
+            mediaW={mediaW} mediaWUnit={mediaWUnit} mediaH={mediaH} mediaHUnit={mediaHUnit}
+            bufferPct={buffer}
+          />
+        </>
+      ) : (
+        <>
+          <div className="flex gap-6">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-5 h-5 rounded bg-violet-600 flex items-center justify-center">
+                  <span className="text-white text-[9px] font-black">P</span>
+                </div>
+                <p className="text-xs font-bold text-violet-700 uppercase tracking-wide">Printing Quantity</p>
+                <span className="text-[10px] text-slate-400">Pieces to print</span>
+              </div>
+              <QuantityInput label="Qty" value={printQty} onChange={setPrintQty} unit={selectedProduct?.primary_unit || "pcs"} />
+            </div>
+
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-5 h-5 rounded bg-teal-600 flex items-center justify-center">
+                  <span className="text-white text-[9px] font-black">T</span>
+                </div>
+                <p className="text-xs font-bold text-teal-700 uppercase tracking-wide">Test Quantity</p>
+                <span className="text-[10px] text-slate-400">Total pieces needed</span>
+              </div>
+              <QuantityInput label="Qty" value={mediaQty} onChange={setMediaQty} unit={selectedProduct?.primary_unit || "pcs"} />
+            </div>
+          </div>
+
+          <QuantityCalcCard printQty={printQty} mediaQty={mediaQty} unit={selectedProduct?.primary_unit || "pcs"} />
+        </>
+      )}
 
       <InputField
         label="Notes"
@@ -1155,11 +1225,15 @@ const IssuePanel = ({ products, onIssued, onAddMaterial }) => {
         const qty = parseFloat(entry.issuedQty);
         if (!qty || qty <= 0)
           return show(`Issued qty must be > 0 for: ${entry.file?.label || entry.file?.file_name}`, "error");
-        if (entry.mediaSqFt <= 0)
+        
+        if (entry.productType === "sqft" && entry.mediaSqFt <= 0)
           return show(`Media dimensions required for: ${entry.file?.label || entry.file?.file_name}`, "error");
+        if (entry.productType === "quantity" && entry.mediaQty <= 0)
+          return show(`Test quantity required for: ${entry.file?.label || entry.file?.file_name}`, "error");
+        
         const prod = products.find(p => p._id === entry.productId);
         if (prod && prod.stock_count < qty)
-          return show(`Insufficient stock for "${prod.name}" — available: ${prod.stock_count} sqft`, "error");
+          return show(`Insufficient stock for "${prod.name}" — available: ${prod.stock_count} ${prod.primary_unit || "sqft"}`, "error");
       } else if (entry.mode === "outsource") {
         if (!entry.vendor?.trim())
           return show(`Vendor name required for outsource file: ${entry.file?.file_name}`, "error");
@@ -1171,7 +1245,7 @@ const IssuePanel = ({ products, onIssued, onAddMaterial }) => {
 
     try {
       for (const entry of issuable) {
-        const { mode, file, item } = entry;
+        const { mode, file, item, productType } = entry;
 
         const itemIdx = cartItems.findIndex(ci =>
           ci._id?.toString() === item._id?.toString() ||
@@ -1182,17 +1256,25 @@ const IssuePanel = ({ products, onIssued, onAddMaterial }) => {
         const selectedProduct = !isOut ? products.find(p => p._id === entry.productId) : null;
         const qty = parseFloat(isOut ? entry.qty : entry.issuedQty) || 0;
 
-        const printDim = entry.printW && entry.printH ? {
-          width: parseFloat(entry.printW), height: parseFloat(entry.printH),
-          unit: entry.printWUnit || "ft",
-          sqft: entry.printSqFt || 0,
-        } : null;
+        let printDim = null, mediaDim = null, wastageSq = 0;
 
-        const mediaDim = entry.mediaW && entry.mediaH ? {
-          width: parseFloat(entry.mediaW), height: parseFloat(entry.mediaH),
-          unit: entry.mediaWUnit || "ft",
-          sqft: entry.mediaSqFt || 0,
-        } : null;
+        if (productType === "sqft") {
+          if (entry.printW && entry.printH) {
+            printDim = {
+              width: parseFloat(entry.printW), height: parseFloat(entry.printH),
+              unit: entry.printWUnit || "ft",
+              sqft: entry.printSqFt || 0,
+            };
+          }
+          if (entry.mediaW && entry.mediaH) {
+            mediaDim = {
+              width: parseFloat(entry.mediaW), height: parseFloat(entry.mediaH),
+              unit: entry.mediaWUnit || "ft",
+              sqft: entry.mediaSqFt || 0,
+            };
+          }
+          wastageSq = entry.wastageSqFt || 0;
+        }
 
         const payload = {
           cart_item_index:   itemIdx >= 0 ? itemIdx : 0,
@@ -1201,11 +1283,14 @@ const IssuePanel = ({ products, onIssued, onAddMaterial }) => {
           design_file_label: file.label || "",
           material: isOut
             ? { product_id: null, product_name: "Outsourced", unit: "sqft" }
-            : { product_id: entry.productId, product_name: selectedProduct?.name || "", unit: "sqft" },
+            : { product_id: entry.productId, product_name: selectedProduct?.name || "", unit: selectedProduct?.primary_unit || "sqft" },
           issued_qty:        qty,
           calc_mode:         "dimensions",
           printing_dimensions: printDim,
           media_dimensions:    mediaDim,
+          printing_quantity:   productType === "quantity" ? parseInt(entry.printQty) || 0 : null,
+          media_quantity:      productType === "quantity" ? parseInt(entry.mediaQty) || 0 : null,
+          product_type:        productType,
           wastage_buffer_pct:  isOut ? 0 : parseFloat(entry.buffer) || 20,
           outsource_type:      isOut ? (entry.outType || "other") : "none",
           outsource_vendor:    isOut ? entry.vendor.trim() : "",
@@ -1244,7 +1329,7 @@ const IssuePanel = ({ products, onIssued, onAddMaterial }) => {
           issued_by:        payload.issued_by,
           printing_dimensions: printDim,
           media_dimensions:    mediaDim,
-          wastage_sqft:     entry.wastageSqFt || 0,
+          wastage_sqft:     wastageSq || 0,
           calculation:      res.data?.calculation || {},
           outsource_type:   payload.outsource_type,
           outsource_vendor: payload.outsource_vendor,
@@ -1256,7 +1341,7 @@ const IssuePanel = ({ products, onIssued, onAddMaterial }) => {
 
         newIssues.push({ newIssue, productId: isOut ? null : entry.productId, qty, isOut });
 
-        if (!isOut) generateSlipPDF(newIssue, user);
+        if (!isOut && productType === "sqft") generateSlipPDF(newIssue, user);
       }
 
       show(`${newIssues.length} material${newIssues.length !== 1 ? "s" : ""} issued successfully!`, "success");
@@ -1315,7 +1400,7 @@ const IssuePanel = ({ products, onIssued, onAddMaterial }) => {
               <div>
                 <p className="text-sm font-bold text-white">Issue All Materials</p>
                 <p className="text-xs text-white/50">
-                  {fileCounts.inhouse} in-house (slips printed) · {fileCounts.outsource} outsource · {fileCounts.skip} skipped
+                  {fileCounts.inhouse} in-house · {fileCounts.outsource} outsource · {fileCounts.skip} skipped
                 </p>
               </div>
               <Btn variant="success" size="lg" loading={submitLoad} onClick={handleIssueAll}>
@@ -1333,14 +1418,13 @@ const IssuePanel = ({ products, onIssued, onAddMaterial }) => {
   );
 };
 
-// ─── Issues Panel (FILTERED: EXCLUDE OUTSOURCE) ─────────────────────────────────────────────────────────────────────────────────────────
+// ─── Issues Panel (IN-HOUSE ONLY) ──────────────────────────────────────────────
 const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
   const [statusFilter, setStatusFilter] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage]     = useState(1);
   const PER_PAGE = 10;
 
-  // ✅ FILTER: Only show in-house issues (calc_mode !== "outsource")
   const filtered = useMemo(() => {
     let list = issues.filter(i => i.calc_mode !== "outsource");
     
@@ -1429,7 +1513,7 @@ const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
                   </div>
                   <div className="text-right flex-shrink-0">
                     <p className="text-xs font-semibold text-slate-700 truncate max-w-[100px]">{issue.material?.product_name}</p>
-                    <p className="text-xs text-slate-400">{issue.issued_qty} sqft</p>
+                    <p className="text-xs text-slate-400">{issue.issued_qty} {issue.material?.unit || "sqft"}</p>
                   </div>
                 </div>
 
@@ -1486,7 +1570,7 @@ const IssuesPanel = ({ issues, onViewIssue, onRefresh, loading }) => {
   );
 };
 
-// ─── Report Panel ─────────────────────────────────────────────────────────────
+// ─── Report Panel (placeholder) ────────────────────────────────────────────────
 const ReportPanel = () => {
   const [report,   setReport]   = useState(null);
   const [loading,  setLoading]  = useState(false);
@@ -1529,31 +1613,7 @@ const ReportPanel = () => {
             <StatTile label="Total Wastage" value={parseFloat((o.total_actual_wastage || 0).toFixed(1))} suffix="sqft" />
             <StatTile label="Needs Review"  value={o.flagged_count || 0} color={o.flagged_count > 0 ? "rose" : "emerald"} />
           </div>
-          <div className="grid grid-cols-3 gap-3">
-            {[["✓ Good", o.good_count, "emerald"], ["◆ Acceptable", o.acceptable_count, "amber"], ["▼ High Wastage", o.high_wastage_count, "rose"]].map(([l, count, color]) => (
-              <StatTile key={l} label={l} value={count || 0} color={color} />
-            ))}
-          </div>
         </>
-      )}
-
-      {report?.by_employee?.length > 0 && (
-        <Card className="p-5">
-          <SectionHeader icon="👥" title="Employee Performance" />
-          <div className="space-y-3">
-            {report.by_employee.map(emp => (
-              <div key={emp._id} className="flex items-center gap-3 py-2 border-b border-slate-50 last:border-0">
-                <Avatar name={emp.employee_name || "?"} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-slate-800 truncate">{emp.employee_name}</p>
-                  <p className="text-xs text-slate-400">{emp.total_issues} issues</p>
-                </div>
-                <div className="w-24 flex-shrink-0"><WastageBar pct={emp.avg_wastage_ratio || 0} /></div>
-                <PerfBadge rating={emp.overall_rating || "acceptable"} />
-              </div>
-            ))}
-          </div>
-        </Card>
       )}
 
       {!o && !loading && <EmptyState icon="📊" title="No report data" subtitle="Issue some materials first to see analytics" />}
@@ -1561,7 +1621,7 @@ const ReportPanel = () => {
   );
 };
 
-// ─── Issue Detail Modal ───────────────────────────────────────────────────────
+// ─── Issue Detail Modal ─────────────────────────────────────────────────────── 
 const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
   const { user } = useSelector(s => s.authSlice);
   const { toasts, show, dismiss } = useToast();
@@ -1614,8 +1674,8 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
           <div className="space-y-1">
             {[
               ["Material",    issue.material?.product_name],
-              ["Issued Qty",  `${issue.issued_qty} sqft`],
-              ["Recommended", `${issue.suggested_qty || calc?.required_sqft || "—"} sqft`],
+              ["Issued Qty",  `${issue.issued_qty} ${issue.material?.unit || "sqft"}`],
+              ["Recommended", `${issue.suggested_qty || calc?.required_sqft || "—"} ${issue.material?.unit || "sqft"}`],
             ].map(([k, v]) => (
               <div key={k} className="flex justify-between items-center py-2 border-b border-slate-50">
                 <span className="text-xs text-slate-400">{k}</span>
@@ -1673,9 +1733,9 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
             <Divider label="Return Details" />
             <div className="space-y-1">
               {[
-                ["Returned",  `${r.returned_qty} sqft`],
-                ["Used",      `${r.actual_used_qty} sqft`],
-                ["Wastage",   `${r.actual_wastage_qty} sqft`],
+                ["Returned",  `${r.returned_qty} ${issue.material?.unit || "sqft"}`],
+                ["Used",      `${r.actual_used_qty} ${issue.material?.unit || "sqft"}`],
+                ["Wastage",   `${r.actual_wastage_qty} ${issue.material?.unit || "sqft"}`],
                 ["Ratio",     `${r.wastage_ratio_pct}%`],
                 ["Reason",    WASTAGE_REASONS.find(x => x.value === r.wastage_reason)?.label || r.wastage_reason],
               ].map(([k, v]) => (
@@ -1723,7 +1783,7 @@ const IssueDetailModal = ({ issue, mode, onClose, onReviewSaved }) => {
   );
 };
 
-// ─── Root ─────────────────────────────────────────────────────────────────────
+// ─── Root Component ────────────────────────────────────────────────────────────
 export default function MaterialIssueManager() {
   const { user }  = useSelector(s => s.authSlice);
   const navigate  = useNavigate();
@@ -1744,12 +1804,10 @@ export default function MaterialIssueManager() {
     } catch {}
   }, []);
 
-  // ✅ FIX: Properly filter outsource issues on fetch
   const fetchIssues = useCallback(async () => {
     setIssLoading(true);
     try { 
       const res = await api("/material?limit=100");
-      // Filter on NEWLY fetched data, not stale issues state
       const allIssues = res.data?.issues || [];
       const inHouseIssues = allIssues.filter(i => i.calc_mode !== "outsource");
       setIssues(inHouseIssues);
@@ -1766,7 +1824,6 @@ export default function MaterialIssueManager() {
   }, [fetchProducts, fetchIssues]);
 
   const handleIssued = useCallback((newIssue, productId, qty, _jobId, isOut) => {
-    // Only add non-outsource issues
     if (!isOut) {
       setIssues(prev => [newIssue, ...prev]);
     }
@@ -1790,17 +1847,10 @@ export default function MaterialIssueManager() {
     ));
   };
 
-  // ✅ STATS: Only count in-house issues
   const stats = useMemo(() => ({
-    pending: issues
-      .filter(i => i.status === "issued")
-      .length,
-    flagged: issues
-      .filter(i => i.return?.is_flagged && !i.return?.manager_reviewed)
-      .length,
-    totalIssued: parseFloat(
-      issues.reduce((s, i) => s + (i.issued_qty || 0), 0).toFixed(1)
-    ),
+    pending: issues.filter(i => i.status === "issued").length,
+    flagged: issues.filter(i => i.return?.is_flagged && !i.return?.manager_reviewed).length,
+    totalIssued: parseFloat(issues.reduce((s, i) => s + (i.issued_qty || 0), 0).toFixed(1)),
     avgWaste: (() => {
       const ret = issues.filter(i => i.return);
       return ret.length 
@@ -1827,13 +1877,6 @@ export default function MaterialIssueManager() {
       <div className="min-h-screen bg-slate-50 flex flex-col">
         <ToastContainer toasts={toasts} dismiss={dismiss} />
 
-        {/* <AddMaterialModal
-          open={addMatOpen}
-          onClose={() => setAddMatOpen(false)}
-          onAdded={handleMaterialAdded}
-          show={show}
-        /> */}
-
         <header className="bg-white border-b border-slate-100 sticky top-0 z-30 shadow-sm">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between py-4">
@@ -1843,7 +1886,7 @@ export default function MaterialIssueManager() {
                 </div>
                 <div>
                   <h1 className="text-base font-black text-slate-900 leading-tight tracking-tight">Material Issuance</h1>
-                  <p className="text-xs text-slate-400 hidden sm:block">Issue per design file · Print · Tracking</p>
+                  <p className="text-xs text-slate-400 hidden sm:block">Issue per design file · Support sqft & quantity · Print · Track</p>
                 </div>
               </div>
               <div className="flex items-center gap-2 sm:gap-3">
@@ -1871,7 +1914,7 @@ export default function MaterialIssueManager() {
 
             <div className="grid grid-cols-4 gap-2 pb-3">
               {[
-                { label: "Issued",    value: stats.totalIssued, suffix: "sqft", color: "text-sky-600" },
+                { label: "Issued",    value: stats.totalIssued, suffix: "units", color: "text-sky-600" },
                 { label: "Pending",   value: stats.pending,     suffix: "",     color: stats.pending > 0 ? "text-amber-600" : "text-slate-700" },
                 { label: "Avg Waste", value: `${stats.avgWaste}%`, suffix: "", color: stats.avgWaste > 20 ? "text-rose-600" : "text-slate-700" },
                 { label: "Review",    value: stats.flagged,     suffix: "",     color: stats.flagged > 0 ? "text-rose-600" : "text-slate-700" },

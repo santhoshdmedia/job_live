@@ -15,6 +15,8 @@ import ErectionPanel from "../pages/Erectionpanel";
 import AddProduct from "../pages/AddProduct";
 import SiteVisitDashboard from "../pages/Sitevisitdashboard";
 import PickupDashboard from "../pages/PickupDashboard";
+import StaffMonitorPage from "../pages/StaffMonitorPage";
+
 
 const ProtectedRoute = ({ children, pageName }) => (
   <PermissionGuard pageName={pageName}>{children}</PermissionGuard>
@@ -124,6 +126,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute pageName="erection-panel">
             <ErectionPanel />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "Staff-monitor",
+        element: (
+          <ProtectedRoute pageName="Staff-monitor">
+            <StaffMonitorPage />
           </ProtectedRoute>
         ),
       },

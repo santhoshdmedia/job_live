@@ -1087,7 +1087,7 @@ const CreateJobModal = ({ open, onClose, onCreated }) => {
           <FormField label="Customer Name" required>
             <Input prefix={<UserOutlined style={{ color: T.mutedFg }} />} placeholder="Full name"
               value={formData.customer_name} style={{ borderRadius: T.radius, fontFamily: T.font }}
-              onChange={(e) => handleInput("customer_name", e.target.value)} />
+             onChange={(e) => handleInput("customer_name", e.target.value.replace(/^\w/, c => c.toUpperCase()))} />
           </FormField>
           <FormField label="Phone" required>
             <Input prefix={<PhoneOutlined style={{ color: T.mutedFg }} />} placeholder="10-digit mobile"
