@@ -2,475 +2,536 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import axios from "axios";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Axios Instance
-// Full route map:
-//   POST   /api/staff-monitor/session/login
-//   POST   /api/staff-monitor/session/logout
-//   GET    /api/staff-monitor/monitor
-//   GET    /api/staff-monitor/monitor/:id/details
-//   GET    /api/staff-monitor/monitor/:id/job-time      ← NEW
-//   POST   /api/staff-monitor/task-log
-//   DELETE /api/staff-monitor/task-log/:logId
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Axios Instance ────────────────────────────────────────────────────────
 const http = axios.create({
   baseURL: "https://api.dmedia.in/api/staff-monitor",
   timeout: 12000,
   headers: { "Content-Type": "application/json" },
 });
-
 http.interceptors.request.use((config) => {
   const token = localStorage.getItem("token") || localStorage.getItem("adminToken");
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
-
 const api = {
-  getMonitorList:  ()        => http.get("/monitor").then((r) => r.data),
-  getStaffDetails: (id)      => http.get(`/monitor/${id}/details`).then((r) => r.data),
-  getStaffJobTime: (id)      => http.get(`/monitor/${id}/job-time`).then((r) => r.data),  // NEW
-  submitTaskLog:   (payload) => http.post("/task-log", payload).then((r) => r.data),
-  deleteTaskLog:   (logId)   => http.delete(`/task-log/${logId}`).then((r) => r.data),
-  recordLogin:     (staffId) => http.post("/session/login",  { staffId }).then((r) => r.data),
-  recordLogout:    (staffId) => http.post("/session/logout", { staffId }).then((r) => r.data),
+  getMonitorList:  ()       => http.get("/monitor").then((r) => r.data),
+  getStaffDetails: (id)     => http.get(`/monitor/${id}/details`).then((r) => r.data),
+  getStaffJobTime: (id)     => http.get(`/monitor/${id}/job-time`).then((r) => r.data),
+  submitTaskLog:   (p)      => http.post("/task-log", p).then((r) => r.data),
+  deleteTaskLog:   (logId)  => http.delete(`/task-log/${logId}`).then((r) => r.data),
+  recordLogin:     (staffId)=> http.post("/session/login",  { staffId }).then((r) => r.data),
+  recordLogout:    (staffId)=> http.post("/session/logout", { staffId }).then((r) => r.data),
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Constants
-// ─────────────────────────────────────────────────────────────────────────────
-const ROLE_COLORS = {
-  "super admin":     { bg: "#1e293b", text: "#f8fafc", dot: "#94a3b8" },
-  "accounting team": { bg: "#dcfce7", text: "#166534", dot: "#16a34a" },
-  "designing team":  { bg: "#fce7f3", text: "#9d174d", dot: "#ec4899" },
-  "quality check":   { bg: "#ffedd5", text: "#9a3412", dot: "#f97316" },
-  "production team": { bg: "#cffafe", text: "#164e63", dot: "#06b6d4" },
-  "packing team":    { bg: "#f0fdf4", text: "#14532d", dot: "#22c55e" },
-  "delivery team":   { bg: "#fee2e2", text: "#991b1b", dot: "#ef4444" },
-  "admin":           { bg: "#ede9fe", text: "#5b21b6", dot: "#7c3aed" },
+// ─── Design Tokens ────────────────────────────────────────────────────────
+const T = {
+  // Core
+  ink:      "#0C111D",
+  ink2:     "#374151",
+  ink3:     "#6B7280",
+  ink4:     "#9CA3AF",
+  border:   "#E5E7EB",
+  border2:  "#D1D5DB",
+  surface:  "#FFFFFF",
+  bg:       "#F4F5F7",
+  bg2:      "#F9FAFB",
+
+  // Amber accent — the "heat" color
+  amber:    "#E8840A",
+  amberL:   "#FEF3E2",
+  amberM:   "#FDE68A",
+  amberD:   "#B45309",
+
+  // Status
+  green:    "#16A34A",
+  greenL:   "#F0FDF4",
+  greenM:   "#86EFAC",
+  blue:     "#2563EB",
+  blueL:    "#EFF6FF",
+  violet:   "#7C3AED",
+  violetL:  "#F5F3FF",
+  red:      "#DC2626",
+
+  // Radius
+  r:  "10px",
+  r2: "14px",
+  r3: "20px",
 };
 
-const STAGE_COLORS = {
-  design:        { bg: "#fce7f3", text: "#9d174d", border: "#fbcfe8" },
-  production:    { bg: "#cffafe", text: "#164e63", border: "#a5f3fc" },
-  "quality check": { bg: "#ffedd5", text: "#9a3412", border: "#fed7aa" },
-  qc:            { bg: "#ffedd5", text: "#9a3412", border: "#fed7aa" },
-  packing:       { bg: "#f0fdf4", text: "#14532d", border: "#bbf7d0" },
-  delivery:      { bg: "#eff6ff", text: "#1e40af", border: "#bfdbfe" },
-  default:       { bg: "#f8fafc", text: "#475569", border: "#e2e8f0" },
+// ─── Role badge config ────────────────────────────────────────────────────
+const ROLE_CFG = {
+  "super admin":     { bg: T.ink,      text: "#F9FAFB",  dot: "#9CA3AF" },
+  "admin":           { bg: T.violetL,  text: T.violet,   dot: T.violet  },
+  "accounting team": { bg: T.greenL,   text: T.green,    dot: T.green   },
+  "designing team":  { bg: "#FDF2F8",  text: "#9D174D",  dot: "#EC4899" },
+  "quality check":   { bg: T.amberL,   text: T.amberD,   dot: T.amber   },
+  "production team": { bg: "#ECFEFF",  text: "#164E63",  dot: "#06B6D4" },
+  "packing team":    { bg: T.greenL,   text: "#14532D",  dot: "#22C55E" },
+  "delivery team":   { bg: "#FEF2F2",  text: "#991B1B",  dot: T.red     },
 };
 
-const stageColor = (stage = "") => STAGE_COLORS[stage.toLowerCase()] || STAGE_COLORS.default;
+const STAGE_CFG = {
+  design:          { bg: "#FDF2F8", text: "#9D174D", border: "#FBCFE8" },
+  production:      { bg: "#ECFEFF", text: "#164E63", border: "#A5F3FC" },
+  "quality check": { bg: T.amberL,  text: T.amberD,  border: "#FDE68A" },
+  qc:              { bg: T.amberL,  text: T.amberD,  border: "#FDE68A" },
+  packing:         { bg: T.greenL,  text: "#14532D", border: "#BBF7D0" },
+  delivery:        { bg: T.blueL,   text: "#1E40AF", border: "#BFDBFE" },
+  default:         { bg: T.bg2,     text: T.ink3,    border: T.border  },
+};
+const stageColor = (s = "") => STAGE_CFG[s.toLowerCase()] || STAGE_CFG.default;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Utilities
-// ─────────────────────────────────────────────────────────────────────────────
-const fmtDuration = (seconds) => {
-  if (!seconds) return "0m";
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
+// ─── Utilities ────────────────────────────────────────────────────────────
+const fmtD  = (s) => { if (!s) return "0m"; const h = Math.floor(s/3600), m = Math.floor((s%3600)/60); return h > 0 ? `${h}h ${m}m` : `${m}m`; };
+const fmtDL = (s) => { const v=Math.max(0,Math.floor(s||0)); return [Math.floor(v/3600),Math.floor((v%3600)/60),v%60].map(n=>String(n).padStart(2,"0")).join(":"); };
+const fmtT  = (d) => { if (!d) return "—"; return new Date(d).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"}); };
+const fmtDate= (d) => { if (!d) return "—"; return new Date(d).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}); };
+const fmtDT = (d) => { if (!d) return "—"; const dt=new Date(d); return dt.toLocaleDateString("en-IN",{day:"2-digit",month:"short"})+" · "+dt.toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"}); };
+const mapsUrl=(lat,lng)=>`https://www.google.com/maps?q=${lat},${lng}`;
+
+const avatarBg = (name="") => {
+  const palette = [T.amber,"#0891B2","#7C3AED","#DB2777","#059669","#2563EB","#9333EA","#DC2626"];
+  let h=0; for (let i=0;i<name.length;i++) h=name.charCodeAt(i)+((h<<5)-h);
+  return palette[Math.abs(h)%palette.length];
 };
 
-const fmtDurationLong = (seconds) => {
-  if (!seconds) return "00:00:00";
-  const s   = Math.max(0, Math.floor(seconds));
-  const h   = String(Math.floor(s / 3600)).padStart(2, "0");
-  const m   = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
-  const sec = String(s % 60).padStart(2, "0");
-  return `${h}:${m}:${sec}`;
-};
-
-const fmtTime = (date) => {
-  if (!date) return "—";
-  return new Date(date).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
-};
-
-const fmtDate = (date) => {
-  if (!date) return "—";
-  return new Date(date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-};
-
-const fmtDateTime = (date) => {
-  if (!date) return "—";
-  const d = new Date(date);
-  return (
-    d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) +
-    " · " +
-    d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })
-  );
-};
-
-const avatarColor = (name = "") => {
-  const colors = ["#0d9488","#2563eb","#7c3aed","#db2777","#ea580c","#16a34a","#0891b2","#9333ea"];
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  return colors[Math.abs(hash) % colors.length];
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Hooks
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Hooks ───────────────────────────────────────────────────────────────
 function useLiveElapsed(loginAt, active) {
-  const [elapsed, setElapsed] = useState(0);
+  const [e, setE] = useState(0);
   useEffect(() => {
-    if (!active || !loginAt) { setElapsed(0); return; }
-    const tick = () => setElapsed(Math.floor((Date.now() - new Date(loginAt).getTime()) / 1000));
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
+    if (!active || !loginAt) { setE(0); return; }
+    const tick = () => setE(Math.floor((Date.now()-new Date(loginAt).getTime())/1000));
+    tick(); const id = setInterval(tick, 1000); return () => clearInterval(id);
   }, [loginAt, active]);
-  return elapsed;
+  return e;
 }
-
-function useLiveSeconds(baseSeconds, hasOpen, openSince) {
-  const [extra, setExtra] = useState(0);
+function useLiveSeconds(base, hasOpen, openSince) {
+  const [x, setX] = useState(0);
   useEffect(() => {
-    if (!hasOpen || !openSince) { setExtra(0); return; }
-    const tick = () => setExtra(Math.floor((Date.now() - new Date(openSince).getTime()) / 1000));
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
+    if (!hasOpen || !openSince) { setX(0); return; }
+    const tick = () => setX(Math.floor((Date.now()-new Date(openSince).getTime())/1000));
+    tick(); const id = setInterval(tick, 1000); return () => clearInterval(id);
   }, [hasOpen, openSince]);
-  return baseSeconds + extra;
+  return base + x;
 }
-
 function useToast() {
   const [toasts, setToasts] = useState([]);
-  const push = useCallback((message, type = "success") => {
+  const push = useCallback((message, type="success") => {
     const id = Date.now();
-    setToasts((p) => [...p, { id, message, type }]);
-    setTimeout(() => setToasts((p) => p.filter((t) => t.id !== id)), 3200);
+    setToasts(p => [...p, {id, message, type}]);
+    setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 3200);
   }, []);
   return { toasts, push };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Global CSS
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Global CSS ──────────────────────────────────────────────────────────
 const CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=DM+Sans:wght@400;500;600;700;800&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }
+  body { font-family: 'Inter', system-ui, sans-serif; background: ${T.bg}; }
   input, select, button, textarea { font-family: inherit; }
-  input:focus, select:focus, textarea:focus { outline: none; }
 
-  :root {
-    --teal: #0d9488; --teal-light: #f0fdf4;
-    --blue: #2563eb; --violet: #7c3aed;
-    --danger: #ef4444;
-    --surface: #ffffff; --surface-2: #f8fafc; --surface-3: #f1f5f9;
-    --border: #e8ecf0; --border-strong: #d1d9e0;
-    --text-1: #0f172a; --text-2: #374151; --text-3: #64748b; --text-4: #94a3b8;
-    --radius-md: 12px; --radius-lg: 16px;
-    --shadow-sm: 0 1px 3px rgba(0,0,0,.06);
-    --shadow-md: 0 4px 16px rgba(0,0,0,.08);
-    --shadow-lg: 0 8px 32px rgba(0,0,0,.10);
+  @keyframes spin     { to { transform: rotate(360deg); } }
+  @keyframes fadeIn   { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes slideUp  { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes sheetUp  { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  @keyframes toastIn  { from { opacity:0; transform:translateX(-50%) translateY(16px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }
+  @keyframes lbIn     { from { opacity:0; } to { opacity:1; } }
+  @keyframes lbImg    { from { opacity:0; transform:scale(.94); } to { opacity:1; transform:scale(1); } }
+  @keyframes heatPulse {
+    0%   { box-shadow: 0 0 0 0 rgba(232,132,10,.5); }
+    70%  { box-shadow: 0 0 0 8px rgba(232,132,10,0); }
+    100% { box-shadow: 0 0 0 0 rgba(232,132,10,0); }
   }
-
-  @keyframes fadeIn   { from{opacity:0}             to{opacity:1} }
-  @keyframes slideUp  { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
-  @keyframes sheetUp  { from{transform:translateY(100%)}           to{transform:translateY(0)} }
-  @keyframes spin     { to{transform:rotate(360deg)} }
-  @keyframes toastIn  { from{opacity:0;transform:translateX(-50%) translateY(20px) scale(.92)} to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)} }
-  @keyframes ping     {
-    0%   { box-shadow: 0 0 0 0   rgba(34,197,94,.55); }
-    70%  { box-shadow: 0 0 0 10px rgba(34,197,94,0);  }
-    100% { box-shadow: 0 0 0 0   rgba(34,197,94,0);   }
+  @keyframes statusDot {
+    0%,100% { opacity: 1; }
+    50%      { opacity: .45; }
   }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+  @keyframes barGrow { from { width: 0; } to { width: 100%; } }
 
-  .monitor-card {
-    background: var(--surface); border-radius: var(--radius-lg);
-    border: 1.5px solid var(--border); padding: 18px;
-    transition: box-shadow .18s, border-color .18s, transform .18s;
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 99px; }
+
+  .sm-card {
+    background: ${T.surface};
+    border-radius: ${T.r2};
+    border: 1px solid ${T.border};
+    position: relative;
+    overflow: hidden;
     cursor: pointer;
+    transition: box-shadow .18s, border-color .18s, transform .18s;
   }
-  .monitor-card:hover  { box-shadow: var(--shadow-md); border-color: var(--border-strong); transform: translateY(-1px); }
-  .monitor-card:active { transform: translateY(0); }
-  .monitor-card.online { border-color: #86efac; background: linear-gradient(135deg,#f0fdf4,#fff); }
+  .sm-card:hover  { box-shadow: 0 6px 24px rgba(0,0,0,.08); border-color: ${T.border2}; transform: translateY(-2px); }
+  .sm-card:active { transform: translateY(0); }
+
+  /* Left heat stripe */
+  .sm-card::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 4px;
+    background: ${T.border};
+    transition: background .25s;
+  }
+  .sm-card.online::before {
+    background: ${T.amber};
+    animation: heatPulse 2s cubic-bezier(0,0,.2,1) infinite;
+  }
 
   .live-dot {
-    width:8px; height:8px; border-radius:50%; background:#22c55e;
-    display:inline-block; flex-shrink:0;
-    animation: ping 1.4s cubic-bezier(0,0,.2,1) infinite;
+    width: 7px; height: 7px; border-radius: 50%;
+    background: ${T.amber}; display: inline-block; flex-shrink: 0;
+    animation: statusDot 1.6s ease-in-out infinite;
   }
 
-  .tab-pill {
-    padding: 8px 18px; border-radius: 99px; border: 1.5px solid transparent;
-    font-weight: 700; font-size: 13px; cursor: pointer;
-    transition: all .15s; background: transparent; color: var(--text-4);
-    white-space: nowrap;
+  .tab-btn {
+    padding: 7px 16px; border-radius: 8px; border: 1px solid transparent;
+    font-weight: 600; font-size: 12.5px; cursor: pointer;
+    transition: all .14s; background: transparent; color: ${T.ink4};
+    white-space: nowrap; font-family: 'DM Sans', sans-serif;
   }
-  .tab-pill.active { background:#0d9488; color:#fff; border-color:#0d9488; }
-  .tab-pill:not(.active):hover { border-color:var(--border-strong); color:var(--text-2); }
+  .tab-btn.active {
+    background: ${T.amberL}; color: ${T.amberD};
+    border-color: #FDE68A; font-weight: 700;
+  }
+  .tab-btn:not(.active):hover { background: ${T.bg2}; color: ${T.ink2}; border-color: ${T.border}; }
 
   .search-inp {
-    width:100%; border:1.5px solid var(--border); border-radius:12px;
-    padding:10px 14px 10px 38px; font-size:13px; color:var(--text-1);
-    background:var(--surface-2); font-family:inherit; transition:border-color .15s;
+    width: 100%; border: 1px solid ${T.border}; border-radius: ${T.r};
+    padding: 9px 12px 9px 36px; font-size: 13px; color: ${T.ink};
+    background: ${T.surface}; transition: border-color .14s, box-shadow .14s;
   }
-  .search-inp:focus { border-color:#0d9488; background:#fff; }
-
-  .stat-chip {
-    display:flex; align-items:center; gap:7px;
-    background:var(--surface); border:1.5px solid var(--border);
-    border-radius:12px; padding:10px 16px; flex-shrink:0;
+  .search-inp:focus {
+    border-color: ${T.amber}; outline: none;
+    box-shadow: 0 0 0 3px rgba(232,132,10,.12);
   }
 
-  .field-label {
-    display:block; font-size:11px; font-weight:800; color:#64748b;
-    margin-bottom:6px; text-transform:uppercase; letter-spacing:.5px;
-  }
   .field-inp {
-    width:100%; border:1.5px solid var(--border); border-radius:12px;
-    padding:10px 13px; font-size:13px; color:var(--text-1);
-    background:#fff; font-family:inherit; transition:border-color .15s;
+    width: 100%; border: 1px solid ${T.border}; border-radius: ${T.r};
+    padding: 9px 12px; font-size: 13px; color: ${T.ink};
+    background: ${T.surface}; transition: border-color .14s, box-shadow .14s;
   }
-  .field-inp:focus { border-color:#7c3aed; }
-
-  .job-card {
-    border-radius: 14px; border: 1.5px solid #e2e8f0;
-    overflow: hidden; background: #fff;
-    transition: box-shadow .15s;
-  }
-  .job-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.07); }
-
-  .job-card-header {
-    padding: 14px 16px; display: flex; align-items: center;
-    justify-content: space-between; gap: 10; cursor: pointer;
+  .field-inp:focus {
+    border-color: ${T.amber}; outline: none;
+    box-shadow: 0 0 0 3px rgba(232,132,10,.12);
   }
 
-  .stage-row {
-    display: flex; align-items: center; gap: 10; padding: 10px 14px;
-    border-radius: 10px; margin-bottom: 6px;
+  .selfie-thumb {
+    width: 42px; height: 42px; border-radius: 9px; object-fit: cover;
+    transform: scaleX(-1); border: 1.5px solid ${T.border2};
+    flex-shrink: 0; cursor: pointer; transition: opacity .14s;
+  }
+  .selfie-thumb:hover { opacity: .84; }
+
+  .selfie-ph {
+    width: 42px; height: 42px; border-radius: 9px; background: ${T.bg2};
+    border: 1.5px dashed ${T.border}; display: flex; align-items: center;
+    justify-content: center; font-size: 16px; flex-shrink: 0; color: ${T.ink4};
   }
 
-  .session-pill {
-    display: flex; align-items: center; gap: 8; padding: 8px 12px;
-    border-radius: 8px; background: #f8fafc; border: 1px solid #f1f5f9;
-    font-size: 12px;
+  .ip-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 10px; font-weight: 600; color: ${T.ink3};
+    background: ${T.bg2}; border-radius: 6px; padding: 2px 7px;
+    font-variant-numeric: tabular-nums; border: 1px solid ${T.border};
   }
 
-  @media (max-width:640px) {
-    .hide-sm { display:none !important; }
-    .detail-grid { grid-template-columns: 1fr !important; }
+  .loc-link {
+    display: flex; align-items: flex-start; gap: 4px;
+    font-size: 11px; color: ${T.ink3}; text-decoration: none; line-height: 1.4;
+    font-weight: 500; transition: color .12s;
+  }
+  .loc-link:hover { color: ${T.amber}; }
+
+  .job-row {
+    border-radius: ${T.r}; border: 1px solid ${T.border};
+    overflow: hidden; background: ${T.surface};
+    transition: box-shadow .14s;
+  }
+  .job-row:hover { box-shadow: 0 2px 12px rgba(0,0,0,.06); }
+
+  .session-row {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    border-radius: 8px; font-size: 12px;
+  }
+
+  .stat-tile {
+    border-radius: ${T.r}; padding: 12px 14px;
+    border: 1px solid ${T.border};
+    background: ${T.surface};
+  }
+
+  .btn-primary {
+    width: 100%; padding: 10px; border-radius: ${T.r}; border: none;
+    font-weight: 700; font-size: 13px; cursor: pointer;
+    background: ${T.amber}; color: #FFF;
+    transition: background .14s, opacity .14s;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .btn-primary:hover:not(:disabled) { background: ${T.amberD}; }
+  .btn-primary:disabled { background: ${T.border2}; color: ${T.ink4}; cursor: not-allowed; }
+
+  .filter-btn {
+    padding: 8px 14px; border-radius: ${T.r}; border: 1px solid ${T.border};
+    background: ${T.surface}; color: ${T.ink3}; font-weight: 600;
+    font-size: 12px; cursor: pointer; transition: all .13s; white-space: nowrap;
+  }
+  .filter-btn.active {
+    border-color: ${T.amber}; background: ${T.amberL}; color: ${T.amberD};
+  }
+
+  @media (max-width: 600px) {
+    .hide-sm { display: none !important; }
   }
 `;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Shared UI primitives
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── SelfieLightbox ───────────────────────────────────────────────────────
+function SelfieLightbox({ src, onClose }) {
+  if (!src) return null;
+  return (
+    <div onClick={onClose} style={{ position:"fixed",inset:0,zIndex:9000,background:"rgba(0,0,0,.85)",display:"flex",alignItems:"center",justifyContent:"center",animation:"lbIn .16s ease",cursor:"zoom-out" }}>
+      <img src={src} alt="Check-in selfie" onClick={e=>e.stopPropagation()} style={{ maxWidth:"min(88vw,460px)",maxHeight:"78vh",borderRadius:16,objectFit:"contain",transform:"scaleX(-1)",boxShadow:"0 32px 80px rgba(0,0,0,.5)",animation:"lbImg .2s cubic-bezier(.32,.72,0,1)" }} />
+      <button onClick={onClose} style={{ position:"absolute",top:16,right:16,width:38,height:38,borderRadius:"50%",border:"none",background:"rgba(255,255,255,.12)",color:"#fff",fontSize:20,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)" }}>×</button>
+    </div>
+  );
+}
+
+// ─── SelfieThumb ─────────────────────────────────────────────────────────
+function SelfieThumb({ url, onOpen, title="" }) {
+  if (!url) return <div className="selfie-ph" title="No selfie">📷</div>;
+  return <img src={url} alt="selfie" title={title} className="selfie-thumb" onClick={e=>{ e.stopPropagation(); onOpen(url); }} />;
+}
+
+// ─── LocationLine ─────────────────────────────────────────────────────────
+function LocationLine({ location, compact=false }) {
+  if (!location) return <span style={{fontSize:11,color:T.ink4}}>No location</span>;
+  const { latitude, longitude, formatted_address, accuracy } = location;
+  const hasCoords = latitude != null && longitude != null;
+  const isDmedia  = hasCoords && Math.abs(latitude-10.8138772)<.0001 && Math.abs(longitude-78.6726903)<.0001;
+  const text      = isDmedia ? "dmedia office vayalur" : formatted_address || (hasCoords ? `${latitude.toFixed(4)}, ${longitude.toFixed(4)}` : null);
+  if (!text) return <span style={{fontSize:11,color:T.ink4}}>No location</span>;
+  const inner = (
+    <>
+      <span style={{fontSize:11,flexShrink:0}}>📍</span>
+      <span style={{overflow:"hidden",textOverflow:"ellipsis",display:"-webkit-box",WebkitLineClamp:compact?1:2,WebkitBoxOrient:"vertical"}}>{text}</span>
+      {!compact && accuracy!=null && accuracy<=300 && <span style={{flexShrink:0,fontSize:10,color:T.ink4,marginLeft:2}}>±{Math.round(accuracy)}m</span>}
+    </>
+  );
+  if (hasCoords) return <a href={mapsUrl(latitude,longitude)} target="_blank" rel="noopener noreferrer" className="loc-link" onClick={e=>e.stopPropagation()} title={`Google Maps · ${text}`}>{inner}</a>;
+  return <span className="loc-link" style={{cursor:"default"}}>{inner}</span>;
+}
+
+// ─── IpChip ──────────────────────────────────────────────────────────────
+function IpChip({ ip }) {
+  if (!ip) return null;
+  return <span className="ip-chip" title={`Login IP: ${ip}`}>🌐 {ip}</span>;
+}
+
+// ─── Toast ───────────────────────────────────────────────────────────────
 function Toast({ toasts }) {
   return (
-    <div style={{ position:"fixed", bottom:24, left:"50%", transform:"translateX(-50%)", zIndex:9999, display:"flex", flexDirection:"column", gap:8, pointerEvents:"none", width:"calc(100% - 32px)", maxWidth:360 }}>
-      {toasts.map((t) => {
-        const bg = { error:"#ef4444", warn:"#f59e0b", success:"#0d9488" }[t.type] ?? "#0d9488";
-        return (
-          <div key={t.id} style={{ background:bg, color:"#fff", borderRadius:14, padding:"12px 16px", fontSize:13, fontWeight:700, boxShadow:"0 8px 32px rgba(0,0,0,.18)", animation:"toastIn .28s cubic-bezier(.34,1.56,.64,1)" }}>
-            {t.message}
-          </div>
-        );
+    <div style={{position:"fixed",bottom:20,left:"50%",transform:"translateX(-50%)",zIndex:9999,display:"flex",flexDirection:"column",gap:7,pointerEvents:"none",width:"calc(100% - 32px)",maxWidth:360}}>
+      {toasts.map(t => {
+        const bg = {error:T.red,warn:"#D97706",success:T.green}[t.type]??T.green;
+        return <div key={t.id} style={{background:bg,color:"#fff",borderRadius:12,padding:"11px 16px",fontSize:13,fontWeight:600,boxShadow:"0 8px 32px rgba(0,0,0,.18)",animation:"toastIn .26s cubic-bezier(.34,1.56,.64,1)"}}>{t.message}</div>;
       })}
     </div>
   );
 }
 
-function Avatar({ name = "?", src, size = 40, online }) {
+// ─── Avatar ──────────────────────────────────────────────────────────────
+function Avatar({ name="?", src, size=40, online }) {
   return (
-    <div style={{ position:"relative", flexShrink:0, width:size, height:size }}>
-      <div style={{ width:size, height:size, borderRadius:"50%", background:avatarColor(name), display:"flex", alignItems:"center", justifyContent:"center", fontSize:size*.42, fontWeight:900, color:"#fff", overflow:"hidden" }}>
-        {src ? <img src={src} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : name.trim()[0].toUpperCase()}
+    <div style={{position:"relative",flexShrink:0,width:size,height:size}}>
+      <div style={{width:size,height:size,borderRadius:"50%",background:avatarBg(name),display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*.38,fontWeight:800,color:"#fff",overflow:"hidden",fontFamily:"'DM Sans',sans-serif"}}>
+        {src ? <img src={src} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} /> : (name.trim()[0]||"?").toUpperCase()}
       </div>
       {online !== undefined && (
-        <div style={{ position:"absolute", bottom:1, right:1, width:size*.27, height:size*.27, borderRadius:"50%", border:"2px solid #fff", background: online ? "#22c55e" : "#d1d5db" }} />
+        <div style={{position:"absolute",bottom:1,right:1,width:size*.24,height:size*.24,borderRadius:"50%",border:"2px solid #fff",background:online?T.green:"#D1D5DB"}} />
       )}
     </div>
   );
 }
 
+// ─── RoleBadge ───────────────────────────────────────────────────────────
 function RoleBadge({ role }) {
-  const rc = ROLE_COLORS[role] ?? { bg:"#f1f5f9", text:"#475569", dot:"#94a3b8" };
+  const rc = ROLE_CFG[role] ?? { bg:T.bg2, text:T.ink3, dot:T.ink4 };
   return (
-    <span style={{ fontSize:11, fontWeight:700, padding:"3px 9px", borderRadius:999, background:rc.bg, color:rc.text, display:"inline-flex", alignItems:"center", gap:5, whiteSpace:"nowrap" }}>
-      <span style={{ width:5, height:5, borderRadius:"50%", background:rc.dot, flexShrink:0 }} />
+    <span style={{fontSize:10.5,fontWeight:700,padding:"2px 8px",borderRadius:99,background:rc.bg,color:rc.text,display:"inline-flex",alignItems:"center",gap:4,whiteSpace:"nowrap",fontFamily:"'DM Sans',sans-serif",letterSpacing:.2}}>
+      <span style={{width:5,height:5,borderRadius:"50%",background:rc.dot,flexShrink:0}} />
       {role}
     </span>
   );
 }
 
-function Spinner({ size = 36 }) {
-  return <div style={{ width:size, height:size, border:"3px solid #e2e8f0", borderTopColor:"#0d9488", borderRadius:"50%", animation:"spin .75s linear infinite" }} />;
+// ─── Spinner ─────────────────────────────────────────────────────────────
+function Spinner({ size=32 }) {
+  return <div style={{width:size,height:size,border:`2.5px solid ${T.border}`,borderTopColor:T.amber,borderRadius:"50%",animation:"spin .7s linear infinite"}} />;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// LiveTimer  — ticking badge for active login sessions
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── LiveTimer ───────────────────────────────────────────────────────────
 function LiveTimer({ loginAt }) {
-  const elapsed = useLiveElapsed(loginAt, true);
+  const e = useLiveElapsed(loginAt, true);
   return (
-    <span style={{ fontSize:12, fontWeight:800, color:"#16a34a", background:"#dcfce7", borderRadius:999, padding:"3px 10px", fontVariantNumeric:"tabular-nums", display:"inline-flex", alignItems:"center", gap:5 }}>
-      <span className="live-dot" />
-      {fmtDuration(elapsed)}
+    <span style={{fontSize:11.5,fontWeight:700,color:T.amberD,background:T.amberL,borderRadius:7,padding:"3px 9px",fontVariantNumeric:"tabular-nums",display:"inline-flex",alignItems:"center",gap:5,border:`1px solid ${T.amberM}`}}>
+      <span className="live-dot" />{fmtD(e)}
     </span>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// LiveJobTimer  — ticking job-level timer (counts up from baseSeconds)
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── LiveJobTimer ─────────────────────────────────────────────────────────
 function LiveJobTimer({ baseSeconds, openSince }) {
   const total = useLiveSeconds(baseSeconds, !!openSince, openSince);
   return (
-    <span style={{ fontSize:12, fontWeight:800, color:"#16a34a", background:"#dcfce7", borderRadius:999, padding:"3px 10px", fontVariantNumeric:"tabular-nums", display:"inline-flex", alignItems:"center", gap:5 }}>
-      <span className="live-dot" />
-      {fmtDurationLong(total)}
+    <span style={{fontSize:11.5,fontWeight:700,color:T.amberD,background:T.amberL,borderRadius:7,padding:"3px 9px",fontVariantNumeric:"tabular-nums",display:"inline-flex",alignItems:"center",gap:5,border:`1px solid ${T.amberM}`}}>
+      <span className="live-dot" />{fmtDL(total)}
     </span>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MonitorCard  — compact staff tile
-// ─────────────────────────────────────────────────────────────────────────────
-function MonitorCard({ staff, onClick }) {
-  const isOnline      = staff.isOnline;
-  const todaySeconds  = staff.todaySeconds   ?? 0;
-  const taskLogsToday = staff.taskLogsToday  ?? 0;
-  const todaySessions = staff.todaySessions  ?? 0;
-  const js            = staff.jobStats       ?? {};
+// ─── StatTile ────────────────────────────────────────────────────────────
+function StatTile({ label, value, color, bg, icon }) {
+  return (
+    <div className="stat-tile" style={{background:bg||T.surface,borderColor:color+"22"}}>
+      <div style={{fontSize:18,marginBottom:6}}>{icon}</div>
+      <div style={{fontWeight:900,fontSize:22,color,lineHeight:1,fontFamily:"'DM Sans',sans-serif"}}>{value}</div>
+      <div style={{fontSize:10,color:T.ink4,fontWeight:600,marginTop:4,textTransform:"uppercase",letterSpacing:.5}}>{label}</div>
+    </div>
+  );
+}
+
+// ─── MonitorCard ─────────────────────────────────────────────────────────
+function MonitorCard({ staff, onClick, onOpenSelfie }) {
+  const isOnline     = staff.isOnline;
+  const ls           = staff.latestSelfie ?? null;
+  const js           = staff.jobStats ?? {};
+  const todaySecs    = staff.todaySeconds ?? 0;
+  const taskCount    = staff.taskLogsToday ?? 0;
+  const sessionCount = staff.todaySessions ?? 0;
 
   return (
-    <div className={`monitor-card${isOnline ? " online" : ""}`} onClick={onClick}>
-      {/* Top row */}
-      <div style={{ display:"flex", alignItems:"flex-start", gap:12, marginBottom:14 }}>
-        <Avatar name={staff.name} src={staff.profileImg} size={48} online={isOnline} />
-        <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ fontWeight:800, fontSize:15, color:"#0f172a", marginBottom:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{staff.name}</div>
-          <div style={{ fontSize:11, color:"#94a3b8", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{staff.email}</div>
-          <div style={{ marginTop:5 }}><RoleBadge role={staff.role} /></div>
-        </div>
-        {isOnline
-          ? <LiveTimer loginAt={staff.currentLoginAt} />
-          : <span style={{ fontSize:11, fontWeight:700, color:"#94a3b8", background:"#f1f5f9", borderRadius:999, padding:"3px 10px", whiteSpace:"nowrap" }}>Offline</span>
-        }
-      </div>
-
-      {/* Login stats row */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8, marginBottom:10 }}>
-        {[
-          { label:"Login Time",  value:fmtDuration(todaySeconds), color:"#0d9488" },
-          { label:"Task Logs",   value:taskLogsToday,             color:"#7c3aed" },
-          { label:"Sessions",    value:todaySessions,             color:"#2563eb" },
-        ].map(({ label, value, color }) => (
-          <div key={label} style={{ textAlign:"center", background:"#f8fafc", borderRadius:10, padding:"8px 4px", border:"1px solid #f1f5f9" }}>
-            <div style={{ fontWeight:900, fontSize:17, color, lineHeight:1 }}>{value}</div>
-            <div style={{ fontSize:10, color:"#94a3b8", fontWeight:700, marginTop:2, textTransform:"uppercase", letterSpacing:.4 }}>{label}</div>
+    <div className={`sm-card${isOnline?" online":""}`} onClick={onClick} style={{paddingLeft:12}}>
+      <div style={{padding:"16px 16px 14px 12px"}}>
+        {/* Top row */}
+        <div style={{display:"flex",alignItems:"flex-start",gap:11,marginBottom:12}}>
+          <Avatar name={staff.name} src={staff.profileImg} size={44} online={isOnline} />
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontWeight:700,fontSize:14.5,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontFamily:"'DM Sans',sans-serif"}}>{staff.name}</div>
+            <div style={{fontSize:11,color:T.ink4,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{staff.email}</div>
+            <div style={{marginTop:5}}><RoleBadge role={staff.role} /></div>
           </div>
-        ))}
-      </div>
+          <div style={{flexShrink:0}}>
+            {isOnline
+              ? <LiveTimer loginAt={staff.currentLoginAt} />
+              : <span style={{fontSize:11,fontWeight:600,color:T.ink4,background:T.bg2,borderRadius:7,padding:"3px 9px",border:`1px solid ${T.border}`,display:"inline-block"}}>Offline</span>
+            }
+          </div>
+        </div>
 
-      {/* Job stats row — NEW */}
-      {(js.jobsAssignedTotal > 0 || js.activeJobs > 0) && (
-        <div style={{ background: js.activeJobs > 0 ? "#f0fdf4" : "#f8fafc", borderRadius:10, padding:"10px 12px", border:`1.5px solid ${js.activeJobs > 0 ? "#bbf7d0" : "#f1f5f9"}`, marginBottom:10 }}>
-          <div style={{ fontSize:10, fontWeight:800, color:"#64748b", textTransform:"uppercase", letterSpacing:.4, marginBottom:6 }}>Job Work</div>
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, flexWrap:"wrap" }}>
-            <div style={{ display:"flex", gap:12 }}>
-              <span style={{ fontSize:12, fontWeight:700, color:"#0f172a" }}>
-                <span style={{ color:"#0d9488", fontWeight:900 }}>{js.jobsAssignedTotal}</span>
-                <span style={{ color:"#94a3b8", marginLeft:3 }}>jobs</span>
+        {/* Last check-in block */}
+        {ls && (
+          <div style={{display:"flex",gap:10,alignItems:"flex-start",background:T.bg2,borderRadius:9,padding:"9px 11px",border:`1px solid ${T.border}`,marginBottom:12}}>
+            <SelfieThumb url={ls.selfie_url} onOpen={onOpenSelfie} title={`Check-in · ${fmtT(ls.login_at)}`} />
+            <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",gap:3}}>
+              <div style={{fontSize:9.5,fontWeight:700,color:T.ink4,textTransform:"uppercase",letterSpacing:.6}}>Last check-in · {fmtT(ls.login_at)}</div>
+              <LocationLine location={ls.location} compact />
+            </div>
+          </div>
+        )}
+
+        {/* Stats row */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:7,marginBottom:12}}>
+          {[
+            {label:"Login",  value:fmtD(todaySecs),  color:T.amber},
+            {label:"Logs",   value:taskCount,         color:T.violet},
+            {label:"Logins", value:sessionCount,      color:T.blue},
+          ].map(({label,value,color})=>(
+            <div key={label} style={{textAlign:"center",background:T.bg2,borderRadius:8,padding:"8px 4px",border:`1px solid ${T.border}`}}>
+              <div style={{fontWeight:800,fontSize:16,color,lineHeight:1,fontFamily:"'DM Sans',sans-serif"}}>{value}</div>
+              <div style={{fontSize:9.5,color:T.ink4,fontWeight:600,marginTop:2,textTransform:"uppercase",letterSpacing:.4}}>{label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Job stats */}
+        {(js.jobsAssignedTotal > 0 || js.activeJobs > 0) && (
+          <div style={{background:js.activeJobs>0?T.amberL:T.bg2,borderRadius:8,padding:"9px 11px",border:`1px solid ${js.activeJobs>0?"#FDE68A":T.border}`,marginBottom:10,display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+            <div style={{display:"flex",gap:10,alignItems:"center"}}>
+              <span style={{fontSize:11.5,fontWeight:700,color:T.ink}}>
+                <span style={{color:T.amber,fontWeight:800}}>{js.jobsAssignedTotal}</span>
+                <span style={{color:T.ink4,marginLeft:3,fontSize:10}}>jobs</span>
               </span>
               {js.activeJobs > 0 && (
-                <span style={{ fontSize:12, fontWeight:700, color:"#16a34a", display:"flex", alignItems:"center", gap:4 }}>
+                <span style={{fontSize:11,fontWeight:700,color:T.amberD,display:"flex",alignItems:"center",gap:4}}>
                   <span className="live-dot" />{js.activeJobs} active
                 </span>
               )}
             </div>
-            <span style={{ fontSize:12, fontWeight:800, color: js.activeJobs > 0 ? "#16a34a" : "#64748b" }}>
-              Today: {js.totalJobDisplayToday || "0m"}
-            </span>
+            <span style={{fontSize:11,fontWeight:700,color:js.activeJobs>0?T.amberD:T.ink3}}>Today: {js.totalJobDisplayToday||"0m"}</span>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Footer */}
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", fontSize:12 }}>
-        <span style={{ color:"#94a3b8", fontWeight:600 }}>
-          {staff.lastActivity ? `Last active: ${fmtDateTime(staff.lastActivity)}` : "No activity yet"}
-        </span>
-        <span style={{ color:"#0d9488", fontWeight:700, fontSize:11 }}>View →</span>
+        {/* Footer */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <span style={{fontSize:11,color:T.ink4,fontWeight:500}}>
+            {staff.lastActivity ? `Active ${fmtDT(staff.lastActivity)}` : "No activity yet"}
+          </span>
+          <span style={{fontSize:11,color:T.amber,fontWeight:700}}>Details →</span>
+        </div>
       </div>
     </div>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SessionTimeline  — daily grouped login session list
-// ─────────────────────────────────────────────────────────────────────────────
-function SessionTimeline({ sessions }) {
-  if (!sessions.length) return (
-    <div style={{ textAlign:"center", padding:"40px 16px", color:"#94a3b8", fontSize:13 }}>No sessions recorded yet</div>
-  );
-
+// ─── SessionTimeline ─────────────────────────────────────────────────────
+function SessionTimeline({ sessions, onOpenSelfie }) {
+  if (!sessions.length) return <div style={{textAlign:"center",padding:"48px 16px",color:T.ink4,fontSize:13}}>No sessions yet</div>;
   const byDate = {};
-  for (const s of sessions) {
-    const d = new Date(s.login_at).toDateString();
-    (byDate[d] = byDate[d] || []).push(s);
-  }
-
+  for (const s of sessions) { const d=new Date(s.login_at).toDateString(); (byDate[d]=byDate[d]||[]).push(s); }
   return (
-    <div style={{ display:"flex", flexDirection:"column", gap:24 }}>
-      {Object.entries(byDate).reverse().map(([date, ds]) => {
-        const totalSecs = ds.reduce((a, s) => a + (s.duration_seconds ?? 0), 0);
+    <div style={{display:"flex",flexDirection:"column",gap:24}}>
+      {Object.entries(byDate).reverse().map(([date,ds])=>{
+        const total=ds.reduce((a,s)=>a+(s.duration_seconds??0),0);
         return (
           <div key={date}>
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
-              <div style={{ fontWeight:800, fontSize:13, color:"#0f172a" }}>
-                {new Date(date).toLocaleDateString("en-IN", { weekday:"short", day:"2-digit", month:"short" })}
-              </div>
-              <div style={{ fontSize:12, color:"#0d9488", fontWeight:700 }}>Total: {fmtDuration(totalSecs)}</div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+              <span style={{fontWeight:700,fontSize:13,color:T.ink,fontFamily:"'DM Sans',sans-serif"}}>{new Date(date).toLocaleDateString("en-IN",{weekday:"short",day:"2-digit",month:"short"})}</span>
+              <span style={{fontSize:11.5,color:T.amber,fontWeight:700}}>Total: {fmtD(total)}</span>
             </div>
-
-            {/* Hour bar */}
-            <div style={{ position:"relative", height:28, marginBottom:10, background:"#f8fafc", borderRadius:8, overflow:"hidden" }}>
-              {ds.map((s, i) => {
-                const startH = new Date(s.login_at).getHours() + new Date(s.login_at).getMinutes() / 60;
-                const endDate = s.logout_at ? new Date(s.logout_at) : new Date();
-                const endH   = endDate.getHours() + endDate.getMinutes() / 60;
-                const left   = (startH / 24) * 100;
-                const width  = Math.max(((endH - startH) / 24) * 100, 0.5);
-                return (
-                  <div key={i}
-                    title={`${fmtTime(s.login_at)} – ${s.logout_at ? fmtTime(s.logout_at) : "Active"}`}
-                    style={{ position:"absolute", top:3, height:22, borderRadius:6, left:`${left}%`, width:`${width}%`,
-                      background: s.logout_at ? "linear-gradient(90deg,#0d9488,#2dd4bf)" : "linear-gradient(90deg,#16a34a,#4ade80)",
-                    }}
-                  />
-                );
+            {/* 24-hour bar */}
+            <div style={{position:"relative",height:22,marginBottom:10,background:T.bg2,borderRadius:6,overflow:"hidden",border:`1px solid ${T.border}`}}>
+              {ds.map((s,i)=>{
+                const sh=new Date(s.login_at).getHours()+new Date(s.login_at).getMinutes()/60;
+                const ed=s.logout_at?new Date(s.logout_at):new Date();
+                const eh=ed.getHours()+ed.getMinutes()/60;
+                const l=(sh/24)*100, w=Math.max(((eh-sh)/24)*100,.4);
+                return <div key={i} title={`${fmtT(s.login_at)} – ${s.logout_at?fmtT(s.logout_at):"Active"}`} style={{position:"absolute",top:2,height:18,borderRadius:4,left:`${l}%`,width:`${w}%`,background:s.logout_at?`linear-gradient(90deg,${T.amber},#FBBF24)`:`linear-gradient(90deg,${T.amberD},${T.amber})`}} />;
               })}
-              {[6,9,12,15,18,21].map((h) => (
-                <div key={h} style={{ position:"absolute", top:0, bottom:0, left:`${(h/24)*100}%`, width:1, background:"#e2e8f0" }} />
-              ))}
+              {[6,9,12,15,18,21].map(h=><div key={h} style={{position:"absolute",top:0,bottom:0,left:`${(h/24)*100}%`,width:1,background:T.border}} />)}
             </div>
-
-            <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-              {ds.map((s, i) => (
-                <div key={i} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", borderRadius:10,
-                  background: s.logout_at ? "#f8fafc" : "#f0fdf4",
-                  border: `1px solid ${s.logout_at ? "#f1f5f9" : "#bbf7d0"}`,
-                }}>
-                  <div style={{ width:8, height:8, borderRadius:"50%", background: s.logout_at ? "#94a3b8" : "#22c55e", flexShrink:0 }} />
-                  <div style={{ flex:1 }}>
-                    <div style={{ fontSize:13, fontWeight:700, color:"#1e293b" }}>
-                      {fmtTime(s.login_at)} — {s.logout_at ? fmtTime(s.logout_at) : <span style={{ color:"#16a34a" }}>Active now</span>}
+            <div style={{display:"flex",flexDirection:"column",gap:7}}>
+              {ds.map((s,i)=>(
+                <div key={i} style={{borderRadius:10,background:s.logout_at?T.bg2:T.amberL,border:`1px solid ${s.logout_at?T.border:"#FDE68A"}`,overflow:"hidden"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:9,padding:"10px 12px"}}>
+                    <SelfieThumb url={s.selfie_url} onOpen={onOpenSelfie} title={`Selfie · ${fmtT(s.login_at)}`} />
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:12.5,fontWeight:600,color:T.ink}}>{fmtT(s.login_at)} — {s.logout_at?fmtT(s.logout_at):<span style={{color:T.amberD}}>Active now</span>}</div>
+                      {s.login_ip && <div style={{marginTop:4}}><IpChip ip={s.login_ip} /></div>}
                     </div>
-                    {s.login_ip && <div style={{ fontSize:11, color:"#94a3b8", marginTop:2 }}>IP: {s.login_ip}</div>}
+                    <div style={{flexShrink:0}}>
+                      {s.logout_at
+                        ? <span style={{fontSize:12,fontWeight:700,color:T.ink3,background:T.bg2,borderRadius:6,padding:"3px 8px"}}>{fmtD(s.duration_seconds)}</span>
+                        : <LiveTimer loginAt={s.login_at} />
+                      }
+                    </div>
                   </div>
-                  <div style={{ fontSize:12, fontWeight:800, borderRadius:8, padding:"3px 9px",
-                    color: s.logout_at ? "#64748b" : "#16a34a",
-                    background: s.logout_at ? "#f1f5f9" : "#dcfce7",
-                  }}>
-                    {s.logout_at ? fmtDuration(s.duration_seconds) : <LiveTimer loginAt={s.login_at} />}
-                  </div>
+                  {s.location?.latitude!=null && (
+                    <div style={{padding:"5px 12px 9px",borderTop:`1px solid ${s.logout_at?T.border:"#FDE68A"}`}}>
+                      <LocationLine location={s.location} />
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -481,56 +542,38 @@ function SessionTimeline({ sessions }) {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// TaskLogTimeline  — purple vertical timeline
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── TaskLogTimeline ─────────────────────────────────────────────────────
 function TaskLogTimeline({ logs, onDelete, isSuperAdmin }) {
-  if (!logs.length) return (
-    <div style={{ textAlign:"center", padding:"40px 16px", color:"#94a3b8", fontSize:13 }}>No task logs yet</div>
-  );
-
-  const byDate = {};
-  for (const l of logs) {
-    const d = new Date(l.submitted_at).toDateString();
-    (byDate[d] = byDate[d] || []).push(l);
-  }
-
+  if (!logs.length) return <div style={{textAlign:"center",padding:"48px 16px",color:T.ink4,fontSize:13}}>No task logs yet</div>;
+  const byDate={};
+  for (const l of logs) { const d=new Date(l.submitted_at).toDateString(); (byDate[d]=byDate[d]||[]).push(l); }
   return (
-    <div style={{ display:"flex", flexDirection:"column", gap:24 }}>
-      {Object.entries(byDate).reverse().map(([date, dayLogs]) => (
+    <div style={{display:"flex",flexDirection:"column",gap:24}}>
+      {Object.entries(byDate).reverse().map(([date,dayLogs])=>(
         <div key={date}>
-          <div style={{ fontWeight:800, fontSize:13, color:"#0f172a", marginBottom:12, display:"flex", alignItems:"center", gap:8 }}>
-            <span style={{ width:3, height:14, borderRadius:2, background:"#7c3aed", display:"inline-block" }} />
-            {new Date(date).toLocaleDateString("en-IN", { weekday:"short", day:"2-digit", month:"short" })}
-            <span style={{ fontSize:11, color:"#94a3b8", fontWeight:600 }}>{dayLogs.length} log{dayLogs.length !== 1 ? "s" : ""}</span>
+          <div style={{fontWeight:700,fontSize:13,color:T.ink,marginBottom:12,display:"flex",alignItems:"center",gap:8,fontFamily:"'DM Sans',sans-serif"}}>
+            <span style={{width:3,height:14,borderRadius:2,background:T.violet,display:"inline-block"}} />
+            {new Date(date).toLocaleDateString("en-IN",{weekday:"short",day:"2-digit",month:"short"})}
+            <span style={{fontSize:11,color:T.ink4,fontWeight:500}}>{dayLogs.length} log{dayLogs.length!==1?"s":""}</span>
           </div>
-          <div style={{ position:"relative", paddingLeft:32 }}>
-            <div style={{ position:"absolute", left:11, top:0, bottom:0, width:2, background:"linear-gradient(to bottom,#7c3aed22,#7c3aed08)" }} />
-            <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-              {dayLogs.map((log, i) => (
-                <div key={log._id ?? i} style={{ position:"relative" }}>
-                  <div style={{ position:"absolute", left:-21, top:13, width:10, height:10, borderRadius:"50%", background:"#7c3aed", border:"2px solid #fff", boxShadow:"0 0 0 2px #ede9fe" }} />
-                  <div style={{ background:"#faf8ff", borderRadius:12, border:"1.5px solid #ede9fe", padding:"12px 14px" }}>
-                    <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:8, marginBottom:6 }}>
-                      <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
-                        <span style={{ fontSize:11, fontWeight:800, color:"#7c3aed", background:"#ede9fe", borderRadius:6, padding:"2px 8px" }}>
-                          {log.hour_label || fmtTime(log.submitted_at)}
-                        </span>
-                        {log.job_ref && (
-                          <span style={{ fontSize:11, fontWeight:700, color:"#2563eb", background:"#eff6ff", borderRadius:6, padding:"2px 8px" }}>
-                            #{log.job_ref}
-                          </span>
-                        )}
-                        <span style={{ fontSize:10, color:"#94a3b8", fontWeight:600 }}>{fmtDate(log.submitted_at)}</span>
+          <div style={{position:"relative",paddingLeft:28}}>
+            <div style={{position:"absolute",left:9,top:0,bottom:0,width:1.5,background:`linear-gradient(to bottom,${T.violetL},transparent)`}} />
+            <div style={{display:"flex",flexDirection:"column",gap:9}}>
+              {dayLogs.map((log,i)=>(
+                <div key={log._id??i} style={{position:"relative"}}>
+                  <div style={{position:"absolute",left:-20,top:12,width:9,height:9,borderRadius:"50%",background:T.violet,border:"2px solid #fff",boxShadow:`0 0 0 2px ${T.violetL}`}} />
+                  <div style={{background:T.violetL,borderRadius:10,border:`1px solid #EDE9FE`,padding:"11px 13px"}}>
+                    <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8,marginBottom:6}}>
+                      <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                        <span style={{fontSize:10.5,fontWeight:700,color:T.violet,background:"#EDE9FE",borderRadius:5,padding:"2px 7px"}}>{log.hour_label||fmtT(log.submitted_at)}</span>
+                        {log.job_ref && <span style={{fontSize:10.5,fontWeight:700,color:T.blue,background:T.blueL,borderRadius:5,padding:"2px 7px"}}>#{log.job_ref}</span>}
+                        <span style={{fontSize:10,color:T.ink4,fontWeight:500}}>{fmtDate(log.submitted_at)}</span>
                       </div>
                       {isSuperAdmin && log._id && (
-                        <button onClick={() => onDelete(log._id)} title="Delete log"
-                          style={{ border:"none", background:"none", cursor:"pointer", fontSize:13, color:"#ef4444", opacity:.6, padding:"2px 4px", flexShrink:0, lineHeight:1 }}>
-                          ✕
-                        </button>
+                        <button onClick={()=>onDelete(log._id)} title="Delete" style={{border:"none",background:"none",cursor:"pointer",fontSize:12,color:T.red,opacity:.5,padding:"2px 4px",lineHeight:1,flexShrink:0}}>✕</button>
                       )}
                     </div>
-                    <p style={{ fontSize:13, color:"#374151", lineHeight:1.55, fontWeight:500 }}>{log.message}</p>
+                    <p style={{fontSize:13,color:T.ink2,lineHeight:1.55,fontWeight:400}}>{log.message}</p>
                   </div>
                 </div>
               ))}
@@ -542,107 +585,65 @@ function TaskLogTimeline({ logs, onDelete, isSuperAdmin }) {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// JobTimeCard  — expandable card for one job inside the Job Time tab (NEW)
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── JobTimeCard ──────────────────────────────────────────────────────────
 function JobTimeCard({ job }) {
-  const [expanded, setExpanded] = useState(job.isCurrentlyActive);
-
-  // Find the open session start (for live ticking)
-  const openStage    = job.stages.find((s) => s.has_open_session);
-  const openSession  = openStage?.sessions?.find((s) => s.is_open);
-  const openSince    = openSession?.session_start || null;
+  const [exp, setExp] = useState(job.isCurrentlyActive);
+  const openStage  = job.stages.find(s=>s.has_open_session);
+  const openSess   = openStage?.sessions?.find(s=>s.is_open);
+  const openSince  = openSess?.session_start || null;
 
   return (
-    <div className="job-card" style={{ borderColor: job.isCurrentlyActive ? "#86efac" : "#e2e8f0", background: job.isCurrentlyActive ? "linear-gradient(135deg,#f0fdf4,#fff)" : "#fff" }}>
-      {/* Header */}
-      <div className="job-card-header" onClick={() => setExpanded((p) => !p)}>
-        <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", marginBottom:4 }}>
-            <span style={{ fontWeight:900, fontSize:14, color:"#0f172a" }}>{job.job_no}</span>
+    <div className="job-row" style={{borderColor:job.isCurrentlyActive?"#FDE68A":T.border,background:job.isCurrentlyActive?T.amberL:T.surface}}>
+      <div style={{padding:"12px 14px",display:"flex",alignItems:"center",gap:10,cursor:"pointer"}} onClick={()=>setExp(p=>!p)}>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap",marginBottom:3}}>
+            <span style={{fontWeight:800,fontSize:13.5,color:T.ink,fontFamily:"'DM Sans',sans-serif"}}>{job.job_no}</span>
             {job.isCurrentlyActive && <span className="live-dot" />}
-            <span style={{ fontSize:11, color:"#64748b", fontWeight:600, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:140 }}>{job.customer_name}</span>
-            <span style={{ fontSize:11, fontWeight:700, padding:"2px 8px", borderRadius:6,
-              background: job.job_status === "completed" ? "#dcfce7" : job.job_status === "design" ? "#fce7f3" : "#f8fafc",
-              color:      job.job_status === "completed" ? "#16a34a" : job.job_status === "design" ? "#9d174d" : "#64748b",
+            <span style={{fontSize:11,color:T.ink3,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:130}}>{job.customer_name}</span>
+            <span style={{fontSize:10,fontWeight:600,padding:"2px 7px",borderRadius:5,
+              background:job.job_status==="completed"?"#F0FDF4":T.bg2,
+              color:job.job_status==="completed"?T.green:T.ink3,
             }}>{job.job_status}</span>
           </div>
-          <div style={{ display:"flex", gap:12, flexWrap:"wrap", alignItems:"center" }}>
-            {/* Stage badges */}
-            {job.stages.map((s) => {
-              const sc = stageColor(s.stage);
-              return (
-                <span key={s.stage} style={{ fontSize:10, fontWeight:700, padding:"2px 8px", borderRadius:6, background:sc.bg, color:sc.text, border:`1px solid ${sc.border}` }}>
-                  {s.stage_label || s.stage}
-                </span>
-              );
-            })}
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {job.stages.map(s=>{ const sc=stageColor(s.stage); return <span key={s.stage} style={{fontSize:10,fontWeight:600,padding:"2px 7px",borderRadius:5,background:sc.bg,color:sc.text,border:`1px solid ${sc.border}`}}>{s.stage_label||s.stage}</span>; })}
           </div>
         </div>
-
-        <div style={{ display:"flex", alignItems:"center", gap:10, flexShrink:0 }}>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
           {job.isCurrentlyActive
             ? <LiveJobTimer baseSeconds={job.totalSeconds} openSince={openSince} />
-            : <span style={{ fontSize:13, fontWeight:800, color:"#0d9488" }}>{job.totalDisplay}</span>
+            : <span style={{fontSize:13,fontWeight:800,color:T.amber,fontFamily:"'DM Sans',sans-serif"}}>{job.totalDisplay}</span>
           }
-          <span style={{ fontSize:16, color:"#94a3b8", transition:"transform .2s", transform: expanded ? "rotate(180deg)" : "none" }}>▾</span>
+          <span style={{fontSize:14,color:T.ink4,transition:"transform .18s",display:"inline-block",transform:exp?"rotate(180deg)":"none"}}>▾</span>
         </div>
       </div>
-
-      {/* Expanded detail */}
-      {expanded && (
-        <div style={{ padding:"0 16px 16px", borderTop:"1px solid #f1f5f9" }}>
-          {job.stages.map((stage) => {
-            const sc = stageColor(stage.stage);
+      {exp && (
+        <div style={{padding:"0 14px 14px",borderTop:`1px solid ${job.isCurrentlyActive?"#FDE68A":T.border}`}}>
+          {job.stages.map(stage=>{
+            const sc=stageColor(stage.stage);
             return (
-              <div key={stage.stage} style={{ marginTop:12 }}>
-                {/* Stage header */}
-                <div className="stage-row" style={{ background:sc.bg, border:`1px solid ${sc.border}` }}>
-                  <div style={{ flex:1 }}>
-                    <div style={{ fontWeight:800, fontSize:13, color:sc.text }}>{stage.stage_label || stage.stage}</div>
-                    <div style={{ display:"flex", gap:8, marginTop:3, flexWrap:"wrap" }}>
-                      <span style={{ fontSize:11, color:"#64748b", fontWeight:600 }}>
-                        {stage.action} · {stage.sessions.length} session{stage.sessions.length !== 1 ? "s" : ""}
-                      </span>
-                      {stage.assigned_at && (
-                        <span style={{ fontSize:11, color:"#94a3b8" }}>Assigned: {fmtDate(stage.assigned_at)}</span>
-                      )}
-                      {stage.completed_at && (
-                        <span style={{ fontSize:11, color:"#94a3b8" }}>Completed: {fmtDate(stage.completed_at)}</span>
-                      )}
-                    </div>
+              <div key={stage.stage} style={{marginTop:10}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"9px 12px",borderRadius:8,background:sc.bg,border:`1px solid ${sc.border}`}}>
+                  <div>
+                    <div style={{fontWeight:700,fontSize:12.5,color:sc.text}}>{stage.stage_label||stage.stage}</div>
+                    <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{stage.action} · {stage.sessions.length} session{stage.sessions.length!==1?"s":""}</div>
                   </div>
-                  <div style={{ textAlign:"right", flexShrink:0 }}>
-                    {stage.has_open_session ? (
-                      <LiveJobTimer
-                        baseSeconds={stage.total_duration_seconds}
-                        openSince={stage.sessions.find((s) => s.is_open)?.session_start}
-                      />
-                    ) : (
-                      <span style={{ fontWeight:900, fontSize:14, color:sc.text }}>{stage.total_duration_display}</span>
-                    )}
-                  </div>
+                  {stage.has_open_session
+                    ? <LiveJobTimer baseSeconds={stage.total_duration_seconds} openSince={stage.sessions.find(s=>s.is_open)?.session_start} />
+                    : <span style={{fontWeight:800,fontSize:13,color:sc.text}}>{stage.total_duration_display}</span>
+                  }
                 </div>
-
-                {/* Individual sessions */}
-                {stage.sessions.length > 0 && (
-                  <div style={{ paddingLeft:12, display:"flex", flexDirection:"column", gap:5 }}>
-                    {stage.sessions.map((sess, idx) => (
-                      <div key={idx} className="session-pill" style={{ background: sess.is_open ? "#f0fdf4" : "#f8fafc", border: `1px solid ${sess.is_open ? "#bbf7d0" : "#f1f5f9"}` }}>
-                        <div style={{ width:6, height:6, borderRadius:"50%", background: sess.is_open ? "#22c55e" : "#94a3b8", flexShrink:0 }} />
-                        <div style={{ flex:1 }}>
-                          <span style={{ fontWeight:700, color:"#374151" }}>
-                            {fmtTime(sess.session_start)} — {sess.session_end ? fmtTime(sess.session_end) : <span style={{ color:"#16a34a" }}>Active</span>}
-                          </span>
-                          {sess.work_date && (
-                            <span style={{ marginLeft:8, color:"#94a3b8", fontSize:11 }}>{sess.work_date}</span>
-                          )}
+                {stage.sessions.length>0 && (
+                  <div style={{paddingLeft:10,marginTop:5,display:"flex",flexDirection:"column",gap:4}}>
+                    {stage.sessions.map((sess,idx)=>(
+                      <div key={idx} className="session-row" style={{background:sess.is_open?T.amberL:T.bg2,border:`1px solid ${sess.is_open?"#FDE68A":T.border}`}}>
+                        <div style={{width:6,height:6,borderRadius:"50%",background:sess.is_open?T.amber:"#D1D5DB",flexShrink:0}} />
+                        <div style={{flex:1,fontSize:12,fontWeight:500,color:T.ink}}>
+                          {fmtT(sess.session_start)} — {sess.session_end?fmtT(sess.session_end):<span style={{color:T.amberD}}>Active</span>}
+                          {sess.work_date && <span style={{marginLeft:8,color:T.ink4,fontSize:10}}>{sess.work_date}</span>}
                         </div>
-                        <span style={{ fontWeight:800, color: sess.is_open ? "#16a34a" : "#64748b", fontSize:12 }}>
-                          {sess.is_open
-                            ? <LiveJobTimer baseSeconds={sess.duration_seconds} openSince={sess.session_start} />
-                            : fmtDurationLong(sess.duration_seconds)
-                          }
+                        <span style={{fontSize:11.5,fontWeight:700,color:sess.is_open?T.amberD:T.ink3,flexShrink:0}}>
+                          {sess.is_open?<LiveJobTimer baseSeconds={sess.duration_seconds} openSince={sess.session_start} />:fmtDL(sess.duration_seconds)}
                         </span>
                       </div>
                     ))}
@@ -651,13 +652,11 @@ function JobTimeCard({ job }) {
               </div>
             );
           })}
-
-          {/* Total row */}
-          <div style={{ marginTop:14, paddingTop:10, borderTop:"1px dashed #e2e8f0", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-            <span style={{ fontSize:12, fontWeight:800, color:"#64748b" }}>TOTAL TIME ON THIS JOB</span>
+          <div style={{marginTop:12,paddingTop:10,borderTop:`1px dashed ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:11,fontWeight:700,color:T.ink4,textTransform:"uppercase",letterSpacing:.5}}>Total on this job</span>
             {job.isCurrentlyActive
               ? <LiveJobTimer baseSeconds={job.totalSeconds} openSince={openSince} />
-              : <span style={{ fontSize:15, fontWeight:900, color:"#0d9488" }}>{job.totalDisplay}</span>
+              : <span style={{fontSize:14,fontWeight:800,color:T.amber,fontFamily:"'DM Sans',sans-serif"}}>{job.totalDisplay}</span>
             }
           </div>
         </div>
@@ -666,71 +665,56 @@ function JobTimeCard({ job }) {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// JobTimeTab  — full tab rendered inside the detail modal (NEW)
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── JobTimeTab ───────────────────────────────────────────────────────────
 function JobTimeTab({ staffId, push }) {
-  const [data,    setData]    = useState(null);
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
+  useEffect(()=>{
     setLoading(true);
     api.getStaffJobTime(staffId)
-      .then((res) => setData(res?.data ?? res))
-      .catch((err) => push(err?.response?.data?.message ?? "Failed to load job time", "error"))
-      .finally(() => setLoading(false));
-  }, [staffId]);
+      .then(res=>setData(res?.data??res))
+      .catch(err=>push(err?.response?.data?.message??"Failed to load job time","error"))
+      .finally(()=>setLoading(false));
+  },[staffId]);
 
-  if (loading) return (
-    <div style={{ display:"flex", justifyContent:"center", padding:48 }}><Spinner /></div>
-  );
-
-  if (!data || !data.jobs?.length) return (
-    <div style={{ textAlign:"center", padding:"48px 16px", color:"#94a3b8" }}>
-      <div style={{ fontSize:32, marginBottom:8 }}>🗂</div>
-      <div style={{ fontWeight:700, fontSize:14 }}>No job assignments yet</div>
-      <div style={{ fontSize:12, marginTop:4 }}>Time will appear here once a job stage is assigned and worked on</div>
+  if (loading) return <div style={{display:"flex",justifyContent:"center",padding:48}}><Spinner /></div>;
+  if (!data?.jobs?.length) return (
+    <div style={{textAlign:"center",padding:"48px 16px",color:T.ink4}}>
+      <div style={{fontSize:30,marginBottom:8}}>🗂</div>
+      <div style={{fontWeight:700,fontSize:14,fontFamily:"'DM Sans',sans-serif"}}>No job assignments yet</div>
+      <div style={{fontSize:12,marginTop:4}}>Time appears once a stage is assigned and worked on</div>
     </div>
   );
-
-  const { summary, jobs } = data;
-
+  const {summary,jobs}=data;
   return (
     <div>
-      {/* Summary strip */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))", gap:10, marginBottom:20 }}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))",gap:9,marginBottom:18}}>
         {[
-          { label:"Total Jobs",    value:summary.jobCount,      color:"#2563eb", bg:"#eff6ff" },
-          { label:"Active Now",    value:summary.activeJobCount, color:"#16a34a", bg:"#f0fdf4" },
-          { label:"All-time Time", value:summary.totalDisplay,  color:"#0d9488", bg:"#f0fdf4" },
-        ].map(({ label, value, color, bg }) => (
-          <div key={label} style={{ background:bg, borderRadius:12, padding:"12px 14px", border:`1.5px solid ${color}22` }}>
-            <div style={{ fontWeight:900, fontSize:20, color, lineHeight:1 }}>{value}</div>
-            <div style={{ fontSize:10, color:"#94a3b8", fontWeight:700, marginTop:4, textTransform:"uppercase", letterSpacing:.4 }}>{label}</div>
+          {label:"Total Jobs",  value:summary.jobCount,      color:T.blue,  bg:T.blueL},
+          {label:"Active Now",  value:summary.activeJobCount,color:T.green, bg:T.greenL},
+          {label:"All-time",    value:summary.totalDisplay,  color:T.amber, bg:T.amberL},
+        ].map(({label,value,color,bg})=>(
+          <div key={label} style={{background:bg,borderRadius:10,padding:"11px 13px",border:`1px solid ${color}33`}}>
+            <div style={{fontWeight:900,fontSize:19,color,lineHeight:1,fontFamily:"'DM Sans',sans-serif"}}>{value}</div>
+            <div style={{fontSize:9.5,color:T.ink4,fontWeight:600,marginTop:4,textTransform:"uppercase",letterSpacing:.4}}>{label}</div>
           </div>
         ))}
       </div>
-
-      {/* Active jobs first */}
-      {jobs.some((j) => j.isCurrentlyActive) && (
-        <div style={{ marginBottom:16 }}>
-          <div style={{ fontWeight:800, fontSize:12, color:"#16a34a", marginBottom:8, display:"flex", alignItems:"center", gap:6 }}>
-            <span className="live-dot" /> CURRENTLY WORKING ON
+      {jobs.some(j=>j.isCurrentlyActive) && (
+        <div style={{marginBottom:14}}>
+          <div style={{fontWeight:700,fontSize:11,color:T.amberD,marginBottom:8,display:"flex",alignItems:"center",gap:6,textTransform:"uppercase",letterSpacing:.5}}>
+            <span className="live-dot" /> Currently working on
           </div>
-          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-            {jobs.filter((j) => j.isCurrentlyActive).map((job) => <JobTimeCard key={job._id} job={job} />)}
+          <div style={{display:"flex",flexDirection:"column",gap:7}}>
+            {jobs.filter(j=>j.isCurrentlyActive).map(job=><JobTimeCard key={job._id} job={job} />)}
           </div>
         </div>
       )}
-
-      {/* Past jobs */}
-      {jobs.some((j) => !j.isCurrentlyActive) && (
+      {jobs.some(j=>!j.isCurrentlyActive) && (
         <div>
-          <div style={{ fontWeight:800, fontSize:12, color:"#64748b", marginBottom:8, textTransform:"uppercase", letterSpacing:.5 }}>
-            Past / Completed Jobs
-          </div>
-          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-            {jobs.filter((j) => !j.isCurrentlyActive).map((job) => <JobTimeCard key={job._id} job={job} />)}
+          <div style={{fontWeight:700,fontSize:11,color:T.ink4,marginBottom:8,textTransform:"uppercase",letterSpacing:.5}}>Past / Completed</div>
+          <div style={{display:"flex",flexDirection:"column",gap:7}}>
+            {jobs.filter(j=>!j.isCurrentlyActive).map(job=><JobTimeCard key={job._id} job={job} />)}
           </div>
         </div>
       )}
@@ -738,9 +722,148 @@ function JobTimeTab({ staffId, push }) {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// StaffDetailModal  — slide-up sheet (4 tabs now: Overview / Sessions / Task Logs / Job Time)
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── PickupStatusBadge ───────────────────────────────────────────────────
+function PickupStatusBadge({ status }) {
+  const cfg = {
+    pending:   { bg:"#FEF3E2", text:"#B45309", border:"#FDE68A",  label:"Pending"   },
+    collected: { bg:"#EFF6FF", text:"#1D4ED8", border:"#BFDBFE",  label:"Collected" },
+    delivered: { bg:"#F0FDF4", text:"#15803D", border:"#86EFAC",  label:"Delivered" },
+  }[status] ?? { bg:T.bg2, text:T.ink3, border:T.border, label:status };
+  return <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:6,background:cfg.bg,color:cfg.text,border:`1px solid ${cfg.border}`}}>{cfg.label}</span>;
+}
+
+// ─── MaterialStatusBadge ─────────────────────────────────────────────────
+function MaterialStatusBadge({ status }) {
+  const cfg = {
+    issued:         { bg:"#FEF3E2", text:"#B45309", border:"#FDE68A",  label:"Issued"   },
+    returned:       { bg:"#F0FDF4", text:"#15803D", border:"#86EFAC",  label:"Returned" },
+    partial_return: { bg:"#EFF6FF", text:"#1D4ED8", border:"#BFDBFE",  label:"Partial"  },
+  }[status] ?? { bg:T.bg2, text:T.ink3, border:T.border, label:status };
+  return <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:6,background:cfg.bg,color:cfg.text,border:`1px solid ${cfg.border}`}}>{cfg.label}</span>;
+}
+
+// ─── SectionHeader ───────────────────────────────────────────────────────
+function SectionHeader({ icon, label, count, color=T.ink }) {
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:10}}>
+      <span style={{width:3,height:13,borderRadius:2,background:color,display:"inline-block",flexShrink:0}} />
+      <span style={{fontWeight:700,fontSize:12,color,fontFamily:"'DM Sans',sans-serif",textTransform:"uppercase",letterSpacing:.4}}>{icon} {label}</span>
+      {count!=null && <span style={{fontSize:11,color:T.ink4,fontWeight:500}}>({count})</span>}
+    </div>
+  );
+}
+
+// ─── EmptyState ──────────────────────────────────────────────────────────
+function EmptyState({ icon="📭", message }) {
+  return (
+    <div style={{textAlign:"center",padding:"28px 16px",color:T.ink4}}>
+      <div style={{fontSize:28,marginBottom:7}}>{icon}</div>
+      <div style={{fontSize:12,fontWeight:500}}>{message}</div>
+    </div>
+  );
+}
+
+// ─── MaterialsTab ─────────────────────────────────────────────────────────
+function MaterialsTab({ issuedMaterials=[], pendingPickups=[], completedPickups=[], allTaskAssignments={} }) {
+  const [section, setSection] = useState("issued");
+
+  const SECTIONS = [
+    { key:"issued",    label:`Issued (${issuedMaterials.length})` },
+    { key:"pickups",   label:`Pickups (${pendingPickups.length+completedPickups.length})` },
+  ];
+
+  return (
+    <div>
+      {/* Summary row */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:16}}>
+        {[
+          {label:"Issued",    value:allTaskAssignments.issuedMaterials??0,    color:"#B45309", bg:"#FEF3E2"},
+          {label:"Pending",   value:allTaskAssignments.pendingMaterials??0,   color:T.red,     bg:"#FEF2F2"},
+          {label:"Returned",  value:allTaskAssignments.returnedMaterials??0,  color:T.green,   bg:T.greenL},
+        ].map(({label,value,color,bg})=>(
+          <div key={label} style={{background:bg,borderRadius:9,padding:"10px 12px",border:`1px solid ${color}22`,textAlign:"center"}}>
+            <div style={{fontWeight:900,fontSize:20,color,lineHeight:1,fontFamily:"'DM Sans',sans-serif"}}>{value}</div>
+            <div style={{fontSize:9.5,color:T.ink4,fontWeight:600,marginTop:3,textTransform:"uppercase",letterSpacing:.4}}>{label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Sub-tabs */}
+      <div style={{display:"flex",gap:5,marginBottom:14}}>
+        {SECTIONS.map(({key,label})=>(
+          <button key={key} onClick={()=>setSection(key)} className={`tab-btn${section===key?" active":""}`} style={{fontSize:11.5}}>{label}</button>
+        ))}
+      </div>
+
+      {/* Issued Materials */}
+      {section==="issued" && (
+        issuedMaterials.length===0
+          ? <EmptyState icon="📦" message="No materials issued to this staff member" />
+          : <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {issuedMaterials.map((m,i)=>(
+                <div key={m._id??i} style={{background:T.bg2,borderRadius:10,padding:"12px 14px",border:`1px solid ${T.border}`}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:7}}>
+                    <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                      <span style={{fontWeight:700,fontSize:13,color:T.ink,fontFamily:"'DM Sans',sans-serif"}}>{m.cart_item_name||m.material?.product_name||"—"}</span>
+                      <MaterialStatusBadge status={m.status} />
+                    </div>
+                    <span style={{fontSize:11,fontWeight:700,color:T.ink3,flexShrink:0}}>{m.issue_no}</span>
+                  </div>
+                  <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+                    <span style={{fontSize:11.5,color:T.ink2}}><span style={{color:T.ink4}}>Product:</span> {m.material?.product_name||"—"}</span>
+                    <span style={{fontSize:11.5,color:T.ink2}}><span style={{color:T.ink4}}>Unit:</span> {m.material?.unit||"—"}</span>
+                    <span style={{fontSize:11.5,color:T.ink2}}><span style={{color:T.ink4}}>Qty:</span> <strong style={{color:T.amber}}>{m.issued_qty}</strong></span>
+                    {m.job_no && <span style={{fontSize:11.5,color:T.blue,fontWeight:600}}>#{m.job_no}</span>}
+                  </div>
+                  {m.return && (
+                    <div style={{marginTop:6,fontSize:11,color:T.green,fontWeight:600}}>
+                      ↩ Returned: {m.return?.returned_qty} {m.material?.unit}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+      )}
+
+      {/* Pickups */}
+      {section==="pickups" && (
+        (pendingPickups.length+completedPickups.length)===0
+          ? <EmptyState icon="🚚" message="No pickup assignments found" />
+          : <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {[...pendingPickups,...completedPickups].map((p,i)=>{
+                const pa = p.pickup_assignment??{};
+                return (
+                  <div key={p._id??i} style={{background:T.bg2,borderRadius:10,padding:"12px 14px",border:`1px solid ${T.border}`}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:7}}>
+                      <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                        <span style={{fontWeight:700,fontSize:13,color:T.ink,fontFamily:"'DM Sans',sans-serif"}}>{p.issue_no}</span>
+                        <PickupStatusBadge status={pa.status} />
+                        {p.job_no && <span style={{fontSize:10.5,color:T.blue,fontWeight:600}}>#{p.job_no}</span>}
+                      </div>
+                      <span style={{fontSize:11,color:T.ink4,flexShrink:0}}>{fmtDate(pa.assigned_at)}</span>
+                    </div>
+                    <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+                      {p.outsource_vendor && <span style={{fontSize:11.5,color:T.ink2}}><span style={{color:T.ink4}}>Vendor:</span> {p.outsource_vendor}</span>}
+                      {pa.delivery_to && <span style={{fontSize:11.5,color:T.ink2}}><span style={{color:T.ink4}}>Deliver to:</span> {pa.delivery_to}</span>}
+                      {pa.pickup_time && <span style={{fontSize:11.5,color:T.ink2}}><span style={{color:T.ink4}}>Pickup:</span> {fmtDT(pa.pickup_time)}</span>}
+                    </div>
+                    {(pa.collected_at||pa.delivered_at) && (
+                      <div style={{marginTop:6,display:"flex",gap:10,flexWrap:"wrap"}}>
+                        {pa.collected_at && <span style={{fontSize:11,color:T.blue,fontWeight:600}}>✓ Collected {fmtDT(pa.collected_at)}</span>}
+                        {pa.delivered_at && <span style={{fontSize:11,color:T.green,fontWeight:600}}>✓ Delivered {fmtDT(pa.delivered_at)}</span>}
+                      </div>
+                    )}
+                    {pa.notes && <div style={{marginTop:6,fontSize:11.5,color:T.ink3,fontStyle:"italic"}}>{pa.notes}</div>}
+                  </div>
+                );
+              })}
+            </div>
+      )}
+    </div>
+  );
+}
+
+// ─── StaffDetailModal ─────────────────────────────────────────────────────
 function StaffDetailModal({ open, staff, onClose, push, isSuperAdmin }) {
   const [tab,        setTab]        = useState("overview");
   const [details,    setDetails]    = useState(null);
@@ -748,268 +871,374 @@ function StaffDetailModal({ open, staff, onClose, push, isSuperAdmin }) {
   const [logMsg,     setLogMsg]     = useState("");
   const [jobRef,     setJobRef]     = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [deleting,   setDeleting]   = useState(null);
+  const [lightbox,   setLightbox]   = useState(null);
 
-  useEffect(() => {
-    if (!open || !staff) return;
-    setTab("overview");
-    setDetails(null);
-    setLogMsg("");
-    setJobRef("");
-    setLoading(true);
-
+  useEffect(()=>{
+    if (!open||!staff) return;
+    setTab("overview"); setDetails(null); setLogMsg(""); setJobRef(""); setLoading(true);
     api.getStaffDetails(staff._id)
-      .then((res) => {
+      .then(res=>{
         const d = res?.data ?? res;
         setDetails({
-          staff:          d.staff          ?? staff,
-          sessions:       d.sessions       ?? [],
-          taskLogs:       d.taskLogs       ?? [],
-          jobAssignments: d.jobAssignments ?? [],
-          jobTimeSummary: d.jobTimeSummary ?? {},
+          staff:               d.staff               ?? staff,
+          sessions:            d.sessions            ?? [],
+          taskLogs:            d.taskLogs            ?? [],
+          jobAssignments:      d.jobAssignments      ?? [],
+          jobTimeSummary:      d.jobTimeSummary      ?? {},
+          assignedSiteVisits:  d.assignedSiteVisits  ?? [],
+          pendingPickups:      d.pendingPickups       ?? [],
+          completedPickups:    d.completedPickups     ?? [],
+          issuedMaterials:     d.issuedMaterials      ?? [],
+          allTaskAssignments:  d.allTaskAssignments   ?? {},
         });
       })
-      .catch((err) => {
-        push(err?.response?.data?.message ?? "Failed to load staff details", "error");
-        setDetails({ staff, sessions: [], taskLogs: [], jobAssignments: [], jobTimeSummary: {} });
+      .catch(err=>{
+        push(err?.response?.data?.message??"Failed to load details","error");
+        setDetails({ staff, sessions:[], taskLogs:[], jobAssignments:[], jobTimeSummary:{}, assignedSiteVisits:[], pendingPickups:[], completedPickups:[], issuedMaterials:[], allTaskAssignments:{} });
       })
-      .finally(() => setLoading(false));
-  }, [open, staff?._id]);
+      .finally(()=>setLoading(false));
+  },[open,staff?._id]);
 
   const handleDeleteLog = async (logId) => {
-    try {
-      setDeleting(logId);
-      await api.deleteTaskLog(logId);
-      setDetails((d) => ({ ...d, taskLogs: d.taskLogs.filter((l) => l._id !== logId) }));
-      push("Log deleted");
-    } catch (err) {
-      push(err?.response?.data?.message ?? "Delete failed", "error");
-    } finally {
-      setDeleting(null);
-    }
+    try { await api.deleteTaskLog(logId); setDetails(d=>({...d,taskLogs:d.taskLogs.filter(l=>l._id!==logId)})); push("Log deleted"); }
+    catch(err) { push(err?.response?.data?.message??"Delete failed","error"); }
   };
 
   const handleSubmitLog = async () => {
     if (!logMsg.trim()) return;
     try {
       setSubmitting(true);
-      const now        = new Date();
-      const hour_label = now.toLocaleTimeString("en-IN", { hour:"2-digit", minute:"2-digit" });
-      const res        = await api.submitTaskLog({
-        staffId:   staff._id,
-        message:   logMsg.trim(),
-        job_ref:   jobRef.trim() || undefined,
-        hour_label,
-      });
-      const newLog = res?.data ?? { _id: Date.now(), message:logMsg.trim(), job_ref:jobRef.trim()||"", hour_label, submitted_at:now };
-      setDetails((d) => ({ ...d, taskLogs: [newLog, ...(d?.taskLogs ?? [])] }));
-      setLogMsg(""); setJobRef("");
-      push("Log added");
-    } catch (err) {
-      push(err?.response?.data?.message ?? "Failed to submit log", "error");
-    } finally {
-      setSubmitting(false);
-    }
+      const now=new Date();
+      const hour_label=now.toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"});
+      const res=await api.submitTaskLog({staffId:staff._id,message:logMsg.trim(),job_ref:jobRef.trim()||undefined,hour_label});
+      const newLog=res?.data??{_id:Date.now(),message:logMsg.trim(),job_ref:jobRef.trim()||"",hour_label,submitted_at:now};
+      setDetails(d=>({...d,taskLogs:[newLog,...(d?.taskLogs??[])]}));
+      setLogMsg(""); setJobRef(""); push("Log added");
+    } catch(err) { push(err?.response?.data?.message??"Failed to submit","error"); }
+    finally { setSubmitting(false); }
   };
 
-  if (!open || !staff) return null;
+  if (!open||!staff) return null;
 
-  const sessions       = details?.sessions       ?? [];
-  const taskLogs       = details?.taskLogs       ?? [];
-  const jobTimeSummary = details?.jobTimeSummary ?? {};
-  const totalAllSecs   = sessions.reduce((a, s) => a + (s.duration_seconds ?? 0), 0);
-  const currentSession = sessions.find((s) => !s.logout_at) ?? null;
+  const sessions            = details?.sessions            ?? [];
+  const taskLogs            = details?.taskLogs            ?? [];
+  const jobTimeSummary      = details?.jobTimeSummary      ?? {};
+  const assignedSiteVisits  = details?.assignedSiteVisits  ?? [];
+  const pendingPickups      = details?.pendingPickups       ?? [];
+  const completedPickups    = details?.completedPickups     ?? [];
+  const issuedMaterials     = details?.issuedMaterials      ?? [];
+  const allTaskAssignments  = details?.allTaskAssignments   ?? {};
+  const staffInfo           = details?.staff               ?? staff;
+
+  // Compute totals from actual session data
+  // Only count sessions with real duration (logout_at set) or live-compute open ones
+  const totalAllSecs  = sessions.reduce((a,s)=>{
+    if (s.logout_at) return a + (s.duration_seconds??0);
+    return a + Math.floor((Date.now()-new Date(s.login_at).getTime())/1000);
+  }, 0);
+
+  // The most recent open session with a selfie — or just most recent open
+  const currentSession = sessions.find(s=>!s.logout_at) ?? null;
+  // Best selfie: current session first, otherwise most recent with one
+  const selfieSession  = sessions.find(s=>s.selfie_url) ?? null;
+
+  const pickupTotal = pendingPickups.length + completedPickups.length;
 
   const TABS = [
-    { key:"overview",  label:"Overview" },
-    { key:"jobtime",   label:`Job Time ${jobTimeSummary.jobCount > 0 ? `(${jobTimeSummary.jobCount})` : ""}` },
-    { key:"sessions",  label:`Sessions (${sessions.length})` },
-    { key:"logs",      label:`Task Logs (${taskLogs.length})` },
+    {key:"overview",  label:"Overview"},
+    {key:"sessions",  label:`Sessions (${sessions.length})`},
+    {key:"jobtime",   label:`Jobs${jobTimeSummary.jobCount>0?` (${jobTimeSummary.jobCount})`:""}`},
+    {key:"materials", label:`Materials${(issuedMaterials.length+pickupTotal)>0?` (${issuedMaterials.length+pickupTotal})`:""}`},
+    {key:"logs",      label:`Logs${taskLogs.length>0?` (${taskLogs.length})`:""}`},
   ];
 
   return (
-    <div
-      style={{ position:"fixed", inset:0, zIndex:600, background:"rgba(0,0,0,.55)", display:"flex", alignItems:"flex-end", justifyContent:"center", animation:"fadeIn .2s ease" }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div style={{ background:"#fff", borderRadius:"28px 28px 0 0", width:"100%", maxWidth:680, maxHeight:"94vh", display:"flex", flexDirection:"column", boxShadow:"0 -12px 60px rgba(0,0,0,.15)", animation:"sheetUp .3s cubic-bezier(.32,.72,0,1)" }}>
+    <>
+      <SelfieLightbox src={lightbox} onClose={()=>setLightbox(null)} />
+      <div
+        style={{position:"fixed",inset:0,zIndex:600,background:"rgba(12,17,29,.6)",display:"flex",alignItems:"flex-end",justifyContent:"center",animation:"fadeIn .18s ease"}}
+        onClick={e=>{if(e.target===e.currentTarget)onClose();}}
+      >
+        <div style={{background:T.surface,borderRadius:"22px 22px 0 0",width:"100%",maxWidth:700,maxHeight:"94vh",display:"flex",flexDirection:"column",boxShadow:"0 -16px 60px rgba(0,0,0,.14)",animation:"sheetUp .28s cubic-bezier(.32,.72,0,1)"}}>
 
-        {/* Drag handle */}
-        <div style={{ display:"flex", justifyContent:"center", paddingTop:12 }}>
-          <div style={{ width:44, height:4, borderRadius:99, background:"#e2e8f0" }} />
-        </div>
-
-        {/* Header */}
-        <div style={{ padding:"12px 20px 0", display:"flex", alignItems:"center", gap:14 }}>
-          <Avatar name={staff.name} src={staff.profileImg} size={52} online={staff.isOnline} />
-          <div style={{ flex:1, minWidth:0 }}>
-            <div style={{ fontWeight:900, fontSize:18, color:"#0f172a", letterSpacing:-.3 }}>{staff.name}</div>
-            <div style={{ fontSize:12, color:"#94a3b8", marginTop:1 }}>{staff.email}</div>
-            <div style={{ marginTop:5, display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
-              <RoleBadge role={staff.role} />
-              {staff.isOnline
-                ? <span style={{ display:"flex", alignItems:"center", gap:5, fontSize:11, fontWeight:700, color:"#16a34a" }}><span className="live-dot" />Online</span>
-                : <span style={{ fontSize:11, fontWeight:700, color:"#94a3b8" }}>● Offline</span>
-              }
-              {jobTimeSummary.activeJobCount > 0 && (
-                <span style={{ fontSize:11, fontWeight:700, color:"#0d9488", background:"#f0fdf4", borderRadius:6, padding:"2px 8px" }}>
-                  🔨 {jobTimeSummary.activeJobCount} job{jobTimeSummary.activeJobCount !== 1 ? "s" : ""} in progress
-                </span>
-              )}
-            </div>
+          {/* Drag handle */}
+          <div style={{display:"flex",justifyContent:"center",paddingTop:10,flexShrink:0}}>
+            <div style={{width:42,height:4,borderRadius:99,background:T.border}} />
           </div>
-          <button onClick={onClose} style={{ width:36, height:36, borderRadius:"50%", border:"none", background:"#f1f5f9", cursor:"pointer", fontSize:18, display:"flex", alignItems:"center", justifyContent:"center", color:"#64748b", flexShrink:0 }}>×</button>
-        </div>
 
-        {/* Tabs */}
-        <div style={{ display:"flex", gap:6, padding:"14px 20px 0", overflowX:"auto", scrollbarWidth:"none" }}>
-          {TABS.map(({ key, label }) => (
-            <button key={key} onClick={() => setTab(key)} className={`tab-pill${tab === key ? " active" : ""}`}>{label}</button>
-          ))}
-        </div>
+          {/* ── Header ─────────────────────────────────────────────────── */}
+          <div style={{padding:"10px 18px 0",display:"flex",alignItems:"center",gap:13,flexShrink:0}}>
+            <Avatar name={staffInfo.name} src={staffInfo.profileImg} size={52} online={staffInfo.isOnline} />
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:800,fontSize:17,color:T.ink,letterSpacing:-.3,fontFamily:"'DM Sans',sans-serif"}}>{staffInfo.name}</div>
+              <div style={{fontSize:11.5,color:T.ink4,marginTop:1}}>{staffInfo.email}{staffInfo.phone ? ` · ${staffInfo.phone}` : ""}</div>
+              <div style={{marginTop:5,display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+                <RoleBadge role={staffInfo.role} />
+                {staffInfo.isOnline
+                  ? <span style={{display:"flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:T.green}}><span className="live-dot" style={{background:T.green}} />Online</span>
+                  : <span style={{fontSize:11,fontWeight:600,color:T.ink4}}>● Offline</span>
+                }
+                {staffInfo.available===false && <span style={{fontSize:10.5,fontWeight:600,color:"#9D174D",background:"#FDF2F8",borderRadius:6,padding:"2px 7px",border:"1px solid #FBCFE8"}}>Unavailable</span>}
+                {jobTimeSummary.activeJobCount>0 && (
+                  <span style={{fontSize:10.5,fontWeight:700,color:T.amberD,background:T.amberL,borderRadius:6,padding:"2px 7px",border:`1px solid #FDE68A`}}>
+                    🔨 {jobTimeSummary.activeJobCount} active job{jobTimeSummary.activeJobCount!==1?"s":""}
+                  </span>
+                )}
+              </div>
+            </div>
+            {/* Best selfie thumbnail in header */}
+            {selfieSession?.selfie_url && (
+              <SelfieThumb url={selfieSession.selfie_url} onOpen={setLightbox} title={`Latest selfie · ${fmtT(selfieSession.login_at)}`} />
+            )}
+            <button onClick={onClose} style={{width:34,height:34,borderRadius:"50%",border:"none",background:T.bg2,cursor:"pointer",fontSize:18,display:"flex",alignItems:"center",justifyContent:"center",color:T.ink3,flexShrink:0}}>×</button>
+          </div>
 
-        {/* Body */}
-        <div style={{ overflowY:"auto", flex:1, padding:"18px 20px 28px" }}>
-
-          {loading && (
-            <div style={{ display:"flex", justifyContent:"center", alignItems:"center", padding:60 }}>
-              <Spinner />
+          {/* ── Active session banner ────────────────────────────────── */}
+          {currentSession && (
+            <div style={{margin:"10px 18px 0",background:T.amberL,borderRadius:10,padding:"9px 13px",border:`1px solid #FDE68A`,display:"flex",alignItems:"flex-start",gap:9,flexShrink:0}}>
+              <SelfieThumb url={currentSession.selfie_url} onOpen={setLightbox} title="Current session selfie" />
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap",marginBottom:3}}>
+                  <span style={{fontSize:11,fontWeight:700,color:T.amberD,display:"flex",alignItems:"center",gap:5}}>
+                    <span className="live-dot" /> Active since {fmtT(currentSession.login_at)}
+                  </span>
+                  <IpChip ip={currentSession.login_ip} />
+                  <LiveTimer loginAt={currentSession.login_at} />
+                </div>
+                {currentSession.location?.latitude!=null
+                  ? <LocationLine location={currentSession.location} compact />
+                  : currentSession.location?.formatted_address
+                    ? <span style={{fontSize:11,color:T.ink3}}>📍 {currentSession.location.formatted_address}</span>
+                    : <span style={{fontSize:11,color:T.ink4}}>No location data</span>
+                }
+              </div>
             </div>
           )}
 
-          {/* ── Overview ── */}
-          {!loading && tab === "overview" && (
-            <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+          {/* ── Tabs ─────────────────────────────────────────────────── */}
+          <div style={{display:"flex",gap:5,padding:"12px 18px 0",overflowX:"auto",scrollbarWidth:"none",flexShrink:0,borderBottom:`1px solid ${T.border}`,paddingBottom:0}}>
+            {TABS.map(({key,label})=>(
+              <button key={key} onClick={()=>setTab(key)} style={{
+                padding:"8px 14px",borderRadius:"8px 8px 0 0",border:`1px solid ${T.border}`,borderBottom:"none",
+                fontSize:12,fontWeight:tab===key?700:500,cursor:"pointer",whiteSpace:"nowrap",
+                background:tab===key?T.surface:T.bg2,
+                color:tab===key?T.amberD:T.ink3,
+                marginBottom:tab===key?-1:0,
+                borderBottomColor:tab===key?T.surface:"transparent",
+                fontFamily:"'Inter',sans-serif",
+                transition:"all .12s",
+              }}>{label}</button>
+            ))}
+          </div>
 
-              {/* Summary tiles */}
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }} className="detail-grid">
-                {[
-                  { label:"Login Hours",   value:fmtDuration(totalAllSecs),          color:"#0d9488", bg:"#f0fdf4", icon:"⏱" },
-                  { label:"Task Logs",     value:taskLogs.length,                    color:"#7c3aed", bg:"#faf8ff", icon:"📝" },
-                  { label:"Login Sessions", value:sessions.length,                   color:"#2563eb", bg:"#eff6ff", icon:"🔄" },
-                  { label:"Jobs Worked",   value:jobTimeSummary.jobCount ?? 0,       color:"#ea580c", bg:"#fff7ed", icon:"🗂" },
-                ].map(({ label, value, color, bg, icon }) => (
-                  <div key={label} style={{ background:bg, borderRadius:14, padding:"14px 16px", border:`1.5px solid ${color}22` }}>
-                    <div style={{ fontSize:20, marginBottom:6 }}>{icon}</div>
-                    <div style={{ fontWeight:900, fontSize:22, color, lineHeight:1 }}>{value}</div>
-                    <div style={{ fontSize:11, color:"#94a3b8", fontWeight:700, marginTop:4, textTransform:"uppercase", letterSpacing:.4 }}>{label}</div>
-                  </div>
-                ))}
-              </div>
+          {/* ── Body ─────────────────────────────────────────────────── */}
+          <div style={{overflowY:"auto",flex:1,padding:"18px 18px 32px"}}>
 
-              {/* Job time summary — NEW */}
-              {jobTimeSummary.totalSeconds > 0 && (
-                <div style={{ background:"#fff7ed", borderRadius:14, padding:"14px 16px", border:"1.5px solid #fed7aa" }}>
-                  <div style={{ fontWeight:800, fontSize:12, color:"#9a3412", marginBottom:10, textTransform:"uppercase", letterSpacing:.5 }}>
-                    📊 Job Time Summary
-                  </div>
-                  <div style={{ display:"flex", gap:16, flexWrap:"wrap" }}>
-                    <div>
-                      <div style={{ fontSize:22, fontWeight:900, color:"#ea580c" }}>{jobTimeSummary.totalDisplay}</div>
-                      <div style={{ fontSize:11, color:"#94a3b8", fontWeight:700 }}>TOTAL JOB HOURS</div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize:22, fontWeight:900, color:jobTimeSummary.activeJobCount > 0 ? "#16a34a" : "#94a3b8" }}>
-                        {jobTimeSummary.activeJobCount}
-                      </div>
-                      <div style={{ fontSize:11, color:"#94a3b8", fontWeight:700 }}>ACTIVE JOBS NOW</div>
-                    </div>
-                  </div>
-                  <button onClick={() => setTab("jobtime")} style={{ marginTop:10, fontSize:12, color:"#ea580c", fontWeight:700, background:"none", border:"none", cursor:"pointer", padding:0 }}>
-                    View full job breakdown →
-                  </button>
+            {loading && <div style={{display:"flex",justifyContent:"center",alignItems:"center",padding:60}}><Spinner /></div>}
+
+            {/* ── OVERVIEW ── */}
+            {!loading && tab==="overview" && (
+              <div style={{display:"flex",flexDirection:"column",gap:14}}>
+
+                {/* 4 stat tiles */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:9}}>
+                  <StatTile label="Login Time Today" value={fmtD(totalAllSecs)}           color={T.amber}  bg={T.amberL} icon="⏱" />
+                  <StatTile label="Sessions Today"   value={sessions.filter(s=>s.date===new Date().toISOString().slice(0,10)).length||sessions.length} color={T.blue}   bg={T.blueL}  icon="🔄" />
+                  <StatTile label="Jobs Worked"      value={jobTimeSummary.jobCount??0}   color={T.ink2}   bg={T.bg2}    icon="🗂" />
+                  <StatTile label="Task Logs"        value={taskLogs.length}              color={T.violet} bg={T.violetL} icon="📝" />
                 </div>
-              )}
 
-              {/* Active session banner */}
-              {currentSession && (
-                <div style={{ background:"#f0fdf4", borderRadius:14, padding:"14px 16px", border:"1.5px solid #bbf7d0" }}>
-                  <div style={{ fontWeight:800, fontSize:13, color:"#166534", marginBottom:8, display:"flex", alignItems:"center", gap:8 }}>
-                    <span className="live-dot" /> Current Login Session
-                  </div>
-                  <div style={{ display:"flex", justifyContent:"space-between", fontSize:13 }}>
-                    <span style={{ color:"#374151" }}>Started at <strong>{fmtTime(currentSession.login_at)}</strong></span>
-                    <LiveTimer loginAt={currentSession.login_at} />
-                  </div>
-                </div>
-              )}
-
-              {/* Recent task logs */}
-              {taskLogs.length > 0 && (
-                <div>
-                  <div style={{ fontWeight:800, fontSize:13, color:"#0f172a", marginBottom:10 }}>Recent Task Logs</div>
-                  <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                    {taskLogs.slice(0, 4).map((l, i) => (
-                      <div key={l._id ?? i} style={{ background:"#faf8ff", borderRadius:10, padding:"10px 12px", border:"1px solid #ede9fe" }}>
-                        <div style={{ display:"flex", gap:6, marginBottom:4, flexWrap:"wrap" }}>
-                          <span style={{ fontSize:10, fontWeight:800, color:"#7c3aed", background:"#ede9fe", borderRadius:6, padding:"2px 7px" }}>{l.hour_label || fmtTime(l.submitted_at)}</span>
-                          {l.job_ref && <span style={{ fontSize:10, fontWeight:700, color:"#2563eb", background:"#eff6ff", borderRadius:6, padding:"2px 7px" }}>#{l.job_ref}</span>}
-                          <span style={{ fontSize:10, color:"#94a3b8", fontWeight:600, marginLeft:"auto" }}>{fmtDate(l.submitted_at)}</span>
+                {/* Assignments summary */}
+                {(Object.keys(allTaskAssignments).length > 0) && (
+                  <div style={{background:T.bg2,borderRadius:12,padding:"13px 15px",border:`1px solid ${T.border}`}}>
+                    <SectionHeader icon="📋" label="All Assignments" color={T.ink3} />
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))",gap:8}}>
+                      {[
+                        {label:"Jobs",             value:allTaskAssignments.totalJobs??0,          color:T.ink2},
+                        {label:"Active Jobs",      value:allTaskAssignments.activeJobs??0,         color:T.green},
+                        {label:"Site Visits",      value:allTaskAssignments.totalSiteVisits??0,    color:T.blue},
+                        {label:"Pending Pickups",  value:allTaskAssignments.pendingPickups??0,     color:"#B45309"},
+                        {label:"Done Pickups",     value:allTaskAssignments.completedPickups??0,   color:T.green},
+                        {label:"Materials Issued", value:allTaskAssignments.issuedMaterials??0,    color:T.amber},
+                      ].map(({label,value,color})=>(
+                        <div key={label} style={{background:T.surface,borderRadius:8,padding:"9px 10px",border:`1px solid ${T.border}`,textAlign:"center"}}>
+                          <div style={{fontWeight:800,fontSize:18,color,lineHeight:1,fontFamily:"'DM Sans',sans-serif"}}>{value}</div>
+                          <div style={{fontSize:9.5,color:T.ink4,fontWeight:600,marginTop:3,textTransform:"uppercase",letterSpacing:.3}}>{label}</div>
                         </div>
-                        <p style={{ fontSize:12, color:"#374151", lineHeight:1.5 }}>{l.message}</p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Job time summary */}
+                {(jobTimeSummary.totalSeconds??0) > 0 && (
+                  <div style={{background:T.amberL,borderRadius:12,padding:"13px 15px",border:`1px solid #FDE68A`}}>
+                    <SectionHeader icon="⏱" label="Job Time" color={T.amberD} />
+                    <div style={{display:"flex",gap:18,flexWrap:"wrap"}}>
+                      <div>
+                        <div style={{fontSize:22,fontWeight:900,color:T.amber,fontFamily:"'DM Sans',sans-serif"}}>{jobTimeSummary.totalDisplay}</div>
+                        <div style={{fontSize:10,color:T.ink4,fontWeight:600}}>TOTAL HOURS</div>
                       </div>
-                    ))}
-                    {taskLogs.length > 4 && (
-                      <button onClick={() => setTab("logs")} style={{ fontSize:12, color:"#7c3aed", fontWeight:700, background:"none", border:"none", cursor:"pointer", textAlign:"left", padding:0 }}>
-                        View all {taskLogs.length} logs →
+                      <div>
+                        <div style={{fontSize:22,fontWeight:900,color:jobTimeSummary.activeJobCount>0?T.green:T.ink4,fontFamily:"'DM Sans',sans-serif"}}>{jobTimeSummary.activeJobCount}</div>
+                        <div style={{fontSize:10,color:T.ink4,fontWeight:600}}>ACTIVE NOW</div>
+                      </div>
+                    </div>
+                    <button onClick={()=>setTab("jobtime")} style={{marginTop:9,fontSize:12,color:T.amberD,fontWeight:700,background:"none",border:"none",cursor:"pointer",padding:0}}>View job breakdown →</button>
+                  </div>
+                )}
+
+                {/* Recent sessions */}
+                {sessions.length > 0 && (
+                  <div style={{background:T.bg2,borderRadius:12,padding:"13px 15px",border:`1px solid ${T.border}`}}>
+                    <SectionHeader icon="🗓" label="Recent Sessions" color={T.ink3} />
+                    <div style={{display:"flex",flexDirection:"column",gap:7}}>
+                      {sessions.slice(0,3).map((s,i)=>(
+                        <div key={s._id??i} style={{display:"flex",alignItems:"center",gap:9,padding:"8px 10px",borderRadius:9,background:s.logout_at?T.surface:T.amberL,border:`1px solid ${s.logout_at?T.border:"#FDE68A"}`}}>
+                          <SelfieThumb url={s.selfie_url} onOpen={setLightbox} title={`Selfie · ${fmtT(s.login_at)}`} />
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:12,fontWeight:600,color:T.ink}}>
+                              {fmtT(s.login_at)} — {s.logout_at?fmtT(s.logout_at):<span style={{color:T.amberD}}>Active</span>}
+                            </div>
+                            <div style={{display:"flex",gap:5,marginTop:3,flexWrap:"wrap",alignItems:"center"}}>
+                              <IpChip ip={s.login_ip} />
+                              {s.location?.formatted_address && !s.location?.latitude && (
+                                <span style={{fontSize:10,color:T.ink3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:160}}>📍 {s.location.formatted_address}</span>
+                              )}
+                              {s.location?.latitude!=null && (
+                                <LocationLine location={s.location} compact />
+                              )}
+                            </div>
+                          </div>
+                          <span style={{fontSize:12,fontWeight:700,color:s.logout_at?T.ink3:T.amberD,flexShrink:0}}>
+                            {s.logout_at ? fmtD(s.duration_seconds) : <LiveTimer loginAt={s.login_at} />}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    {sessions.length>3 && (
+                      <button onClick={()=>setTab("sessions")} style={{marginTop:9,fontSize:12,color:T.blue,fontWeight:700,background:"none",border:"none",cursor:"pointer",padding:0}}>
+                        View all {sessions.length} sessions →
                       </button>
                     )}
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* Add log (super admin) */}
-              {isSuperAdmin && (
-                <div style={{ background:"#f8fafc", borderRadius:14, padding:14, border:"1.5px solid #e8ecf0" }}>
-                  <label className="field-label">Add Log Entry</label>
-                  <input value={jobRef} onChange={(e) => setJobRef(e.target.value)} placeholder="Job # (optional)" className="field-inp" style={{ marginBottom:8 }} />
-                  <textarea value={logMsg} onChange={(e) => setLogMsg(e.target.value)} placeholder="Describe the task update…" rows={3} className="field-inp" style={{ resize:"vertical" }} />
-                  <button onClick={handleSubmitLog} disabled={!logMsg.trim() || submitting}
-                    style={{ marginTop:8, width:"100%", padding:"11px", borderRadius:12, border:"none", fontWeight:800, fontSize:13,
-                      cursor: logMsg.trim() && !submitting ? "pointer" : "not-allowed",
-                      background: logMsg.trim() && !submitting ? "#7c3aed" : "#d1d9e0", color:"#fff",
-                    }}>
-                    {submitting ? "Saving…" : "Add Log"}
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
+                {/* Site visits summary */}
+                {assignedSiteVisits.length > 0 && (
+                  <div style={{background:T.blueL,borderRadius:12,padding:"13px 15px",border:`1px solid #BFDBFE`}}>
+                    <SectionHeader icon="🏢" label="Site Visits" color={T.blue} count={assignedSiteVisits.length} />
+                    <div style={{display:"flex",flexDirection:"column",gap:7}}>
+                      {assignedSiteVisits.slice(0,3).map((v,i)=>(
+                        <div key={v._id??i} style={{display:"flex",alignItems:"center",gap:9,padding:"8px 10px",borderRadius:8,background:T.surface,border:`1px solid ${T.border}`}}>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:12,fontWeight:600,color:T.ink}}>{v.visit_no} · {v.customer_name||"—"}</div>
+                            <div style={{fontSize:11,color:T.ink4,marginTop:2}}>{v.city||v.address_line1||""} · {fmtDate(v.visit_date)}</div>
+                          </div>
+                          <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:6,
+                            background:v.status==="completed"?"#F0FDF4":T.blueL,
+                            color:v.status==="completed"?T.green:T.blue,
+                            border:`1px solid ${v.status==="completed"?"#86EFAC":"#BFDBFE"}`,flexShrink:0}}>{v.status}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-          {/* ── Job Time tab — NEW ── */}
-          {!loading && tab === "jobtime" && <JobTimeTab staffId={staff._id} push={push} />}
+                {/* Materials summary */}
+                {(issuedMaterials.length + pickupTotal) > 0 && (
+                  <div style={{background:"#FEF3E2",borderRadius:12,padding:"13px 15px",border:`1px solid #FDE68A`}}>
+                    <SectionHeader icon="📦" label="Materials & Pickups" color="#B45309" />
+                    <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
+                      {issuedMaterials.length>0 && <span style={{fontSize:12,color:T.ink2}}><strong style={{color:T.amber}}>{issuedMaterials.length}</strong> material{issuedMaterials.length!==1?"s":""} issued</span>}
+                      {pendingPickups.length>0 && <span style={{fontSize:12,color:T.ink2}}><strong style={{color:"#B45309"}}>{pendingPickups.length}</strong> pending pickup{pendingPickups.length!==1?"s":""}</span>}
+                      {completedPickups.length>0 && <span style={{fontSize:12,color:T.ink2}}><strong style={{color:T.green}}>{completedPickups.length}</strong> completed pickup{completedPickups.length!==1?"s":""}</span>}
+                    </div>
+                    <button onClick={()=>setTab("materials")} style={{marginTop:9,fontSize:12,color:"#B45309",fontWeight:700,background:"none",border:"none",cursor:"pointer",padding:0}}>View materials & pickups →</button>
+                  </div>
+                )}
 
-          {/* ── Sessions tab ── */}
-          {!loading && tab === "sessions" && <SessionTimeline sessions={sessions} />}
+                {/* Recent task logs */}
+                {taskLogs.length > 0 && (
+                  <div>
+                    <SectionHeader icon="📝" label="Recent Task Logs" color={T.violet} count={taskLogs.length} />
+                    <div style={{display:"flex",flexDirection:"column",gap:7}}>
+                      {taskLogs.slice(0,3).map((l,i)=>(
+                        <div key={l._id??i} style={{background:T.violetL,borderRadius:9,padding:"9px 12px",border:"1px solid #EDE9FE"}}>
+                          <div style={{display:"flex",gap:5,marginBottom:4,flexWrap:"wrap"}}>
+                            <span style={{fontSize:10.5,fontWeight:700,color:T.violet,background:"#EDE9FE",borderRadius:5,padding:"2px 7px"}}>{l.hour_label||fmtT(l.submitted_at)}</span>
+                            {l.job_ref && <span style={{fontSize:10.5,fontWeight:700,color:T.blue,background:T.blueL,borderRadius:5,padding:"2px 7px"}}>#{l.job_ref}</span>}
+                            <span style={{fontSize:10,color:T.ink4,marginLeft:"auto"}}>{fmtDate(l.submitted_at)}</span>
+                          </div>
+                          <p style={{fontSize:12.5,color:T.ink2,lineHeight:1.5}}>{l.message}</p>
+                        </div>
+                      ))}
+                      {taskLogs.length>3 && <button onClick={()=>setTab("logs")} style={{fontSize:12,color:T.violet,fontWeight:700,background:"none",border:"none",cursor:"pointer",padding:0}}>View all {taskLogs.length} logs →</button>}
+                    </div>
+                  </div>
+                )}
 
-          {/* ── Task Logs tab ── */}
-          {!loading && tab === "logs" && (
-            <div>
-              {!isSuperAdmin && (
-                <div style={{ marginBottom:18, background:"#f8fafc", borderRadius:14, padding:14, border:"1.5px solid #e8ecf0" }}>
-                  <label className="field-label">Submit Hourly Update</label>
-                  <input value={jobRef} onChange={(e) => setJobRef(e.target.value)} placeholder="Job # (optional)" className="field-inp" style={{ marginBottom:8 }} />
-                  <textarea value={logMsg} onChange={(e) => setLogMsg(e.target.value)} placeholder="What are you working on?" rows={2} className="field-inp" style={{ resize:"vertical" }} />
-                  <button onClick={handleSubmitLog} disabled={!logMsg.trim()||submitting}
-                    style={{ marginTop:8, width:"100%", padding:"10px", borderRadius:12, border:"none", fontWeight:800, fontSize:13, cursor:"pointer",
-                      background: logMsg.trim()&&!submitting?"#7c3aed":"#d1d9e0", color:"#fff",
-                    }}>
-                    {submitting ? "Saving…" : "Submit Update"}
-                  </button>
-                </div>
-              )}
-              <TaskLogTimeline logs={taskLogs} onDelete={handleDeleteLog} isSuperAdmin={isSuperAdmin} />
-            </div>
-          )}
+                {/* Add log (super admin) */}
+                {isSuperAdmin && (
+                  <div style={{background:T.bg2,borderRadius:12,padding:14,border:`1px solid ${T.border}`}}>
+                    <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:.5,marginBottom:10}}>Add Log Entry</div>
+                    <input value={jobRef} onChange={e=>setJobRef(e.target.value)} placeholder="Job # (optional)" className="field-inp" style={{marginBottom:8}} />
+                    <textarea value={logMsg} onChange={e=>setLogMsg(e.target.value)} placeholder="Describe the task update…" rows={3} className="field-inp" style={{resize:"vertical"}} />
+                    <button onClick={handleSubmitLog} disabled={!logMsg.trim()||submitting} className="btn-primary" style={{marginTop:8}}>
+                      {submitting?"Saving…":"Add Log"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── SESSIONS ── */}
+            {!loading && tab==="sessions" && (
+              <SessionTimeline sessions={sessions} onOpenSelfie={setLightbox} />
+            )}
+
+            {/* ── JOB TIME ── */}
+            {!loading && tab==="jobtime" && (
+              <JobTimeTab staffId={staffInfo._id} push={push} />
+            )}
+
+            {/* ── MATERIALS ── */}
+            {!loading && tab==="materials" && (
+              <MaterialsTab
+                issuedMaterials={issuedMaterials}
+                pendingPickups={pendingPickups}
+                completedPickups={completedPickups}
+                allTaskAssignments={allTaskAssignments}
+              />
+            )}
+
+            {/* ── TASK LOGS ── */}
+            {!loading && tab==="logs" && (
+              <div>
+                {!isSuperAdmin && (
+                  <div style={{marginBottom:16,background:T.bg2,borderRadius:12,padding:14,border:`1px solid ${T.border}`}}>
+                    <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:.5,marginBottom:10}}>Submit Hourly Update</div>
+                    <input value={jobRef} onChange={e=>setJobRef(e.target.value)} placeholder="Job # (optional)" className="field-inp" style={{marginBottom:8}} />
+                    <textarea value={logMsg} onChange={e=>setLogMsg(e.target.value)} placeholder="What are you working on?" rows={2} className="field-inp" style={{resize:"vertical"}} />
+                    <button onClick={handleSubmitLog} disabled={!logMsg.trim()||submitting} className="btn-primary" style={{marginTop:8}}>
+                      {submitting?"Saving…":"Submit Update"}
+                    </button>
+                  </div>
+                )}
+                {taskLogs.length===0
+                  ? <EmptyState icon="📝" message="No task logs yet" />
+                  : <TaskLogTimeline logs={taskLogs} onDelete={handleDeleteLog} isSuperAdmin={isSuperAdmin} />
+                }
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// StaffMonitorPage  — main page
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── StaffMonitorPage ─────────────────────────────────────────────────────
 export default function StaffMonitorPage() {
   const [staffList,     setStaffList]     = useState([]);
   const [loading,       setLoading]       = useState(false);
@@ -1017,100 +1246,83 @@ export default function StaffMonitorPage() {
   const [search,        setSearch]        = useState("");
   const [statusFilter,  setStatusFilter]  = useState("");
   const [selectedStaff, setSelectedStaff] = useState(null);
+  const [lightbox,      setLightbox]      = useState(null);
   const { toasts, push } = useToast();
   const pollRef = useRef(null);
-
-  // Replace with your actual auth: read role from context/localStorage
   const isSuperAdmin = true;
 
-  const fetchList = useCallback(async (silent = false) => {
+  const fetchList = useCallback(async (silent=false) => {
     try {
-      if (!silent) setLoading(true);
-      else setRefreshing(true);
+      if (!silent) setLoading(true); else setRefreshing(true);
       const res  = await api.getMonitorList();
-      const list = res?.data ?? res ?? [];
-      setStaffList(Array.isArray(list) ? list : []);
-    } catch (err) {
-      push(err?.response?.data?.message ?? "Failed to load staff", "error");
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+      const list = res?.data??res??[];
+      setStaffList(Array.isArray(list)?list:[]);
+    } catch(err) { push(err?.response?.data?.message??"Failed to load staff","error"); }
+    finally { setLoading(false); setRefreshing(false); }
+  },[]);
 
-  useEffect(() => {
-    fetchList(false);
-    pollRef.current = setInterval(() => fetchList(true), 30000);
-    return () => clearInterval(pollRef.current);
-  }, [fetchList]);
+  useEffect(()=>{ fetchList(false); pollRef.current=setInterval(()=>fetchList(true),30000); return()=>clearInterval(pollRef.current); },[fetchList]);
 
-  const filtered = staffList.filter((s) => {
-    const q = search.toLowerCase();
-    const matchSearch = !q || s.name?.toLowerCase().includes(q) || s.email?.toLowerCase().includes(q) || s.role?.toLowerCase().includes(q);
-    const matchStatus = !statusFilter || (statusFilter === "online" ? s.isOnline : !s.isOnline);
-    return matchSearch && matchStatus;
+  const filtered = staffList.filter(s=>{
+    const q=search.toLowerCase();
+    return (!q||s.name?.toLowerCase().includes(q)||s.email?.toLowerCase().includes(q)||s.role?.toLowerCase().includes(q))
+      && (!statusFilter||(statusFilter==="online"?s.isOnline:!s.isOnline));
   });
 
-  const onlineCount    = staffList.filter((s) => s.isOnline).length;
+  const onlineCount    = staffList.filter(s=>s.isOnline).length;
   const offlineCount   = staffList.length - onlineCount;
-  const totalTodaySecs = staffList.reduce((a, s) => a + (s.todaySeconds ?? 0), 0);
-  const activeJobs     = staffList.reduce((a, s) => a + (s.jobStats?.activeJobs ?? 0), 0);
+  const totalTodaySecs = staffList.reduce((a,s)=>a+(s.todaySeconds??0),0);
+  const activeJobs     = staffList.reduce((a,s)=>a+(s.jobStats?.activeJobs??0),0);
 
   return (
-    <div style={{ minHeight:"100vh", background:"#f4f6f9", fontFamily:"'Plus Jakarta Sans',system-ui,sans-serif" }}>
+    <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif"}}>
       <style>{CSS}</style>
+      <SelfieLightbox src={lightbox} onClose={()=>setLightbox(null)} />
 
-      {/* Sticky Header */}
-      <div style={{ background:"#fff", borderBottom:"1px solid #eaecef", position:"sticky", top:0, zIndex:100, boxShadow:"0 1px 8px rgba(0,0,0,.05)" }}>
-        <div style={{ maxWidth:1280, margin:"0 auto", padding:"14px 16px 0" }}>
+      {/* Header */}
+      <div style={{background:T.surface,borderBottom:`1px solid ${T.border}`,position:"sticky",top:0,zIndex:100,boxShadow:"0 1px 6px rgba(0,0,0,.04)"}}>
+        <div style={{maxWidth:1280,margin:"0 auto",padding:"0 16px"}}>
 
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
+          {/* Top bar */}
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 0 12px"}}>
             <div>
-              <div style={{ fontWeight:900, fontSize:20, color:"#0f172a", letterSpacing:-.4, display:"flex", alignItems:"center", gap:8 }}>
-                <span>📡</span> Staff Monitor
-              </div>
-              <div style={{ fontSize:12, color:"#94a3b8", marginTop:1 }}>
-                Live activity · auto-refresh every 30s
-                {refreshing && <span style={{ marginLeft:8, color:"#0d9488" }}>↻ Updating…</span>}
+              <div style={{display:"flex",alignItems:"center",gap:9}}>
+                <div style={{width:34,height:34,borderRadius:9,background:T.amberL,border:`1.5px solid #FDE68A`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17}}>📡</div>
+                <div>
+                  <div style={{fontWeight:800,fontSize:17,color:T.ink,letterSpacing:-.4,fontFamily:"'DM Sans',sans-serif",lineHeight:1.1}}>Staff Monitor</div>
+                  <div style={{fontSize:11,color:T.ink4,marginTop:1,display:"flex",alignItems:"center",gap:6}}>
+                    Live · auto-refresh 30s
+                    {refreshing && <span style={{color:T.amber,fontWeight:600}}>· updating…</span>}
+                  </div>
+                </div>
               </div>
             </div>
-            <button onClick={() => fetchList(false)} disabled={loading}
-              style={{ padding:"9px 16px", borderRadius:12, border:"1.5px solid #e2e8f0", background:"#f8fafc", color: loading ? "#94a3b8" : "#64748b", fontWeight:700, fontSize:12, cursor: loading ? "not-allowed" : "pointer", display:"flex", alignItems:"center", gap:6 }}>
-              {loading ? "Loading…" : "🔄 Refresh"}
-            </button>
-          </div>
 
-          {/* Stats bar */}
-          <div style={{ display:"flex", gap:8, overflowX:"auto", paddingBottom:14, scrollbarWidth:"none" }}>
-            {[
-              { label:"Total Staff",   value:staffList.length,          color:"#0f172a", bg:"#f8fafc" },
-              { label:"Online Now",    value:onlineCount,               color:"#16a34a", bg:"#f0fdf4" },
-              { label:"Offline",       value:offlineCount,              color:"#94a3b8", bg:"#f8fafc" },
-              { label:"Login Hours",   value:fmtDuration(totalTodaySecs), color:"#0d9488", bg:"#f0fdf4" },
-              { label:"Active Jobs",   value:activeJobs,                color:"#ea580c", bg:"#fff7ed" },
-            ].map(({ label, value, color, bg }) => (
-              <div key={label} className="stat-chip" style={{ background:bg }}>
-                <span style={{ fontWeight:900, fontSize:18, color, lineHeight:1 }}>{value}</span>
-                <span style={{ fontSize:11, color:"#94a3b8", fontWeight:700 }}>{label}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Search + filter */}
-          <div style={{ paddingBottom:14, display:"flex", gap:8, flexWrap:"wrap" }}>
-            <div style={{ position:"relative", flex:1, minWidth:200 }}>
-              <span style={{ position:"absolute", left:12, top:"50%", transform:"translateY(-50%)", fontSize:14, pointerEvents:"none" }}>🔍</span>
-              <input className="search-inp" placeholder="Search name, email, role…" value={search} onChange={(e) => setSearch(e.target.value)} />
+            {/* Summary chips */}
+            <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}} className="hide-sm">
+              {[
+                {label:`${staffList.length} total`,  color:T.ink3},
+                {label:`${onlineCount} online`,       color:T.green},
+                {label:`${activeJobs} active jobs`,   color:T.amber},
+                {label:fmtD(totalTodaySecs)+" today", color:T.blue},
+              ].map(({label,color})=>(
+                <span key={label} style={{fontSize:11.5,fontWeight:600,color,background:T.bg2,borderRadius:7,padding:"5px 10px",border:`1px solid ${T.border}`}}>{label}</span>
+              ))}
+              <button onClick={()=>fetchList(false)} disabled={loading} style={{padding:"7px 14px",borderRadius:9,border:`1px solid ${T.border}`,background:T.bg2,color:loading?T.ink4:T.ink2,fontWeight:600,fontSize:12,cursor:loading?"not-allowed":"pointer"}}>
+                {loading?"…":"↻ Refresh"}
+              </button>
             </div>
-            <div style={{ display:"flex", gap:6 }}>
-              {[["","All"],["online","🟢 Online"],["offline","⚫ Offline"]].map(([val, label]) => (
-                <button key={val} onClick={() => setStatusFilter(val)} style={{
-                  padding:"9px 14px", borderRadius:12, border:"1.5px solid",
-                  borderColor: statusFilter === val ? "#0d9488" : "#e2e8f0",
-                  background:  statusFilter === val ? "#f0fdf4" : "#f8fafc",
-                  color:       statusFilter === val ? "#0d9488" : "#64748b",
-                  fontWeight:700, fontSize:12, cursor:"pointer", whiteSpace:"nowrap",
-                }}>{label}</button>
+          </div>
+
+          {/* Search + filter row */}
+          <div style={{display:"flex",gap:8,paddingBottom:12,flexWrap:"wrap"}}>
+            <div style={{position:"relative",flex:1,minWidth:200}}>
+              <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",fontSize:13,pointerEvents:"none",color:T.ink4}}>🔍</span>
+              <input className="search-inp" placeholder="Search name, email, role…" value={search} onChange={e=>setSearch(e.target.value)} />
+            </div>
+            <div style={{display:"flex",gap:6}}>
+              {[["","All"],["online","🟢 Online"],["offline","⚫ Offline"]].map(([val,label])=>(
+                <button key={val} onClick={()=>setStatusFilter(val)} className={`filter-btn${statusFilter===val?" active":""}`}>{label}</button>
               ))}
             </div>
           </div>
@@ -1118,74 +1330,70 @@ export default function StaffMonitorPage() {
       </div>
 
       {/* Content */}
-      <div style={{ maxWidth:1280, margin:"0 auto", padding:"16px 16px 48px" }}>
-
+      <div style={{maxWidth:1280,margin:"0 auto",padding:"16px 16px 56px"}}>
         {loading && !staffList.length && (
-          <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"80px 20px", gap:16 }}>
-            <Spinner />
-            <div style={{ fontSize:13, color:"#94a3b8", fontWeight:600 }}>Loading staff activity…</div>
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"80px 20px",gap:14}}>
+            <Spinner size={36} />
+            <div style={{fontSize:13,color:T.ink4,fontWeight:500}}>Loading staff activity…</div>
           </div>
         )}
 
-        {!loading && filtered.length === 0 && staffList.length === 0 && (
-          <div style={{ background:"#fff", borderRadius:20, padding:"64px 24px", textAlign:"center", border:"1.5px dashed #e2e8f0" }}>
-            <div style={{ fontSize:48, marginBottom:16 }}>📡</div>
-            <div style={{ fontWeight:800, fontSize:18, color:"#1e293b", marginBottom:8 }}>No staff found</div>
-            <div style={{ fontSize:13, color:"#94a3b8" }}>Staff will appear here once they log in</div>
+        {!loading && filtered.length===0 && staffList.length===0 && (
+          <div style={{background:T.surface,borderRadius:T.r2,padding:"64px 24px",textAlign:"center",border:`1px dashed ${T.border}`}}>
+            <div style={{fontSize:44,marginBottom:14}}>📡</div>
+            <div style={{fontWeight:700,fontSize:17,color:T.ink,marginBottom:7,fontFamily:"'DM Sans',sans-serif"}}>No staff found</div>
+            <div style={{fontSize:13,color:T.ink4}}>Staff appear here once they log in</div>
           </div>
         )}
 
-        {!loading && filtered.length === 0 && staffList.length > 0 && (
-          <div style={{ background:"#fff", borderRadius:20, padding:"48px 24px", textAlign:"center", border:"1.5px dashed #e2e8f0" }}>
-            <div style={{ fontSize:36, marginBottom:12 }}>🔍</div>
-            <div style={{ fontWeight:800, fontSize:16, color:"#1e293b", marginBottom:6 }}>No matches</div>
-            <div style={{ fontSize:13, color:"#94a3b8" }}>Try adjusting the search or filter</div>
+        {!loading && filtered.length===0 && staffList.length>0 && (
+          <div style={{background:T.surface,borderRadius:T.r2,padding:"48px 24px",textAlign:"center",border:`1px dashed ${T.border}`}}>
+            <div style={{fontSize:36,marginBottom:10}}>🔍</div>
+            <div style={{fontWeight:700,fontSize:15,color:T.ink,marginBottom:5,fontFamily:"'DM Sans',sans-serif"}}>No matches</div>
+            <div style={{fontSize:13,color:T.ink4}}>Try adjusting the search or filter</div>
           </div>
         )}
 
-        {/* Online section */}
-        {filtered.some((s) => s.isOnline) && (
-          <div style={{ marginBottom:28 }}>
-            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
+        {/* Online */}
+        {filtered.some(s=>s.isOnline) && (
+          <div style={{marginBottom:24}}>
+            <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:11}}>
               <span className="live-dot" />
-              <span style={{ fontWeight:800, fontSize:14, color:"#166534" }}>Online Now</span>
-              <span style={{ fontSize:12, color:"#94a3b8" }}>{filtered.filter((s) => s.isOnline).length} member{filtered.filter((s) => s.isOnline).length !== 1 ? "s" : ""}</span>
+              <span style={{fontWeight:700,fontSize:13,color:T.amberD,fontFamily:"'DM Sans',sans-serif"}}>Online Now</span>
+              <span style={{fontSize:11,color:T.ink4}}>{filtered.filter(s=>s.isOnline).length} member{filtered.filter(s=>s.isOnline).length!==1?"s":""}</span>
             </div>
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))", gap:12 }}>
-              {filtered.filter((s) => s.isOnline).map((s) => <MonitorCard key={s._id} staff={s} onClick={() => setSelectedStaff(s)} />)}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(296px,1fr))",gap:11}}>
+              {filtered.filter(s=>s.isOnline).map(s=>(
+                <MonitorCard key={s._id} staff={s} onClick={()=>setSelectedStaff(s)} onOpenSelfie={setLightbox} />
+              ))}
             </div>
           </div>
         )}
 
-        {/* Offline section */}
-        {filtered.some((s) => !s.isOnline) && statusFilter !== "online" && (
+        {/* Offline */}
+        {filtered.some(s=>!s.isOnline) && statusFilter!=="online" && (
           <div>
-            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
-              <span style={{ width:8, height:8, borderRadius:"50%", background:"#d1d5db", display:"inline-block" }} />
-              <span style={{ fontWeight:800, fontSize:14, color:"#64748b" }}>Offline</span>
-              <span style={{ fontSize:12, color:"#94a3b8" }}>{filtered.filter((s) => !s.isOnline).length} member{filtered.filter((s) => !s.isOnline).length !== 1 ? "s" : ""}</span>
+            <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:11}}>
+              <span style={{width:7,height:7,borderRadius:"50%",background:"#D1D5DB",display:"inline-block"}} />
+              <span style={{fontWeight:700,fontSize:13,color:T.ink3,fontFamily:"'DM Sans',sans-serif"}}>Offline</span>
+              <span style={{fontSize:11,color:T.ink4}}>{filtered.filter(s=>!s.isOnline).length} member{filtered.filter(s=>!s.isOnline).length!==1?"s":""}</span>
             </div>
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))", gap:12 }}>
-              {filtered.filter((s) => !s.isOnline).map((s) => <MonitorCard key={s._id} staff={s} onClick={() => setSelectedStaff(s)} />)}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(296px,1fr))",gap:11}}>
+              {filtered.filter(s=>!s.isOnline).map(s=>(
+                <MonitorCard key={s._id} staff={s} onClick={()=>setSelectedStaff(s)} onOpenSelfie={setLightbox} />
+              ))}
             </div>
           </div>
         )}
 
-        {staffList.length > 0 && (
-          <div style={{ textAlign:"center", fontSize:11, color:"#c4cbd5", marginTop:28, fontWeight:600 }}>
-            Showing {filtered.length} of {staffList.length} staff members
+        {staffList.length>0 && (
+          <div style={{textAlign:"center",fontSize:11,color:T.border2,marginTop:24,fontWeight:500}}>
+            {filtered.length} of {staffList.length} staff shown
           </div>
         )}
       </div>
 
-      <StaffDetailModal
-        open={!!selectedStaff}
-        staff={selectedStaff}
-        onClose={() => setSelectedStaff(null)}
-        push={push}
-        isSuperAdmin={isSuperAdmin}
-      />
-
+      <StaffDetailModal open={!!selectedStaff} staff={selectedStaff} onClose={()=>setSelectedStaff(null)} push={push} isSuperAdmin={isSuperAdmin} />
       <Toast toasts={toasts} />
     </div>
   );

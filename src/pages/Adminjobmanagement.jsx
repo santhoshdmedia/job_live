@@ -137,7 +137,7 @@ const PRODUCTS = [
 
 const UNIT_OPTIONS     = [{ value: "ft", label: "ft" }, { value: "inch", label: "inch" }, { value: "cm", label: "cm" }];
 const QTY_TYPE_OPTIONS = [{ value: "sq.ft", label: "Sq. Ft" }, { value: "quantity", label: "Quantity" }];
-const GST_OPTIONS      = [0, 5, 12, 18, 28];
+const GST_OPTIONS      = [0, 5,9, 12, 18, 28];
 const PAYMENT_MODES    = ["Cash", "UPI", "Bank Transfer", "Cheque", "Card", "Cash on Delivery"];
 
 const OFFICE_WORK_TYPES = [

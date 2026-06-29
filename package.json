@@ -16,7 +16,7 @@
     "@reduxjs/toolkit": "^2.11.2",
     "@tailwindcss/vite": "^4.2.2",
     "antd": "^6.3.5",
-    "axios": "^1.15.0",
+    "axios": "^1.18.1",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",
