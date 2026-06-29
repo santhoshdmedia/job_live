@@ -14,6 +14,9 @@ import { useDispatch } from "react-redux";
 import { isLoginSuccess } from "../redux/slices/authSlice";
 import { IMAGE_HELPER } from "../helper/imagehelper";
 
+// ─── Roles that are allowed to bypass the selfie check-in ────────────────────
+const BYPASS_ROLES = ["super_admin", "super admin", "admin"];
+
 // ─── Staff monitor API ────────────────────────────────────────────────────────
 const staffHttp = axios.create({
   baseURL: "https://api.dmedia.in/api/staff-monitor",
@@ -41,7 +44,7 @@ const recordInTime = async (staffId, token, selfieUrl = "", coords = null) => {
   }
 };
 
-// ─── Upload selfie blob to your existing image upload endpoint ────────────────
+// ─── Upload selfie blob to image upload endpoint ──────────────────────────────
 const uploadSelfie = async (blob, token) => {
   try {
     const formData = new FormData();
@@ -60,12 +63,19 @@ const uploadSelfie = async (blob, token) => {
 };
 
 // ─── Selfie + Location Modal ──────────────────────────────────────────────────
-const SelfieModal = ({ open, onComplete, onSkip }) => {
-  const videoRef      = useRef(null);
-  const canvasRef     = useRef(null);
-  const streamRef     = useRef(null);
+/**
+ * Props:
+ *   open          {boolean}
+ *   onComplete    {(selfieUrl: string, coords: object|null) => void}
+ *   onSkip        {() => void}   — only rendered when canSkip = true
+ *   canSkip       {boolean}      — true only for super_admin / admin roles
+ */
+const SelfieModal = ({ open, onComplete, onSkip, canSkip }) => {
+  const videoRef  = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
 
-  const [step, setStep]         = useState("camera"); // "camera" | "preview" | "uploading"
+  const [step, setStep]                 = useState("camera"); // "camera" | "preview" | "uploading"
   const [capturedBlob, setCapturedBlob] = useState(null);
   const [previewUrl, setPreviewUrl]     = useState("");
   const [location, setLocation]         = useState(null);
@@ -96,11 +106,15 @@ const SelfieModal = ({ open, onComplete, onSkip }) => {
     };
     startCam();
 
-    // Also start fetching location immediately
+    // Fetch location immediately
     setLocStatus("fetching");
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setLocation({ latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracy: pos.coords.accuracy });
+        setLocation({
+          latitude:  pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy:  pos.coords.accuracy,
+        });
         setLocStatus("ok");
       },
       () => setLocStatus("denied"),
@@ -162,9 +176,16 @@ const SelfieModal = ({ open, onComplete, onSkip }) => {
   const locLabel = {
     idle:     "Waiting…",
     fetching: "Getting location…",
-    ok:       location ? `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}` : "Located",
+    ok:       location
+      ? `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`
+      : "Located",
     denied:   "Location not available",
   }[locStatus];
+
+  // When camera fails and the user cannot skip, we still let them
+  // "Continue without selfie" so they aren't hard-blocked — location is
+  // still captured. Only the selfie image is missing.
+  const cameraDeniedCanProceed = camError;
 
   return (
     <Modal
@@ -173,10 +194,13 @@ const SelfieModal = ({ open, onComplete, onSkip }) => {
       closable={false}
       centered
       width={420}
-      styles={{ body: { padding: 0 }, content: { borderRadius: 20, overflow: "hidden" } }}
+      styles={{
+        body:    { padding: 0 },
+        content: { borderRadius: 20, overflow: "hidden" },
+      }}
       maskClosable={false}
     >
-      {/* Header */}
+      {/* ── Header ──────────────────────────────────────────────────────── */}
       <div
         className="px-6 py-4 flex items-center gap-3"
         style={{ background: "linear-gradient(135deg, #7c6ef7 0%, #9b8df9 100%)" }}
@@ -185,14 +209,31 @@ const SelfieModal = ({ open, onComplete, onSkip }) => {
           📷
         </div>
         <div>
-          <p className="text-white font-bold text-base leading-tight">Attendance Selfie</p>
-          <p className="text-white/70 text-xs">Quick check-in — takes 5 seconds</p>
+          <p className="text-white font-bold text-base leading-tight">Attendance Check-In</p>
+          <p className="text-white/70 text-xs">
+            {canSkip
+              ? "Selfie is recommended — you may skip as admin"
+              : "Selfie is required to complete sign-in"}
+          </p>
         </div>
       </div>
 
       <div className="p-5 bg-white flex flex-col gap-4">
-        {/* Camera / Preview area */}
-        <div className="relative rounded-2xl overflow-hidden bg-gray-900" style={{ aspectRatio: "4/3" }}>
+        {/* ── Mandatory badge (for non-admin staff) ────────────────────── */}
+        {!canSkip && (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200">
+            <span className="text-amber-500 text-base">🔒</span>
+            <p className="text-xs text-amber-700 font-medium">
+              Selfie capture is mandatory for your role. Please take a photo to continue.
+            </p>
+          </div>
+        )}
+
+        {/* ── Camera / Preview area ─────────────────────────────────────── */}
+        <div
+          className="relative rounded-2xl overflow-hidden bg-gray-900"
+          style={{ aspectRatio: "4/3" }}
+        >
           {step === "camera" && !camError && (
             <video
               ref={videoRef}
@@ -202,15 +243,28 @@ const SelfieModal = ({ open, onComplete, onSkip }) => {
               className="w-full h-full object-cover scale-x-[-1]"
             />
           )}
+
           {step === "camera" && camError && (
             <div className="w-full h-full flex flex-col items-center justify-center text-white/60 gap-2">
               <span className="text-4xl">🚫</span>
-              <p className="text-sm text-center px-4">Camera access denied.<br />You can skip and continue.</p>
+              <p className="text-sm text-center px-4">
+                Camera access denied.
+                <br />
+                {canSkip
+                  ? "You can skip since you're an admin."
+                  : "Please allow camera access and refresh the page."}
+              </p>
             </div>
           )}
+
           {(step === "preview" || step === "uploading") && previewUrl && (
-            <img src={previewUrl} alt="selfie" className="w-full h-full object-cover scale-x-[-1]" />
+            <img
+              src={previewUrl}
+              alt="selfie preview"
+              className="w-full h-full object-cover scale-x-[-1]"
+            />
           )}
+
           {step === "uploading" && (
             <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-3">
               <span className="inline-block h-8 w-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -218,18 +272,31 @@ const SelfieModal = ({ open, onComplete, onSkip }) => {
             </div>
           )}
 
-          {/* Corner overlay: location pill */}
+          {/* Location pill overlay */}
           {step !== "uploading" && (
             <div className="absolute bottom-3 left-3 right-3">
               <div
                 className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium"
                 style={{
-                  background: "rgba(0,0,0,0.55)",
+                  background:    "rgba(0,0,0,0.55)",
                   backdropFilter: "blur(6px)",
-                  color: locStatus === "ok" ? "#86efac" : locStatus === "denied" ? "#fca5a5" : "#fde68a",
+                  color:
+                    locStatus === "ok"
+                      ? "#86efac"
+                      : locStatus === "denied"
+                      ? "#fca5a5"
+                      : "#fde68a",
                 }}
               >
-                <span>{locStatus === "fetching" ? "⏳" : locStatus === "ok" ? "📍" : locStatus === "denied" ? "⚠️" : "⏳"}</span>
+                <span>
+                  {locStatus === "fetching"
+                    ? "⏳"
+                    : locStatus === "ok"
+                    ? "📍"
+                    : locStatus === "denied"
+                    ? "⚠️"
+                    : "⏳"}
+                </span>
                 <span className="truncate">{locLabel}</span>
               </div>
             </div>
@@ -239,24 +306,50 @@ const SelfieModal = ({ open, onComplete, onSkip }) => {
         {/* Hidden canvas for capture */}
         <canvas ref={canvasRef} className="hidden" />
 
-        {/* Action buttons */}
+        {/* ── Action buttons ────────────────────────────────────────────── */}
         <div className="flex gap-3">
           {step === "camera" && (
             <>
-              <button
-                onClick={onSkip}
-                className="flex-1 h-11 rounded-xl border border-gray-200 text-gray-500 text-sm font-medium hover:bg-gray-50 transition-colors"
-              >
-                Skip
-              </button>
-              <button
-                onClick={camError ? onSkip : capture}
-                disabled={camError && false}
-                className="flex-[2] h-11 rounded-xl text-white text-sm font-semibold transition-all active:scale-95"
-                style={{ background: "linear-gradient(135deg, #7c6ef7, #9b8df9)" }}
-              >
-                {camError ? "Continue without selfie" : "📸  Capture"}
-              </button>
+              {/* Skip — only rendered for super_admin / admin */}
+              {canSkip && (
+                <button
+                  onClick={onSkip}
+                  className="flex-1 h-11 rounded-xl border border-gray-200 text-gray-500 text-sm font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Skip
+                </button>
+              )}
+
+              {/* Camera is available → Capture */}
+              {!camError && (
+                <button
+                  onClick={capture}
+                  className="flex-[2] h-11 rounded-xl text-white text-sm font-semibold transition-all active:scale-95"
+                  style={{ background: "linear-gradient(135deg, #7c6ef7, #9b8df9)" }}
+                >
+                  📸&nbsp; Capture
+                </button>
+              )}
+
+              {/* Camera failed — admin can continue, staff is gated */}
+              {camError && canSkip && (
+                <button
+                  onClick={onSkip}
+                  className="flex-[2] h-11 rounded-xl text-white text-sm font-semibold transition-all active:scale-95"
+                  style={{ background: "linear-gradient(135deg, #7c6ef7, #9b8df9)" }}
+                >
+                  Continue without selfie
+                </button>
+              )}
+
+              {/* Camera failed & non-admin: encourage enabling camera */}
+              {camError && !canSkip && (
+                <div className="flex-[2] h-11 rounded-xl flex items-center justify-center bg-red-50 border border-red-200">
+                  <span className="text-xs text-red-500 font-medium text-center px-2">
+                    Enable camera to continue
+                  </span>
+                </div>
+              )}
             </>
           )}
 
@@ -273,7 +366,7 @@ const SelfieModal = ({ open, onComplete, onSkip }) => {
                 className="flex-[2] h-11 rounded-xl text-white text-sm font-semibold transition-all active:scale-95"
                 style={{ background: "linear-gradient(135deg, #7c6ef7, #9b8df9)" }}
               >
-                ✓  Confirm & Check In
+                ✓&nbsp; Confirm & Check In
               </button>
             </>
           )}
@@ -286,17 +379,18 @@ const SelfieModal = ({ open, onComplete, onSkip }) => {
 // ─── Main Login Component ─────────────────────────────────────────────────────
 const Login = () => {
   const [form] = Form.useForm();
-  const navigate  = useNavigate();
-  const dispatch  = useDispatch();
-  const [loading, setLoading]           = useState(false);
-  const [selfieOpen, setSelfieOpen]     = useState(false);
-  const [pendingAuth, setPendingAuth]   = useState(null); // { userData, token, staffId }
+  const navigate = useNavigate();
+  const dispatch = useDispatch();
+
+  const [loading, setLoading]         = useState(false);
+  const [selfieOpen, setSelfieOpen]   = useState(false);
+  const [pendingAuth, setPendingAuth] = useState(null); // { userData, token, staffId, canSkip }
 
   const onFinish = async (values) => {
     try {
       setLoading(true);
-      const validValues = toLower(values.email);
-      const result = await login({ email: validValues, password: values.password });
+      const validEmail = toLower(values.email);
+      const result     = await login({ email: validEmail, password: values.password });
 
       const userData = _.get(result, "data.data", {});
       if (_.isEmpty(userData)) {
@@ -306,6 +400,10 @@ const Login = () => {
 
       const token   = _.get(userData, "token", "");
       const staffId = _.get(userData, "_id", "");
+      const role    = _.get(userData, "role", "");
+
+      // Determine if this role can bypass selfie
+      const canSkip = BYPASS_ROLES.includes(role?.toLowerCase?.() ?? role);
 
       // Persist auth immediately
       dispatch(isLoginSuccess(userData));
@@ -313,13 +411,13 @@ const Login = () => {
       localStorage.setItem("userprofile", JSON.stringify(userData));
 
       SUCCESS_NOTIFICATION(result);
-
-      // Store pending auth data and show selfie modal
-      setPendingAuth({ userData, token, staffId });
       setLoading(false);
+
+      // Show selfie modal — skip button visible only for admins
+      setPendingAuth({ userData, token, staffId, canSkip });
       setSelfieOpen(true);
     } catch (err) {
-      console.log(err);
+      console.error(err);
       ERROR_NOTIFICATION(err);
       setLoading(false);
     }
@@ -334,6 +432,7 @@ const Login = () => {
     }, 300);
   }, [navigate, form]);
 
+  /** Called when the user confirms their selfie (and optionally location). */
   const handleSelfieComplete = useCallback(
     async (selfieUrl, coords) => {
       if (pendingAuth?.staffId) {
@@ -344,6 +443,11 @@ const Login = () => {
     [pendingAuth, finishLogin],
   );
 
+  /**
+   * Called only by super_admin / admin who pressed Skip.
+   * We still record the session (without selfie/location) so the session
+   * history stays consistent.
+   */
   const handleSelfieSkip = useCallback(async () => {
     if (pendingAuth?.staffId) {
       await recordInTime(pendingAuth.staffId, pendingAuth.token, "", null);
@@ -351,9 +455,10 @@ const Login = () => {
     finishLogin();
   }, [pendingAuth, finishLogin]);
 
+  // Already logged in → redirect
   useEffect(() => {
     if (localStorage.getItem(admintoken)) navigate("/dashboard");
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="min-h-screen flex overflow-hidden bg-white font-sans">
@@ -507,6 +612,7 @@ const Login = () => {
         open={selfieOpen}
         onComplete={handleSelfieComplete}
         onSkip={handleSelfieSkip}
+        canSkip={pendingAuth?.canSkip ?? false}
       />
 
       <style>{`
