@@ -49,7 +49,7 @@ const uploadSelfie = async (blob, token) => {
   try {
     const formData = new FormData();
     formData.append("image", blob, "selfie.jpg");
-    const res = await axios.post("https://api.dmedia.in/api/upload-image", formData, {
+    const res = await axios.post("https://api.dmedia.in/api/upload_images", formData, {
       headers: {
         "Content-Type": "multipart/form-data",
         Authorization: `Bearer ${token}`,
