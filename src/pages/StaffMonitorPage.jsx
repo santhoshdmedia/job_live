@@ -97,7 +97,10 @@ const avatarBg = (name="") => {
 
 // ─── Hooks ───────────────────────────────────────────────────────────────
 function useLiveElapsed(loginAt, active) {
-  const [e, setE] = useState(0);
+  const [e, setE] = useState(() => {
+    if (!active || !loginAt) return 0;
+    return Math.max(0, Math.floor((Date.now() - new Date(loginAt).getTime()) / 1000));
+  });
   useEffect(() => {
     if (!active || !loginAt) { setE(0); return; }
     const tick = () => setE(Math.floor((Date.now()-new Date(loginAt).getTime())/1000));
@@ -106,7 +109,10 @@ function useLiveElapsed(loginAt, active) {
   return e;
 }
 function useLiveSeconds(base, hasOpen, openSince) {
-  const [x, setX] = useState(0);
+  const [x, setX] = useState(() => {
+    if (!hasOpen || !openSince) return 0;
+    return Math.max(0, Math.floor((Date.now() - new Date(openSince).getTime()) / 1000));
+  });
   useEffect(() => {
     if (!hasOpen || !openSince) { setX(0); return; }
     const tick = () => setX(Math.floor((Date.now()-new Date(openSince).getTime())/1000));
@@ -442,18 +448,26 @@ function MonitorCard({ staff, onClick, onOpenSelfie }) {
         )}
 
         {/* Stats row */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:7,marginBottom:12}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:7,marginBottom:12}}>
           {[
-            {label:"Login",  value:fmtD(todaySecs),  color:T.amber},
-            {label:"Logs",   value:taskCount,         color:T.violet},
-            {label:"Logins", value:sessionCount,      color:T.blue},
+            {label:"Worked",  value:fmtD(staff.workingSecondsToday||todaySecs),  color:T.amber},
+            {label:"Break",   value:fmtD(staff.breakSecondsToday||0),            color:"#D97706"},
+            {label:"OT",      value:(staff.overtimeSecondsToday||0)>0?fmtD(staff.overtimeSecondsToday):"—", color:(staff.overtimeSecondsToday||0)>0?"#EA580C":T.ink4},
+            {label:"Logs",    value:taskCount,                                    color:T.violet},
           ].map(({label,value,color})=>(
             <div key={label} style={{textAlign:"center",background:T.bg2,borderRadius:8,padding:"8px 4px",border:`1px solid ${T.border}`}}>
-              <div style={{fontWeight:800,fontSize:16,color,lineHeight:1,fontFamily:"'DM Sans',sans-serif"}}>{value}</div>
-              <div style={{fontSize:9.5,color:T.ink4,fontWeight:600,marginTop:2,textTransform:"uppercase",letterSpacing:.4}}>{label}</div>
+              <div style={{fontWeight:800,fontSize:15,color,lineHeight:1,fontFamily:"'DM Sans',sans-serif"}}>{value}</div>
+              <div style={{fontSize:9,color:T.ink4,fontWeight:600,marginTop:2,textTransform:"uppercase",letterSpacing:.4}}>{label}</div>
             </div>
           ))}
         </div>
+        {/* Break status badge */}
+        {staff.onBreak && (
+          <div style={{background:T.amberL,borderRadius:8,padding:"7px 11px",border:`1px solid ${T.amberM}`,marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
+            <span style={{fontSize:13}}>{staff.breakType==="lunch"?"🍽":"☕"}</span>
+            <span style={{fontSize:12,fontWeight:700,color:T.amberD}}>{staff.breakType==="lunch"?"Lunch break":"Short break"} — currently paused</span>
+          </div>
+        )}
 
         {/* Job stats */}
         {(js.jobsAssignedTotal > 0 || js.activeJobs > 0) && (
@@ -859,6 +873,39 @@ function MaterialsTab({ issuedMaterials=[], pendingPickups=[], completedPickups=
               })}
             </div>
       )}
+    </div>
+  );
+}
+
+// ─── SiteVisitsTab ────────────────────────────────────────────────────────────
+function SiteVisitsTab({ visits = [] }) {
+  if (!visits.length) return <EmptyState icon="🏢" message="No site visits assigned to this staff member" />;
+  const statusCfg = {
+    pending:     { bg: T.amberL,  text: T.amberD, border: "#FDE68A", label: "Pending"     },
+    in_progress: { bg: T.blueL,   text: T.blue,   border: "#BFDBFE", label: "In Progress" },
+    completed:   { bg: T.greenL,  text: T.green,  border: "#86EFAC", label: "Completed"   },
+    cancelled:   { bg: "#FEF2F2", text: T.red,    border: "#FECACA", label: "Cancelled"   },
+  };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {visits.map((v, i) => {
+        const sc = statusCfg[v.status] ?? { bg: T.bg2, text: T.ink3, border: T.border, label: v.status || "—" };
+        return (
+          <div key={v._id ?? i} style={{ background: T.bg2, borderRadius: 10, padding: "12px 14px", border: `1px solid ${T.border}` }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 7 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <span style={{ fontWeight: 700, fontSize: 13, color: T.ink, fontFamily: "'DM Sans',sans-serif" }}>{v.visit_no}</span>
+                <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: sc.bg, color: sc.text, border: `1px solid ${sc.border}` }}>{sc.label}</span>
+              </div>
+              <span style={{ fontSize: 11, color: T.ink4, flexShrink: 0 }}>{fmtDate(v.visit_date)}</span>
+            </div>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: T.ink, marginBottom: 4 }}>{v.customer_name || "—"}</div>
+            {(v.city || v.address_line1) && (
+              <div style={{ fontSize: 11.5, color: T.ink3 }}>📍 {[v.address_line1, v.city].filter(Boolean).join(", ")}</div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1275,12 +1322,12 @@ export default function StaffMonitorPage() {
   const activeJobs     = staffList.reduce((a,s)=>a+(s.jobStats?.activeJobs??0),0);
 
   return (
-    <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif"}}>
+    <div style={{background:T.bg,fontFamily:"'Inter',system-ui,sans-serif"}}>
       <style>{CSS}</style>
       <SelfieLightbox src={lightbox} onClose={()=>setLightbox(null)} />
 
       {/* Header */}
-      <div style={{background:T.surface,borderBottom:`1px solid ${T.border}`,position:"sticky",top:0,zIndex:100,boxShadow:"0 1px 6px rgba(0,0,0,.04)"}}>
+      <div style={{background:T.surface,borderBottom:`1px solid ${T.border}`,boxShadow:"0 1px 6px rgba(0,0,0,.04)"}}>
         <div style={{maxWidth:1280,margin:"0 auto",padding:"0 16px"}}>
 
           {/* Top bar */}

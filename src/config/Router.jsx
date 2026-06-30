@@ -16,6 +16,7 @@ import AddProduct from "../pages/AddProduct";
 import SiteVisitDashboard from "../pages/Sitevisitdashboard";
 import PickupDashboard from "../pages/PickupDashboard";
 import StaffMonitorPage from "../pages/StaffMonitorPage";
+import StaffAdminPanel from "../pages/staff/StaffDetailDraver";
 
 
 const ProtectedRoute = ({ children, pageName }) => (
@@ -134,6 +135,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute pageName="Staff-monitor">
             <StaffMonitorPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "staff-admin",
+        element: (
+          <ProtectedRoute pageName="staff-admin">
+            <StaffAdminPanel />
           </ProtectedRoute>
         ),
       },

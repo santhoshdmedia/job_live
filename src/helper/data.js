@@ -129,6 +129,22 @@ export const MENU_DATA = [
     special: ["erection-panel"],
     for: ["super admin"],
   },
+  {
+    id: 20,
+    name: "Staff Monitor",
+    icon: ICON_HELPER.ADMIN_ICON,
+    to: "/Staff-monitor",
+    special: ["Staff-monitor"],
+    for: ["super admin"],
+  },
+  {
+    id: 22,
+    name: "Staff Management",
+    icon: ICON_HELPER.ADMIN_ICON,
+    to: "/staff-admin",
+    special: ["staff-admin"],
+    for: ["super admin"],
+  },
 ];
 
 export const GET_DASHBOARD_COUNTS = (name, allCounts, others) => {

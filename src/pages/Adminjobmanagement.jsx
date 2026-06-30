@@ -17,6 +17,9 @@ import {
 import CustomTable from "../components/CustomTable";
 import { ERROR_NOTIFICATION, SUCCESS_NOTIFICATION } from "../helper/notification_helper";
 import dayjs from "dayjs";
+import jsPDF from "jspdf";
+
+
 
 const { Option } = Select;
 const { TextArea } = Input;
@@ -113,6 +116,399 @@ const STATUS_CONFIG = {
   expired:     { label: "Expired",     color: "volcano",  icon: <ClockCircleOutlined /> },
   completed:   { label: "Completed",   color: "purple",   icon: <CheckCircleOutlined /> },
   converted:   { label: "Converted",   color: "geekblue", icon: <SwapOutlined /> },
+};
+
+// ─── Job Request PDF ──────────────────────────────────────────────────────────
+// ─── Job Request Image ─────────────────────────────────────────────────────
+const getItemRequestLine = (item) => {
+  const cat = item.item_category;
+  if (cat === "service_office") {
+    const qtyLabel =
+      item.office_type === "website" ? `${item.days || 0} day(s)` :
+      item.office_type === "social_media" ? `${(item.reels_count || 0)} reels + ${(item.post_count || 0)} posts` :
+      `${item.hours || 0} hr(s)`;
+    return { name: item.service_name || item.office_type || "Office Work", qty: qtyLabel, size: "", notes: item.notes || "" };
+  }
+  if (cat === "service_labour") {
+    const parts = [];
+    if (item.sq_ft > 0) parts.push(`${item.sq_ft} sq.ft`);
+    if (item.hours > 0) parts.push(`${item.hours} hr(s)`);
+    return { name: item.service_name || "Labour Work", qty: parts.join(" + ") || "—", size: "", notes: item.notes || "" };
+  }
+  const isSqFt = item.quantity_type === "sq.ft";
+  const size = isSqFt && item.width && item.height
+    ? `${item.width}×${item.height} ${item.size_unit} (${item.sq_ft} sq.ft)`
+    : isSqFt ? `${item.sq_ft || 0} sq.ft` : "";
+  return {
+    name: [item.product_name, item.variation].filter(Boolean).join(" - "),
+    qty: `${item.quantity || 0}${isSqFt ? "" : " pcs"}`,
+    size,
+    notes: item.notes || "",
+  };
+};
+
+const wrapText = (ctx, text, maxWidth) => {
+  const words = text.split(" ");
+  const lines = [];
+  let line = "";
+  words.forEach(word => {
+    const test = line ? `${line} ${word}` : word;
+    if (ctx.measureText(test).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = test;
+    }
+  });
+  if (line) lines.push(line);
+  return lines;
+};
+
+// ─── Canvas drawing helpers ─────────────────────────────────────────────────
+const roundRect = (ctx, x, y, w, h, r) => {
+  const rad = typeof r === "number" ? { tl: r, tr: r, br: r, bl: r } : r;
+  ctx.beginPath();
+  ctx.moveTo(x + rad.tl, y);
+  ctx.lineTo(x + w - rad.tr, y);
+  ctx.arcTo(x + w, y, x + w, y + rad.tr, rad.tr);
+  ctx.lineTo(x + w, y + h - rad.br);
+  ctx.arcTo(x + w, y + h, x + w - rad.br, y + h, rad.br);
+  ctx.lineTo(x + rad.bl, y + h);
+  ctx.arcTo(x, y + h, x, y + h - rad.bl, rad.bl);
+  ctx.lineTo(x, y + rad.tl);
+  ctx.arcTo(x, y, x + rad.tl, y, rad.tl);
+  ctx.closePath();
+};
+
+const drawPill = (ctx, text, x, y, { bg, color, font = "bold 11px Arial" }) => {
+  ctx.font = font;
+  const padX = 10, h = 22;
+  const w = ctx.measureText(text).width + padX * 2;
+  roundRect(ctx, x, y, w, h, h / 2);
+  ctx.fillStyle = bg;
+  ctx.fill();
+  ctx.fillStyle = color;
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, x + padX, y + h / 2 + 1);
+  ctx.textBaseline = "alphabetic";
+  return w;
+};
+
+// ─── Job Request Image (redesigned) ─────────────────────────────────────────
+const generateJobRequestImage = (job) => {
+  const width = 760;
+  const padding = 0;
+  const marginX = 36;
+  const contentWidth = width - marginX * 2 - 32; // inner card padding
+  const cardX = 28, cardPad = 28;
+  const items = job.cart_items || [];
+
+  // ── Measure (Pass 1) ──
+  const measureCanvas = document.createElement("canvas");
+  const mctx = measureCanvas.getContext("2d");
+
+  const HEADER_H = 110;
+  let y = HEADER_H + 28;        // start after header band
+  y += 30;                       // job no / delivery row
+  y += 36;                       // customer row
+  y += 30;                       // section label "Items"
+
+  const itemBlocks = items.map((item, idx) => {
+    const { name, qty, size, notes } = getItemRequestLine(item);
+    let h = 8;     // top padding inside row
+    h += 22;        // name + index
+    h += 20;        // qty/size meta line
+    let noteLines = [];
+    if (notes) {
+      mctx.font = "italic 12px Arial";
+      noteLines = wrapText(mctx, notes, contentWidth - 80);
+      h += noteLines.length * 16 + 6;
+    }
+    h += 14; // bottom padding inside row
+    return { idx, name, qty, size, notes, noteLines, height: h };
+  });
+
+  const itemsHeight = itemBlocks.reduce((acc, b) => acc + b.height + 10, 0); // +10 gap between rows
+  y += itemsHeight;
+  y += 70; // footer area
+  const totalHeight = Math.max(y + 24, 420);
+
+  // ── Draw (Pass 2) ──
+  const canvas = document.createElement("canvas");
+  const scale = 2;
+  canvas.width = width * scale;
+  canvas.height = totalHeight * scale;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(scale, scale);
+
+  // Page background (soft gray)
+  ctx.fillStyle = "#f1f5f9";
+  ctx.fillRect(0, 0, width, totalHeight);
+
+  // Card background with shadow
+  const cardW = width - cardX * 2;
+  const cardH = totalHeight - cardX * 2;
+  ctx.save();
+  ctx.shadowColor = "rgba(15,23,42,0.12)";
+  ctx.shadowBlur = 24;
+  ctx.shadowOffsetY = 8;
+  roundRect(ctx, cardX, cardX, cardW, cardH, 16);
+  ctx.fillStyle = "#ffffff";
+  ctx.fill();
+  ctx.restore();
+
+  // ── Header band (gradient) ──
+  const headerGrad = ctx.createLinearGradient(cardX, cardX, cardX + cardW, cardX);
+  headerGrad.addColorStop(0, "#4f46e5");
+  headerGrad.addColorStop(1, "#7c3aed");
+  ctx.save();
+  roundRect(ctx, cardX, cardX, cardW, HEADER_H, { tl: 16, tr: 16, br: 0, bl: 0 });
+  ctx.clip();
+  ctx.fillStyle = headerGrad;
+  ctx.fillRect(cardX, cardX, cardW, HEADER_H);
+  // decorative circles
+  ctx.beginPath();
+  ctx.arc(cardX + cardW - 40, cardX + HEADER_H - 10, 70, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(255,255,255,0.07)";
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cardX + cardW - 110, cardX + 10, 40, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(255,255,255,0.06)";
+  ctx.fill();
+  ctx.restore();
+
+  // Header text
+  let hy = cardX + 38;
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 24px Arial";
+  ctx.fillText("Job Request", marginX, hy);
+
+  ctx.font = "12px Arial";
+  ctx.fillStyle = "rgba(255,255,255,0.85)";
+  ctx.fillText("Production / Workshop Slip", marginX, hy + 20);
+
+  // Job No pill on right of header
+  ctx.font = "bold 16px Arial";
+  const jobNoText = job.job_no || "—";
+  const jobNoW = ctx.measureText(jobNoText).width + 24;
+  const pillX = cardX + cardW - jobNoW - 28;
+  roundRect(ctx, pillX, cardX + 26, jobNoW, 30, 15);
+  ctx.fillStyle = "rgba(255,255,255,0.18)";
+  ctx.fill();
+  ctx.fillStyle = "#ffffff";
+  ctx.textBaseline = "middle";
+  ctx.fillText(jobNoText, pillX + 12, cardX + 26 + 15 + 1);
+  ctx.textBaseline = "alphabetic";
+
+  // ── Body content ──
+  let cy = cardX + HEADER_H + 30;
+
+  // Customer + Delivery info row (two columns)
+  const colW = (cardW - cardPad * 2) / 2;
+  const col1X = cardX + cardPad;
+  const col2X = col1X + colW;
+
+  const drawInfoBlock = (x, label, value, valueColor = "#0f172a") => {
+    ctx.font = "bold 10px Arial";
+    ctx.fillStyle = "#94a3b8";
+    ctx.fillText(label.toUpperCase(), x, cy);
+    ctx.font = "bold 15px Arial";
+    ctx.fillStyle = valueColor;
+    ctx.fillText(value, x, cy + 20);
+  };
+
+  drawInfoBlock(col1X, "Customer", job.customer_name || "—");
+  drawInfoBlock(
+    col2X,
+    "Delivery",
+    job.estimated_delivery_date ? dayjs(job.estimated_delivery_date).format("DD MMM YYYY, hh:mm A") : "—",
+    job.estimated_delivery_date ? "#dc2626" : "#94a3b8"
+  );
+  cy += 46;
+
+  // Divider
+  ctx.strokeStyle = "#e2e8f0";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(col1X, cy);
+  ctx.lineTo(cardX + cardW - cardPad, cy);
+  ctx.stroke();
+  cy += 26;
+
+  // Items section label
+  ctx.font = "bold 11px Arial";
+  ctx.fillStyle = "#6366f1";
+  ctx.fillText(`ITEMS (${items.length})`, col1X, cy);
+  cy += 16;
+
+  if (!itemBlocks.length) {
+    ctx.font = "13px Arial";
+    ctx.fillStyle = "#94a3b8";
+    ctx.fillText("No items in this job.", col1X, cy + 10);
+    cy += 30;
+  }
+
+  const rowW = cardW - cardPad * 2;
+  itemBlocks.forEach((b, i) => {
+    const rowY = cy;
+    const rowH = b.height;
+
+    // Alternating row background
+    if (i % 2 === 0) {
+      roundRect(ctx, col1X, rowY, rowW, rowH, 10);
+      ctx.fillStyle = "#f8fafc";
+      ctx.fill();
+    }
+
+    let iy = rowY + 8 + 14;
+
+    // Index badge
+    const badgeR = 11;
+    ctx.beginPath();
+    ctx.arc(col1X + 16, iy - 4, badgeR, 0, Math.PI * 2);
+    ctx.fillStyle = "#eef2ff";
+    ctx.fill();
+    ctx.font = "bold 11px Arial";
+    ctx.fillStyle = "#4f46e5";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(String(b.idx + 1), col1X + 16, iy - 3);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+
+    // Item name
+    ctx.font = "bold 14px Arial";
+    ctx.fillStyle = "#0f172a";
+    ctx.fillText(b.name || "—", col1X + 36, iy);
+
+    // Qty pill (right aligned)
+    ctx.font = "bold 11px Arial";
+    const qtyText = b.qty || "—";
+    const qtyW = ctx.measureText(qtyText).width + 20;
+    const qtyX = col1X + rowW - qtyW - 8;
+    roundRect(ctx, qtyX, iy - 16, qtyW, 22, 11);
+    ctx.fillStyle = "#ecfdf5";
+    ctx.fill();
+    ctx.fillStyle = "#059669";
+    ctx.textBaseline = "middle";
+    ctx.fillText(qtyText, qtyX + 10, iy - 5);
+    ctx.textBaseline = "alphabetic";
+
+    iy += 20;
+
+    // Size meta
+    if (b.size) {
+      ctx.font = "12px Arial";
+      ctx.fillStyle = "#64748b";
+      ctx.fillText(`📐 ${b.size}`, col1X + 36, iy);
+      iy += 18;
+    }
+
+    // Notes
+    if (b.noteLines.length) {
+      ctx.font = "italic 12px Arial";
+      ctx.fillStyle = "#94a3b8";
+      b.noteLines.forEach((line, li) => {
+        ctx.fillText(li === 0 ? `✎ ${line}` : `   ${line}`, col1X + 36, iy);
+        iy += 16;
+      });
+    }
+
+    cy += rowH + 10;
+  });
+
+  // ── Footer ──
+  cy += 6;
+  ctx.strokeStyle = "#e2e8f0";
+  ctx.beginPath();
+  ctx.moveTo(col1X, cy);
+  ctx.lineTo(cardX + cardW - cardPad, cy);
+  ctx.stroke();
+  cy += 22;
+
+  ctx.font = "10px Arial";
+  ctx.fillStyle = "#94a3b8";
+  ctx.fillText(`Generated ${dayjs().format("DD MMM YYYY, hh:mm A")}`, col1X, cy);
+
+  ctx.textAlign = "right";
+  ctx.fillText("Internal use only — no pricing shown", cardX + cardW - cardPad, cy);
+  ctx.textAlign = "left";
+
+  // ── Download ──
+  canvas.toBlob((blob) => {
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Job-Request-${job.job_no || "job"}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, "image/png");
+};
+
+const generateJobRequestPDF = (job) => {
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const marginX = 40;
+  let y = 50;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.text("Job Request", marginX, y);
+  y += 28;
+
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "normal");
+  doc.text(`Job No: ${job.job_no || "—"}`, marginX, y);
+  y += 18;
+  doc.text(`Customer: ${job.customer_name || "—"}`, marginX, y);
+  y += 24;
+
+  doc.setFont("helvetica", "bold");
+  doc.text("Items", marginX, y);
+  y += 8;
+  doc.setLineWidth(0.5);
+  doc.line(marginX, y, 555, y);
+  y += 16;
+
+  const items = job.cart_items || [];
+  if (!items.length) {
+    doc.setFont("helvetica", "normal");
+    doc.text("No items.", marginX, y);
+    y += 16;
+  }
+
+  items.forEach((item, idx) => {
+    const { name, qty, size, notes } = getItemRequestLine(item);
+
+    if (y > 760) { doc.addPage(); y = 50; }
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text(`${idx + 1}. ${name || "—"}`, marginX, y);
+    y += 16;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text(`   Qty: ${qty || "—"}`, marginX, y);
+    y += 14;
+
+    if (size) {
+      doc.text(`   Size: ${size}`, marginX, y);
+      y += 14;
+    }
+
+    if (notes) {
+      const noteLines = doc.splitTextToSize(`   Notes: ${notes}`, 500);
+      doc.text(noteLines, marginX, y);
+      y += 14 * noteLines.length;
+    }
+
+    y += 8;
+  });
+
+  doc.save(`Job-Request-${job.job_no || "job"}.pdf`);
 };
 
 const WORKFLOW_STAGES = [
@@ -1272,21 +1668,24 @@ const AdminJobManagement = () => {
         );
       },
     },
-    {
-      title: "", width: isMobile ? 90 : 190,
-      render: (_, record) => (
-        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-          <Tooltip title="View Job"><Button icon={<EyeOutlined />} size="small" style={{ color: "#6b7280", borderColor: "#e5e7eb" }} onClick={() => { setViewJob(record); setViewModal(true); }}>{!isMobile && "View"}</Button></Tooltip>
-          <Tooltip title="Edit Job"><Button icon={<EditOutlined />} size="small" style={{ color: "#2563eb", borderColor: "#bfdbfe" }} onClick={() => openEditModal(record)}>{!isMobile && "Edit"}</Button></Tooltip>
-          {parseFloat(record.balance_amount || 0) > 0 && (
-            <Tooltip title="Collect Payment">
-              <Button icon={<WalletOutlined />} size="small" style={{ color: "#d97706", borderColor: "#fde68a" }} onClick={() => openCollectPaymentModal(record)}>{!isMobile && "Collect"}</Button>
-            </Tooltip>
-          )}
-          {record.job_status === "draft" && <Tooltip title="Approve & Assign"><Button type="primary" icon={<CheckCircleOutlined />} size="small" style={{ background: "#16a34a", borderColor: "#16a34a" }} onClick={() => openApproveModal(record)}>{!isMobile && "Approve"}</Button></Tooltip>}
-        </div>
-      ),
-    },
+{
+  title: "", width: isMobile ? 90 : 230,
+  render: (_, record) => (
+    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+      <Tooltip title="View Job"><Button icon={<EyeOutlined />} size="small" style={{ color: "#6b7280", borderColor: "#e5e7eb" }} onClick={() => { setViewJob(record); setViewModal(true); }}>{!isMobile && "View"}</Button></Tooltip>
+      <Tooltip title="Edit Job"><Button icon={<EditOutlined />} size="small" style={{ color: "#2563eb", borderColor: "#bfdbfe" }} onClick={() => openEditModal(record)}>{!isMobile && "Edit"}</Button></Tooltip>
+      <Tooltip title="Download Job Request as Image">
+        <Button icon={<FileTextOutlined />} size="small" style={{ color: "#7c3aed", borderColor: "#ddd6fe" }} onClick={() => generateJobRequestImage(record)}>{!isMobile && "Job Request"}</Button>
+      </Tooltip>
+      {parseFloat(record.balance_amount || 0) > 0 && (
+        <Tooltip title="Collect Payment">
+          <Button icon={<WalletOutlined />} size="small" style={{ color: "#d97706", borderColor: "#fde68a" }} onClick={() => openCollectPaymentModal(record)}>{!isMobile && "Collect"}</Button>
+        </Tooltip>
+      )}
+      {record.job_status === "draft" && <Tooltip title="Approve & Assign"><Button type="primary" icon={<CheckCircleOutlined />} size="small" style={{ background: "#16a34a", borderColor: "#16a34a" }} onClick={() => openApproveModal(record)}>{!isMobile && "Approve"}</Button></Tooltip>}
+    </div>
+  ),
+},
   ];
 
   // ─────────────────────────────────────────────────────────────────────────
