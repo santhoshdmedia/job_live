@@ -431,7 +431,7 @@ const generateJobRequestImage = (job) => {
   ctx.fillText(`Generated ${dayjs().format("DD MMM YYYY, hh:mm A")}`, col1X, cy);
 
   ctx.textAlign = "right";
-  ctx.fillText("Internal use only — no pricing shown", cardX + cardW - cardPad, cy);
+  ctx.fillText("Internal use only ", cardX + cardW - cardPad, cy);
   ctx.textAlign = "left";
 
   // ── Download ──

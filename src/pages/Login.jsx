@@ -14,8 +14,13 @@ import { useDispatch } from "react-redux";
 import { isLoginSuccess } from "../redux/slices/authSlice";
 import { IMAGE_HELPER } from "../helper/imagehelper";
 
-// ─── Roles that are allowed to bypass the selfie check-in ────────────────────
-const BYPASS_ROLES = ["super_admin", "super admin", "admin"];
+// Session-only key used to hold the token WHILE the selfie/location gate is
+// in progress. It is intentionally never written to persistent auth storage
+// (admintoken) until the selfie has uploaded AND location is confirmed —
+// this is what stops a page refresh mid-flow from silently logging someone
+// in. If the tab is refreshed before that happens, this key is simply
+// cleared and the person is dropped back on the login form.
+const PENDING_AUTH_KEY = "pending_selfie_auth";
 
 // ─── Staff monitor API ────────────────────────────────────────────────────────
 const staffHttp = axios.create({
@@ -81,11 +86,16 @@ const uploadSelfie = async (blob, token) => {
 /**
  * Props:
  *   open          {boolean}
- *   onComplete    {(selfieUrl: string, coords: object|null) => void}
- *   onSkip        {() => void}   — only rendered when canSkip = true
- *   canSkip       {boolean}      — true only for super_admin / admin roles
+ *   token         {string}   — auth token to use for the upload call
+ *   onComplete    {(selfieUrl: string, coords: object) => void}
+ *
+ * Both the selfie photo AND the device location are mandatory for every
+ * role. There is no skip path — onComplete only fires once a selfie has
+ * been uploaded successfully AND a location fix has been obtained. The
+ * caller is responsible for NOT persisting real auth (admintoken) until
+ * onComplete fires, so a refresh mid-flow doesn't grant access.
  */
-const SelfieModal = ({ open, onComplete, onSkip, canSkip }) => {
+const SelfieModal = ({ open, token, onComplete }) => {
   const videoRef  = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
@@ -95,10 +105,35 @@ const SelfieModal = ({ open, onComplete, onSkip, canSkip }) => {
   const [capturedBlob, setCapturedBlob] = useState(null);
   const [previewUrl, setPreviewUrl]     = useState("");
   const [location, setLocation]         = useState(null);
-  const [locStatus, setLocStatus]       = useState("idle"); // "idle"|"fetching"|"ok"|"denied"
+  const [locStatus, setLocStatus]       = useState("idle"); // "idle"|"fetching"|"ok"|"denied"|"error"
   const [camError, setCamError]         = useState(false);
   const [uploadError, setUploadError]   = useState("");
   const [retryCount, setRetryCount]     = useState(0);
+
+  // ── Location fetch — reusable so it can be triggered on open AND via
+  //    the manual refresh button when the first attempt fails ───────────
+  const fetchLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      setLocStatus("error");
+      return;
+    }
+    setLocStatus("fetching");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocation({
+          latitude:  pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy:  pos.coords.accuracy,
+        });
+        setLocStatus("ok");
+      },
+      (err) => {
+        // err.code: 1 = denied, 2 = position unavailable, 3 = timeout
+        setLocStatus(err?.code === 1 ? "denied" : "error");
+      },
+      { timeout: 10000, enableHighAccuracy: true },
+    );
+  }, []);
 
   // ── Reset & start camera when modal opens ───────────────────────────────
   useEffect(() => {
@@ -128,24 +163,12 @@ const SelfieModal = ({ open, onComplete, onSkip, canSkip }) => {
     startCam();
 
     // Fetch location immediately
-    setLocStatus("fetching");
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLocation({
-          latitude:  pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          accuracy:  pos.coords.accuracy,
-        });
-        setLocStatus("ok");
-      },
-      () => setLocStatus("denied"),
-      { timeout: 10000 },
-    );
+    fetchLocation();
 
     return () => {
       streamRef.current?.getTracks().forEach((t) => t.stop());
     };
-  }, [open]);
+  }, [open, fetchLocation]);
 
   const stopCam = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -188,23 +211,20 @@ const SelfieModal = ({ open, onComplete, onSkip, canSkip }) => {
     }
   };
 
+  const locationReady = locStatus === "ok" && !!location;
+
   /**
-   * Core submit — uploads selfie, calls onComplete on success,
-   * or sets upload_error step on failure (so user can retry).
+   * Core submit — requires BOTH a captured selfie and a valid location fix.
+   * Uploads selfie, calls onComplete on success, or sets upload_error step
+   * on failure (so user can retry). Login never proceeds without both.
    */
   const submit = async () => {
+    if (!capturedBlob || !locationReady) return; // guarded — button is disabled anyway
+
     setStep("uploading");
     setUploadError("");
 
-    const token = localStorage.getItem(admintoken) || "";
-
-    if (!capturedBlob) {
-      // No blob (shouldn't happen in normal flow) — complete without selfie
-      await onComplete("", location);
-      return;
-    }
-
-    const { url, error } = await uploadSelfie(capturedBlob, token);
+    const { url, error } = await uploadSelfie(capturedBlob, token || "");
 
     if (error) {
       // Upload failed — show error screen with retry option
@@ -214,7 +234,7 @@ const SelfieModal = ({ open, onComplete, onSkip, canSkip }) => {
       return;
     }
 
-    // ✅ Upload succeeded — record session then navigate
+    // ✅ Upload succeeded and location is ok — record session then navigate
     await onComplete(url, location);
   };
 
@@ -234,8 +254,18 @@ const SelfieModal = ({ open, onComplete, onSkip, canSkip }) => {
     ok:       location
       ? `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`
       : "Located",
-    denied:   "Location not available",
+    denied:   "Location permission denied",
+    error:    "Location unavailable",
   }[locStatus];
+
+  const locColor =
+    locStatus === "ok"
+      ? "#86efac"
+      : locStatus === "denied" || locStatus === "error"
+      ? "#fca5a5"
+      : "#fde68a";
+
+  const showLocationRefresh = locStatus !== "ok" && locStatus !== "fetching";
 
   return (
     <Modal
@@ -265,21 +295,19 @@ const SelfieModal = ({ open, onComplete, onSkip, canSkip }) => {
           <p className="text-white/70 text-xs">
             {step === "upload_error"
               ? "Your selfie could not be uploaded — please retry"
-              : canSkip
-              ? "Selfie is recommended — you may skip as admin"
-              : "Selfie is required to complete sign-in"}
+              : "Selfie and location are both required to sign in"}
           </p>
         </div>
       </div>
 
       <div className="p-5 bg-white flex flex-col gap-4">
 
-        {/* ── Mandatory badge (for non-admin staff) ────────────────────── */}
-        {!canSkip && step !== "upload_error" && (
+        {/* ── Mandatory badge ─────────────────────────────────────────── */}
+        {step !== "upload_error" && (
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200">
             <span className="text-amber-500 text-base">🔒</span>
             <p className="text-xs text-amber-700 font-medium">
-              Selfie capture is mandatory for your role. Please take a photo to continue.
+              Selfie capture and location access are mandatory. You cannot sign in without both.
             </p>
           </div>
         )}
@@ -332,30 +360,27 @@ const SelfieModal = ({ open, onComplete, onSkip, canSkip }) => {
               </button>
               <button
                 onClick={handleRetry}
-                className="flex-[2] h-11 rounded-xl text-white text-sm font-semibold transition-all active:scale-95"
+                disabled={!locationReady}
+                className="flex-[2] h-11 rounded-xl text-white text-sm font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ background: "linear-gradient(135deg, #7c6ef7, #9b8df9)" }}
               >
                 🔄 Retry Upload
               </button>
             </div>
 
-            {/* Admin-only: skip even after error */}
-            {canSkip && (
-              <button
-                onClick={onSkip}
-                className="w-full h-10 rounded-xl border border-gray-200 text-gray-400 text-xs font-medium hover:bg-gray-50 transition-colors"
-              >
-                Skip and continue without selfie
-              </button>
-            )}
-
-            {/* Non-admin hard gate message */}
-            {!canSkip && (
-              <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-orange-50 border border-orange-200">
-                <span className="text-orange-500">⚠️</span>
+            {/* Location gate — even on the error screen, location is required */}
+            {!locationReady && (
+              <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-orange-50 border border-orange-200">
                 <p className="text-xs text-orange-700">
-                  You must upload a selfie to sign in. Please check your connection and retry.
+                  Location is still required before you can continue.
                 </p>
+                <button
+                  onClick={fetchLocation}
+                  disabled={locStatus === "fetching"}
+                  className="shrink-0 px-3 py-1.5 rounded-lg bg-white border border-orange-300 text-orange-600 text-xs font-semibold hover:bg-orange-100 transition-colors disabled:opacity-50"
+                >
+                  {locStatus === "fetching" ? "Locating…" : "🔄 Get Location"}
+                </button>
               </div>
             )}
           </div>
@@ -384,9 +409,7 @@ const SelfieModal = ({ open, onComplete, onSkip, canSkip }) => {
                   <p className="text-sm text-center px-4">
                     Camera access denied.
                     <br />
-                    {canSkip
-                      ? "You can skip since you're an admin."
-                      : "Please allow camera access and refresh the page."}
+                    Please allow camera access and refresh the page to continue.
                   </p>
                 </div>
               )}
@@ -407,7 +430,7 @@ const SelfieModal = ({ open, onComplete, onSkip, canSkip }) => {
                 </div>
               )}
 
-              {/* Location pill overlay */}
+              {/* Location pill overlay — with a refresh action when not ok */}
               {step !== "uploading" && (
                 <div className="absolute bottom-3 left-3 right-3">
                   <div
@@ -415,12 +438,7 @@ const SelfieModal = ({ open, onComplete, onSkip, canSkip }) => {
                     style={{
                       background:     "rgba(0,0,0,0.55)",
                       backdropFilter: "blur(6px)",
-                      color:
-                        locStatus === "ok"
-                          ? "#86efac"
-                          : locStatus === "denied"
-                          ? "#fca5a5"
-                          : "#fde68a",
+                      color: locColor,
                     }}
                   >
                     <span>
@@ -428,11 +446,19 @@ const SelfieModal = ({ open, onComplete, onSkip, canSkip }) => {
                         ? "⏳"
                         : locStatus === "ok"
                         ? "📍"
-                        : locStatus === "denied"
+                        : locStatus === "denied" || locStatus === "error"
                         ? "⚠️"
                         : "⏳"}
                     </span>
-                    <span className="truncate">{locLabel}</span>
+                    <span className="truncate flex-1">{locLabel}</span>
+                    {showLocationRefresh && (
+                      <button
+                        onClick={fetchLocation}
+                        className="shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/15 hover:bg-white/25 text-white transition-colors"
+                      >
+                        🔄 <span className="hidden xs:inline">Retry</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
@@ -441,47 +467,44 @@ const SelfieModal = ({ open, onComplete, onSkip, canSkip }) => {
             {/* Hidden canvas for capture */}
             <canvas ref={canvasRef} className="hidden" />
 
+            {/* Inline hint when location isn't ready yet — helps explain why
+                the confirm button is disabled */}
+            {step === "preview" && !locationReady && (
+              <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-orange-50 border border-orange-200">
+                <p className="text-xs text-orange-700">
+                  {locStatus === "fetching"
+                    ? "Getting your location…"
+                    : "Location is required. Please allow location access and try again."}
+                </p>
+                {locStatus !== "fetching" && (
+                  <button
+                    onClick={fetchLocation}
+                    className="shrink-0 px-3 py-1.5 rounded-lg bg-white border border-orange-300 text-orange-600 text-xs font-semibold hover:bg-orange-100 transition-colors"
+                  >
+                    🔄 Get Location
+                  </button>
+                )}
+              </div>
+            )}
+
             {/* ── Action buttons ──────────────────────────────────────── */}
             <div className="flex gap-3">
-              {step === "camera" && (
-                <>
-                  {canSkip && (
-                    <button
-                      onClick={onSkip}
-                      className="flex-1 h-11 rounded-xl border border-gray-200 text-gray-500 text-sm font-medium hover:bg-gray-50 transition-colors"
-                    >
-                      Skip
-                    </button>
-                  )}
+              {step === "camera" && !camError && (
+                <button
+                  onClick={capture}
+                  className="flex-1 h-11 rounded-xl text-white text-sm font-semibold transition-all active:scale-95"
+                  style={{ background: "linear-gradient(135deg, #7c6ef7, #9b8df9)" }}
+                >
+                  📸&nbsp; Capture
+                </button>
+              )}
 
-                  {!camError && (
-                    <button
-                      onClick={capture}
-                      className="flex-[2] h-11 rounded-xl text-white text-sm font-semibold transition-all active:scale-95"
-                      style={{ background: "linear-gradient(135deg, #7c6ef7, #9b8df9)" }}
-                    >
-                      📸&nbsp; Capture
-                    </button>
-                  )}
-
-                  {camError && canSkip && (
-                    <button
-                      onClick={onSkip}
-                      className="flex-[2] h-11 rounded-xl text-white text-sm font-semibold transition-all active:scale-95"
-                      style={{ background: "linear-gradient(135deg, #7c6ef7, #9b8df9)" }}
-                    >
-                      Continue without selfie
-                    </button>
-                  )}
-
-                  {camError && !canSkip && (
-                    <div className="flex-[2] h-11 rounded-xl flex items-center justify-center bg-red-50 border border-red-200">
-                      <span className="text-xs text-red-500 font-medium text-center px-2">
-                        Enable camera to continue
-                      </span>
-                    </div>
-                  )}
-                </>
+              {step === "camera" && camError && (
+                <div className="flex-1 h-11 rounded-xl flex items-center justify-center bg-red-50 border border-red-200">
+                  <span className="text-xs text-red-500 font-medium text-center px-2">
+                    Enable camera to continue
+                  </span>
+                </div>
               )}
 
               {step === "preview" && (
@@ -494,10 +517,12 @@ const SelfieModal = ({ open, onComplete, onSkip, canSkip }) => {
                   </button>
                   <button
                     onClick={submit}
-                    className="flex-[2] h-11 rounded-xl text-white text-sm font-semibold transition-all active:scale-95"
+                    disabled={!locationReady}
+                    title={!locationReady ? "Waiting for location…" : undefined}
+                    className="flex-[2] h-11 rounded-xl text-white text-sm font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{ background: "linear-gradient(135deg, #7c6ef7, #9b8df9)" }}
                   >
-                    ✓&nbsp; Confirm & Check In
+                    {locationReady ? "✓  Confirm & Check In" : "Waiting for location…"}
                   </button>
                 </>
               )}
@@ -517,7 +542,7 @@ const Login = () => {
 
   const [loading, setLoading]         = useState(false);
   const [selfieOpen, setSelfieOpen]   = useState(false);
-  const [pendingAuth, setPendingAuth] = useState(null); // { userData, token, staffId, canSkip }
+  const [pendingAuth, setPendingAuth] = useState(null); // { userData, token, staffId }
 
   const onFinish = async (values) => {
     try {
@@ -533,21 +558,26 @@ const Login = () => {
 
       const token   = _.get(userData, "token", "");
       const staffId = _.get(userData, "_id", "");
-      const role    = _.get(userData, "role", "");
 
-      // Determine if this role can bypass selfie
-      const canSkip = BYPASS_ROLES.includes(role?.toLowerCase?.() ?? role);
-
-      // Persist auth immediately so upload API calls can use the token
-      dispatch(isLoginSuccess(userData));
-      localStorage.setItem(admintoken, token);
-      localStorage.setItem("userprofile", JSON.stringify(userData));
+      // IMPORTANT: do NOT persist real auth (admintoken / redux / userprofile)
+      // yet. Credentials are correct, but sign-in isn't complete until the
+      // selfie + location gate passes. We stash just enough in sessionStorage
+      // to survive an accidental refresh while the modal is open — if the
+      // user refreshes before finishing the gate, this pending record is
+      // discarded (see the mount effect below) and they land back on the
+      // plain login form instead of being auto-logged-in.
+      sessionStorage.setItem(
+        PENDING_AUTH_KEY,
+        JSON.stringify({ userData, token, staffId }),
+      );
 
       SUCCESS_NOTIFICATION(result);
       setLoading(false);
 
-      // Show selfie modal — navigation is blocked until selfie upload succeeds
-      setPendingAuth({ userData, token, staffId, canSkip });
+      // Show selfie + location modal — navigation and the real login are
+      // blocked until BOTH the selfie upload succeeds AND a location fix has
+      // been obtained. There is no skip path for any role.
+      setPendingAuth({ userData, token, staffId });
       setSelfieOpen(true);
     } catch (err) {
       console.error(err);
@@ -557,8 +587,8 @@ const Login = () => {
   };
 
   /**
-   * Navigate to dashboard — only called AFTER selfie upload has succeeded
-   * (or the user is an admin who clicked Skip).
+   * Navigate to dashboard — only called AFTER selfie upload + location
+   * have both succeeded.
    */
   const finishLogin = useCallback(() => {
     setSelfieOpen(false);
@@ -570,13 +600,23 @@ const Login = () => {
   }, [navigate, form]);
 
   /**
-   * Called by SelfieModal ONLY when upload has succeeded.
-   * selfieUrl will be a valid CDN URL at this point.
+   * Called by SelfieModal ONLY when upload has succeeded AND location is ok.
+   * selfieUrl will be a valid CDN URL and coords will be a valid object.
+   * This is the ONLY place real auth gets persisted — login is not
+   * considered complete until this fires.
    */
   const handleSelfieComplete = useCallback(
     async (selfieUrl, coords) => {
+      if (!pendingAuth) return;
+
+      // Now that the gate has passed, persist the real session.
+      dispatch(isLoginSuccess(pendingAuth.userData));
+      localStorage.setItem(admintoken, pendingAuth.token);
+      localStorage.setItem("userprofile", JSON.stringify(pendingAuth.userData));
+      sessionStorage.removeItem(PENDING_AUTH_KEY);
+
       // Record the session (fire-and-forget — failure won't block navigation)
-      if (pendingAuth?.staffId) {
+      if (pendingAuth.staffId) {
         await recordInTime(
           pendingAuth.staffId,
           pendingAuth.token,
@@ -584,26 +624,27 @@ const Login = () => {
           coords,
         );
       }
-      // Navigate only after upload is confirmed
+      // Navigate only after upload + location are confirmed
       finishLogin();
     },
-    [pendingAuth, finishLogin],
+    [pendingAuth, finishLogin, dispatch],
   );
 
-  /**
-   * Called only by super_admin / admin who pressed Skip.
-   * Records an empty session so history stays consistent.
-   */
-  const handleSelfieSkip = useCallback(async () => {
-    if (pendingAuth?.staffId) {
-      await recordInTime(pendingAuth.staffId, pendingAuth.token, "", null);
-    }
-    finishLogin();
-  }, [pendingAuth, finishLogin]);
-
-  // Already logged in → redirect
+  // On mount:
+  //  - If real auth already exists (admintoken), the user is genuinely
+  //    logged in → send them to the dashboard.
+  //  - If a pending (not-yet-completed) selfie/location auth record is
+  //    sitting in sessionStorage — meaning the tab was refreshed while the
+  //    selfie modal was open — discard it. Real auth was never written, so
+  //    the user simply stays on the plain login form and must sign in again.
   useEffect(() => {
-    if (localStorage.getItem(admintoken)) navigate("/dashboard");
+    if (localStorage.getItem(admintoken)) {
+      navigate("/dashboard");
+      return;
+    }
+    if (sessionStorage.getItem(PENDING_AUTH_KEY)) {
+      sessionStorage.removeItem(PENDING_AUTH_KEY);
+    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -760,9 +801,8 @@ const Login = () => {
       {/* ── Selfie Modal ─────────────────────────────────────────────────────── */}
       <SelfieModal
         open={selfieOpen}
+        token={pendingAuth?.token}
         onComplete={handleSelfieComplete}
-        onSkip={handleSelfieSkip}
-        canSkip={pendingAuth?.canSkip ?? false}
       />
 
       <style>{`
