@@ -487,7 +487,7 @@ function StaffModal({ open, onClose, onSaved, editData, toast }) {
   };
 
   const handleSubmit = async () => {
-    if (!form.name.trim() || !form.email.trim() || !form.phone || !form.role)
+    if (!form.name.trim() || !form.email.trim() )
       return toast("Fill all required fields", "warn");
     if (!isEdit && !form.password.trim())
       return toast("Password is required for new staff", "warn");

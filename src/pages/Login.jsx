@@ -41,24 +41,39 @@ const recordInTime = async (staffId, token, selfieUrl = "", coords = null) => {
     );
   } catch (err) {
     console.warn("[recordInTime] Could not record in-time:", err?.message);
+    // Don't throw — session record failure shouldn't block login
   }
 };
 
 // ─── Upload selfie blob to image upload endpoint ──────────────────────────────
+/**
+ * Returns { url: string, error: string|null }
+ * Never throws — errors are returned so the UI can show a retry.
+ */
 const uploadSelfie = async (blob, token) => {
   try {
     const formData = new FormData();
     formData.append("image", blob, "selfie.jpg");
-    const res = await axios.post("https://api.dmedia.in/api/upload_images", formData, {
-      headers: {
-        "Content-Type": "multipart/form-data",
-        Authorization: `Bearer ${token}`,
+    const res = await axios.post(
+      "https://api.dmedia.in/api/upload_images",
+      formData,
+      {
+        headers: {
+          "Content-Type": "multipart/form-data",
+          Authorization: `Bearer ${token}`,
+        },
+        timeout: 15000,
       },
-    });
-    return _.get(res, "data.data.url", "");
+    );
+    const url = _.get(res, "data.data.url", "");
+    if (!url) return { url: "", error: "Upload succeeded but no URL was returned." };
+    return { url, error: null };
   } catch (err) {
-    console.warn("[uploadSelfie] Upload failed:", err?.message);
-    return "";
+    const msg =
+      err?.response?.data?.message ||
+      err?.message ||
+      "Selfie upload failed. Please try again.";
+    return { url: "", error: msg };
   }
 };
 
@@ -75,22 +90,28 @@ const SelfieModal = ({ open, onComplete, onSkip, canSkip }) => {
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
 
-  const [step, setStep]                 = useState("camera"); // "camera" | "preview" | "uploading"
+  // step: "camera" | "preview" | "uploading" | "upload_error"
+  const [step, setStep]                 = useState("camera");
   const [capturedBlob, setCapturedBlob] = useState(null);
   const [previewUrl, setPreviewUrl]     = useState("");
   const [location, setLocation]         = useState(null);
   const [locStatus, setLocStatus]       = useState("idle"); // "idle"|"fetching"|"ok"|"denied"
   const [camError, setCamError]         = useState(false);
+  const [uploadError, setUploadError]   = useState("");
+  const [retryCount, setRetryCount]     = useState(0);
 
-  // Start webcam when modal opens
+  // ── Reset & start camera when modal opens ───────────────────────────────
   useEffect(() => {
     if (!open) return;
+
     setStep("camera");
     setCapturedBlob(null);
     setPreviewUrl("");
     setLocation(null);
     setLocStatus("idle");
     setCamError(false);
+    setUploadError("");
+    setRetryCount(0);
 
     const startCam = async () => {
       try {
@@ -154,6 +175,7 @@ const SelfieModal = ({ open, onComplete, onSkip, canSkip }) => {
     setStep("camera");
     setCapturedBlob(null);
     setPreviewUrl("");
+    setUploadError("");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
@@ -166,11 +188,44 @@ const SelfieModal = ({ open, onComplete, onSkip, canSkip }) => {
     }
   };
 
+  /**
+   * Core submit — uploads selfie, calls onComplete on success,
+   * or sets upload_error step on failure (so user can retry).
+   */
   const submit = async () => {
     setStep("uploading");
-    const token     = localStorage.getItem(admintoken) || "";
-    const selfieUrl = capturedBlob ? await uploadSelfie(capturedBlob, token) : "";
-    onComplete(selfieUrl, location);
+    setUploadError("");
+
+    const token = localStorage.getItem(admintoken) || "";
+
+    if (!capturedBlob) {
+      // No blob (shouldn't happen in normal flow) — complete without selfie
+      await onComplete("", location);
+      return;
+    }
+
+    const { url, error } = await uploadSelfie(capturedBlob, token);
+
+    if (error) {
+      // Upload failed — show error screen with retry option
+      setUploadError(error);
+      setStep("upload_error");
+      setRetryCount((c) => c + 1);
+      return;
+    }
+
+    // ✅ Upload succeeded — record session then navigate
+    await onComplete(url, location);
+  };
+
+  const handleRetry = () => {
+    setStep("preview");   // go back to preview so they can re-submit
+    setUploadError("");
+  };
+
+  const handleRetakeAfterError = () => {
+    retake();
+    setUploadError("");
   };
 
   const locLabel = {
@@ -181,11 +236,6 @@ const SelfieModal = ({ open, onComplete, onSkip, canSkip }) => {
       : "Located",
     denied:   "Location not available",
   }[locStatus];
-
-  // When camera fails and the user cannot skip, we still let them
-  // "Continue without selfie" so they aren't hard-blocked — location is
-  // still captured. Only the selfie image is missing.
-  const cameraDeniedCanProceed = camError;
 
   return (
     <Modal
@@ -206,12 +256,16 @@ const SelfieModal = ({ open, onComplete, onSkip, canSkip }) => {
         style={{ background: "linear-gradient(135deg, #7c6ef7 0%, #9b8df9 100%)" }}
       >
         <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center text-white text-lg">
-          📷
+          {step === "upload_error" ? "⚠️" : "📷"}
         </div>
         <div>
-          <p className="text-white font-bold text-base leading-tight">Attendance Check-In</p>
+          <p className="text-white font-bold text-base leading-tight">
+            {step === "upload_error" ? "Upload Failed" : "Attendance Check-In"}
+          </p>
           <p className="text-white/70 text-xs">
-            {canSkip
+            {step === "upload_error"
+              ? "Your selfie could not be uploaded — please retry"
+              : canSkip
               ? "Selfie is recommended — you may skip as admin"
               : "Selfie is required to complete sign-in"}
           </p>
@@ -219,8 +273,9 @@ const SelfieModal = ({ open, onComplete, onSkip, canSkip }) => {
       </div>
 
       <div className="p-5 bg-white flex flex-col gap-4">
+
         {/* ── Mandatory badge (for non-admin staff) ────────────────────── */}
-        {!canSkip && (
+        {!canSkip && step !== "upload_error" && (
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200">
             <span className="text-amber-500 text-base">🔒</span>
             <p className="text-xs text-amber-700 font-medium">
@@ -229,148 +284,226 @@ const SelfieModal = ({ open, onComplete, onSkip, canSkip }) => {
           </div>
         )}
 
-        {/* ── Camera / Preview area ─────────────────────────────────────── */}
-        <div
-          className="relative rounded-2xl overflow-hidden bg-gray-900"
-          style={{ aspectRatio: "4/3" }}
-        >
-          {step === "camera" && !camError && (
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              className="w-full h-full object-cover scale-x-[-1]"
-            />
-          )}
-
-          {step === "camera" && camError && (
-            <div className="w-full h-full flex flex-col items-center justify-center text-white/60 gap-2">
-              <span className="text-4xl">🚫</span>
-              <p className="text-sm text-center px-4">
-                Camera access denied.
-                <br />
-                {canSkip
-                  ? "You can skip since you're an admin."
-                  : "Please allow camera access and refresh the page."}
-              </p>
-            </div>
-          )}
-
-          {(step === "preview" || step === "uploading") && previewUrl && (
-            <img
-              src={previewUrl}
-              alt="selfie preview"
-              className="w-full h-full object-cover scale-x-[-1]"
-            />
-          )}
-
-          {step === "uploading" && (
-            <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-3">
-              <span className="inline-block h-8 w-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              <p className="text-white text-sm font-medium">Saving check-in…</p>
-            </div>
-          )}
-
-          {/* Location pill overlay */}
-          {step !== "uploading" && (
-            <div className="absolute bottom-3 left-3 right-3">
+        {/* ── Upload error screen ───────────────────────────────────────── */}
+        {step === "upload_error" && (
+          <div className="flex flex-col gap-4">
+            {/* Preview of the captured selfie */}
+            {previewUrl && (
               <div
-                className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium"
-                style={{
-                  background:    "rgba(0,0,0,0.55)",
-                  backdropFilter: "blur(6px)",
-                  color:
-                    locStatus === "ok"
-                      ? "#86efac"
-                      : locStatus === "denied"
-                      ? "#fca5a5"
-                      : "#fde68a",
-                }}
+                className="relative rounded-2xl overflow-hidden bg-gray-900 border-2 border-red-200"
+                style={{ aspectRatio: "4/3" }}
               >
-                <span>
-                  {locStatus === "fetching"
-                    ? "⏳"
-                    : locStatus === "ok"
-                    ? "📍"
-                    : locStatus === "denied"
-                    ? "⚠️"
-                    : "⏳"}
-                </span>
-                <span className="truncate">{locLabel}</span>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Hidden canvas for capture */}
-        <canvas ref={canvasRef} className="hidden" />
-
-        {/* ── Action buttons ────────────────────────────────────────────── */}
-        <div className="flex gap-3">
-          {step === "camera" && (
-            <>
-              {/* Skip — only rendered for super_admin / admin */}
-              {canSkip && (
-                <button
-                  onClick={onSkip}
-                  className="flex-1 h-11 rounded-xl border border-gray-200 text-gray-500 text-sm font-medium hover:bg-gray-50 transition-colors"
-                >
-                  Skip
-                </button>
-              )}
-
-              {/* Camera is available → Capture */}
-              {!camError && (
-                <button
-                  onClick={capture}
-                  className="flex-[2] h-11 rounded-xl text-white text-sm font-semibold transition-all active:scale-95"
-                  style={{ background: "linear-gradient(135deg, #7c6ef7, #9b8df9)" }}
-                >
-                  📸&nbsp; Capture
-                </button>
-              )}
-
-              {/* Camera failed — admin can continue, staff is gated */}
-              {camError && canSkip && (
-                <button
-                  onClick={onSkip}
-                  className="flex-[2] h-11 rounded-xl text-white text-sm font-semibold transition-all active:scale-95"
-                  style={{ background: "linear-gradient(135deg, #7c6ef7, #9b8df9)" }}
-                >
-                  Continue without selfie
-                </button>
-              )}
-
-              {/* Camera failed & non-admin: encourage enabling camera */}
-              {camError && !canSkip && (
-                <div className="flex-[2] h-11 rounded-xl flex items-center justify-center bg-red-50 border border-red-200">
-                  <span className="text-xs text-red-500 font-medium text-center px-2">
-                    Enable camera to continue
-                  </span>
+                <img
+                  src={previewUrl}
+                  alt="selfie preview"
+                  className="w-full h-full object-cover scale-x-[-1] opacity-60"
+                />
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/40">
+                  <span className="text-4xl">❌</span>
+                  <p className="text-white text-sm font-semibold text-center px-4">
+                    Upload Failed
+                  </p>
                 </div>
-              )}
-            </>
-          )}
+              </div>
+            )}
 
-          {step === "preview" && (
-            <>
+            {/* Error detail box */}
+            <div className="flex flex-col gap-1 px-4 py-3 rounded-xl bg-red-50 border border-red-200">
+              <p className="text-sm font-semibold text-red-600">
+                Could not upload selfie
+              </p>
+              <p className="text-xs text-red-500 leading-relaxed">
+                {uploadError}
+              </p>
+              {retryCount > 1 && (
+                <p className="text-[11px] text-red-400 mt-1">
+                  Attempt {retryCount} failed. Check your internet connection and try again.
+                </p>
+              )}
+            </div>
+
+            {/* Retry / Retake options */}
+            <div className="flex gap-3">
               <button
-                onClick={retake}
+                onClick={handleRetakeAfterError}
                 className="flex-1 h-11 rounded-xl border border-gray-200 text-gray-500 text-sm font-medium hover:bg-gray-50 transition-colors"
               >
-                Retake
+                📷 Retake
               </button>
               <button
-                onClick={submit}
+                onClick={handleRetry}
                 className="flex-[2] h-11 rounded-xl text-white text-sm font-semibold transition-all active:scale-95"
                 style={{ background: "linear-gradient(135deg, #7c6ef7, #9b8df9)" }}
               >
-                ✓&nbsp; Confirm & Check In
+                🔄 Retry Upload
               </button>
-            </>
-          )}
-        </div>
+            </div>
+
+            {/* Admin-only: skip even after error */}
+            {canSkip && (
+              <button
+                onClick={onSkip}
+                className="w-full h-10 rounded-xl border border-gray-200 text-gray-400 text-xs font-medium hover:bg-gray-50 transition-colors"
+              >
+                Skip and continue without selfie
+              </button>
+            )}
+
+            {/* Non-admin hard gate message */}
+            {!canSkip && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-orange-50 border border-orange-200">
+                <span className="text-orange-500">⚠️</span>
+                <p className="text-xs text-orange-700">
+                  You must upload a selfie to sign in. Please check your connection and retry.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Camera / Preview area (hidden during upload_error) ────────── */}
+        {step !== "upload_error" && (
+          <>
+            <div
+              className="relative rounded-2xl overflow-hidden bg-gray-900"
+              style={{ aspectRatio: "4/3" }}
+            >
+              {step === "camera" && !camError && (
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover scale-x-[-1]"
+                />
+              )}
+
+              {step === "camera" && camError && (
+                <div className="w-full h-full flex flex-col items-center justify-center text-white/60 gap-2">
+                  <span className="text-4xl">🚫</span>
+                  <p className="text-sm text-center px-4">
+                    Camera access denied.
+                    <br />
+                    {canSkip
+                      ? "You can skip since you're an admin."
+                      : "Please allow camera access and refresh the page."}
+                  </p>
+                </div>
+              )}
+
+              {(step === "preview" || step === "uploading") && previewUrl && (
+                <img
+                  src={previewUrl}
+                  alt="selfie preview"
+                  className="w-full h-full object-cover scale-x-[-1]"
+                />
+              )}
+
+              {step === "uploading" && (
+                <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-3">
+                  <span className="inline-block h-8 w-8 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <p className="text-white text-sm font-medium">Uploading selfie…</p>
+                  <p className="text-white/60 text-xs">Please wait, do not close this window</p>
+                </div>
+              )}
+
+              {/* Location pill overlay */}
+              {step !== "uploading" && (
+                <div className="absolute bottom-3 left-3 right-3">
+                  <div
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium"
+                    style={{
+                      background:     "rgba(0,0,0,0.55)",
+                      backdropFilter: "blur(6px)",
+                      color:
+                        locStatus === "ok"
+                          ? "#86efac"
+                          : locStatus === "denied"
+                          ? "#fca5a5"
+                          : "#fde68a",
+                    }}
+                  >
+                    <span>
+                      {locStatus === "fetching"
+                        ? "⏳"
+                        : locStatus === "ok"
+                        ? "📍"
+                        : locStatus === "denied"
+                        ? "⚠️"
+                        : "⏳"}
+                    </span>
+                    <span className="truncate">{locLabel}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Hidden canvas for capture */}
+            <canvas ref={canvasRef} className="hidden" />
+
+            {/* ── Action buttons ──────────────────────────────────────── */}
+            <div className="flex gap-3">
+              {step === "camera" && (
+                <>
+                  {canSkip && (
+                    <button
+                      onClick={onSkip}
+                      className="flex-1 h-11 rounded-xl border border-gray-200 text-gray-500 text-sm font-medium hover:bg-gray-50 transition-colors"
+                    >
+                      Skip
+                    </button>
+                  )}
+
+                  {!camError && (
+                    <button
+                      onClick={capture}
+                      className="flex-[2] h-11 rounded-xl text-white text-sm font-semibold transition-all active:scale-95"
+                      style={{ background: "linear-gradient(135deg, #7c6ef7, #9b8df9)" }}
+                    >
+                      📸&nbsp; Capture
+                    </button>
+                  )}
+
+                  {camError && canSkip && (
+                    <button
+                      onClick={onSkip}
+                      className="flex-[2] h-11 rounded-xl text-white text-sm font-semibold transition-all active:scale-95"
+                      style={{ background: "linear-gradient(135deg, #7c6ef7, #9b8df9)" }}
+                    >
+                      Continue without selfie
+                    </button>
+                  )}
+
+                  {camError && !canSkip && (
+                    <div className="flex-[2] h-11 rounded-xl flex items-center justify-center bg-red-50 border border-red-200">
+                      <span className="text-xs text-red-500 font-medium text-center px-2">
+                        Enable camera to continue
+                      </span>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {step === "preview" && (
+                <>
+                  <button
+                    onClick={retake}
+                    className="flex-1 h-11 rounded-xl border border-gray-200 text-gray-500 text-sm font-medium hover:bg-gray-50 transition-colors"
+                  >
+                    Retake
+                  </button>
+                  <button
+                    onClick={submit}
+                    className="flex-[2] h-11 rounded-xl text-white text-sm font-semibold transition-all active:scale-95"
+                    style={{ background: "linear-gradient(135deg, #7c6ef7, #9b8df9)" }}
+                  >
+                    ✓&nbsp; Confirm & Check In
+                  </button>
+                </>
+              )}
+            </div>
+          </>
+        )}
       </div>
     </Modal>
   );
@@ -405,7 +538,7 @@ const Login = () => {
       // Determine if this role can bypass selfie
       const canSkip = BYPASS_ROLES.includes(role?.toLowerCase?.() ?? role);
 
-      // Persist auth immediately
+      // Persist auth immediately so upload API calls can use the token
       dispatch(isLoginSuccess(userData));
       localStorage.setItem(admintoken, token);
       localStorage.setItem("userprofile", JSON.stringify(userData));
@@ -413,7 +546,7 @@ const Login = () => {
       SUCCESS_NOTIFICATION(result);
       setLoading(false);
 
-      // Show selfie modal — skip button visible only for admins
+      // Show selfie modal — navigation is blocked until selfie upload succeeds
       setPendingAuth({ userData, token, staffId, canSkip });
       setSelfieOpen(true);
     } catch (err) {
@@ -423,6 +556,10 @@ const Login = () => {
     }
   };
 
+  /**
+   * Navigate to dashboard — only called AFTER selfie upload has succeeded
+   * (or the user is an admin who clicked Skip).
+   */
   const finishLogin = useCallback(() => {
     setSelfieOpen(false);
     setPendingAuth(null);
@@ -432,12 +569,22 @@ const Login = () => {
     }, 300);
   }, [navigate, form]);
 
-  /** Called when the user confirms their selfie (and optionally location). */
+  /**
+   * Called by SelfieModal ONLY when upload has succeeded.
+   * selfieUrl will be a valid CDN URL at this point.
+   */
   const handleSelfieComplete = useCallback(
     async (selfieUrl, coords) => {
+      // Record the session (fire-and-forget — failure won't block navigation)
       if (pendingAuth?.staffId) {
-        await recordInTime(pendingAuth.staffId, pendingAuth.token, selfieUrl, coords);
+        await recordInTime(
+          pendingAuth.staffId,
+          pendingAuth.token,
+          selfieUrl,
+          coords,
+        );
       }
+      // Navigate only after upload is confirmed
       finishLogin();
     },
     [pendingAuth, finishLogin],
@@ -445,8 +592,7 @@ const Login = () => {
 
   /**
    * Called only by super_admin / admin who pressed Skip.
-   * We still record the session (without selfie/location) so the session
-   * history stays consistent.
+   * Records an empty session so history stays consistent.
    */
   const handleSelfieSkip = useCallback(async () => {
     if (pendingAuth?.staffId) {
@@ -547,7 +693,9 @@ const Login = () => {
             <Form.Item
               name="email"
               label={
-                <span className="text-sm font-semibold lg:text-gray-700 text-white">Email</span>
+                <span className="text-sm font-semibold lg:text-gray-700 text-white">
+                  Email
+                </span>
               }
               rules={[EmailValidation("Enter Email")]}
             >
@@ -561,7 +709,9 @@ const Login = () => {
             <Form.Item
               name="password"
               label={
-                <span className="text-sm font-semibold lg:text-gray-700 text-white">Password</span>
+                <span className="text-sm font-semibold lg:text-gray-700 text-white">
+                  Password
+                </span>
               }
               rules={[PasswordValidation("Enter Password")]}
             >
