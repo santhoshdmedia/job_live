@@ -426,7 +426,7 @@ function MonitorCard({ staff, onClick, onOpenSelfie }) {
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontWeight:700,fontSize:14.5,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontFamily:"'DM Sans',sans-serif"}}>{staff.name}</div>
             <div style={{fontSize:11,color:T.ink4,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{staff.email}</div>
-            <div style={{marginTop:5}}><RoleBadge role={staff.role} /></div>
+            {/* <div style={{marginTop:5}}><RoleBadge role={staff.role} /></div> */}
           </div>
           <div style={{flexShrink:0}}>
             {isOnline
