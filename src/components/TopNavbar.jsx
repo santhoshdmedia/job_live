@@ -111,8 +111,8 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
   const workSecs = useLiveTimer(sessionStart, !!sessionStart && !onBreak);
   const breakLive = useLiveTimer(breakStart, onBreak);
 
-  const isAdmin = ["super admin", "super_admin", "admin"].includes(
-    user?.role?.toLowerCase?.()||user?.email=="hari@dmedia.in"
+  const isAdmin = ["super admin", "super_admin", "admin","designing head"].includes(
+    user?.role?.toLowerCase?.()
   );
 
   // ── On mount: restore session & break state from server ──────────────────
