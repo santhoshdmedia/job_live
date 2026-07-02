@@ -104,6 +104,22 @@ export const MENU_DATA = [
     special: ["quality-check-dashboard"],
     for: ["super admin", "quality check"],
   },
+  {
+    id: 12,
+    name: "Task Management",
+    icon: ICON_HELPER.BANNER_ICON,
+    to: "/my-tasks",
+    special: ["my-tasks"],
+    for: [
+      "super admin",
+      "accounting team",
+      "designing team",
+      "production team",
+      "delivery team",
+      "quality check",
+      "packing team",
+    ],
+  },
 
   {
     id: 9,

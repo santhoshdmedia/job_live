@@ -17,6 +17,7 @@ import SiteVisitDashboard from "../pages/Sitevisitdashboard";
 import PickupDashboard from "../pages/PickupDashboard";
 import StaffMonitorPage from "../pages/StaffMonitorPage";
 import StaffAdminPanel from "../pages/staff/StaffDetailDraver";
+import MyTasksPage from "../pages/Mytaskspage";
 
 
 const ProtectedRoute = ({ children, pageName }) => (
@@ -143,6 +144,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute pageName="staff-admin">
             <StaffAdminPanel />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "my-tasks",
+        element: (
+          <ProtectedRoute pageName="my-tasks">
+            <MyTasksPage />
           </ProtectedRoute>
         ),
       },

@@ -5,11 +5,13 @@
  *  - Staff list with roles/status
  *  - Individual staff monitor: login time, jobs, materials, break/lunch, OT
  *  - Create / edit / toggle availability
+ *  - Attendance export to Excel (in-time / out-time / break / OT)
  */
 
 import { useEffect, useState, useCallback } from "react";
 import { useSelector } from "react-redux";
 import axios from "axios";
+import * as XLSX from "xlsx";
 import { smApi } from "../../api/staffmonitor.api";
 import { admintoken } from "../../helper/notification_helper";
 
@@ -27,7 +29,7 @@ const C = {
   border: "#E5E7EB", surface: "#FFFFFF", bg: "#F4F5F7", bg2: "#F9FAFB",
   primary: "#2563EB", primaryL: "#EFF6FF",
   amber: "#E8840A", amberL: "#FEF3E2", amberM: "#FDE68A", amberD: "#B45309",
-  green: "#16A34A", greenL: "#F0FDF4",
+  green: "#16A34A", greenL: "#F0FDF4", greenD: "#15803D",
   red: "#DC2626", redL: "#FEF2F2",
   violet: "#7C3AED", violetL: "#F5F3FF",
   r: "10px", r2: "14px",
@@ -38,7 +40,7 @@ const fmtD  = (s) => { s = Math.max(0, Math.floor(s || 0)); const h = Math.floor
 const fmtDL = (s) => { const v = Math.max(0, Math.floor(s || 0)); return [Math.floor(v / 3600), Math.floor((v % 3600) / 60), v % 60].map(n => String(n).padStart(2, "0")).join(":"); };
 const fmtT  = (d) => { if (!d) return "—"; return new Date(d).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }); };
 const fmtDate = (d) => { if (!d) return "—"; return new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }); };
-const STANDARD = 8 * 3600;
+const STANDARD = 10 * 3600;
 
 const avatarColor = (name = "") => {
   const pal = [C.amber, "#0891B2", "#7C3AED", "#DB2777", "#059669", "#2563EB"];
@@ -72,8 +74,12 @@ const CSS = `
   .btn-primary { padding:10px 18px; border-radius:${C.r}; border:none; font-weight:700; font-size:13px; cursor:pointer; background:${C.primary}; color:#fff; font-family:inherit; transition:background .14s; }
   .btn-primary:hover:not(:disabled) { background:#1D4ED8; }
   .btn-primary:disabled { opacity:.5; cursor:not-allowed; }
-  .btn-ghost { padding:8px 14px; border-radius:${C.r}; border:1px solid ${C.border}; font-weight:600; font-size:12px; cursor:pointer; background:${C.surface}; color:${C.ink3}; font-family:inherit; transition:all .13s; }
-  .btn-ghost:hover { background:${C.bg2}; color:${C.ink2}; }
+  .btn-ghost { padding:8px 14px; border-radius:${C.r}; border:1px solid ${C.border}; font-weight:600; font-size:12px; cursor:pointer; background:${C.surface}; color:${C.ink3}; font-family:inherit; transition:all .13s; white-space:nowrap; }
+  .btn-ghost:hover:not(:disabled) { background:${C.bg2}; color:${C.ink2}; }
+  .btn-ghost:disabled { opacity:.5; cursor:not-allowed; }
+  .btn-export { padding:8px 14px; border-radius:${C.r}; border:1px solid #BBF7D0; font-weight:700; font-size:12px; cursor:pointer; background:${C.greenL}; color:${C.greenD}; font-family:inherit; transition:all .13s; display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
+  .btn-export:hover:not(:disabled) { background:#DCFCE7; border-color:#86EFAC; }
+  .btn-export:disabled { opacity:.5; cursor:not-allowed; }
   .tab { padding:7px 14px; border-radius:8px; border:none; font-weight:600; font-size:12px; cursor:pointer; background:transparent; color:${C.ink4}; font-family:inherit; transition:all .14s; }
   .tab.active { background:${C.primaryL}; color:${C.primary}; }
   .tab:not(.active):hover { background:${C.bg2}; color:${C.ink2}; }
@@ -382,6 +388,77 @@ function Toast({ toasts }) {
   );
 }
 
+// ─── Monthly Attendance Excel export ───────────────────────────────────────────
+// One row per staff member for the selected month:
+//   Name, In Time, Out Time, Total Time Worked, Break Taken,
+//   Total Working Days, Present, Leave, Total OT Hours
+// Pulls from GET /monitor/attendance-summary — see the backend add-on file
+// (monthly-attendance-summary.addon.js) for the aggregation this expects.
+function buildMonthlyAttendanceRows(staffRows) {
+  return staffRows.map((s, i) => ({
+    "S.No": i + 1,
+    "Name": s.name || "",
+    "Role": s.role || "",
+    "In Time": s.avgInTime || "—",
+    "Out Time": s.avgOutTime || "—",
+    "Total Time Worked": fmtD(s.totalWorkingSeconds || 0),
+    "Break Taken": fmtD(s.totalBreakSeconds || 0),
+    "Total Working Days": s.workingDaysInMonth ?? "—",
+    "Present": s.presentDays ?? 0,
+    "Leave": s.leaveDays ?? 0,
+    "Total OT Hours": fmtD(s.totalOvertimeSeconds || 0),
+  }));
+}
+
+async function exportMonthlyAttendanceToExcel({ monthValue, smApi, pushToast }) {
+  // monthValue comes from an <input type="month"> → "YYYY-MM"
+  const [yearStr, monthStr] = (monthValue || "").split("-");
+  const year  = parseInt(yearStr, 10);
+  const month = parseInt(monthStr, 10);
+  if (!year || !month) {
+    pushToast?.("Pick a month first", "warn");
+    return;
+  }
+
+  const res  = await smApi.getMonthlyAttendanceSummary({ month, year });
+  const data = res?.data?.data ?? res?.data ?? res;
+  const staffRows = data?.staff ?? [];
+
+  if (!staffRows.length) {
+    pushToast?.("No attendance data for that month", "warn");
+    return;
+  }
+
+  const monthLabel = new Date(year, month - 1, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+  const rows = buildMonthlyAttendanceRows(staffRows);
+  const cols = ["S.No", "Name", "Role", "In Time", "Out Time", "Total Time Worked", "Break Taken", "Total Working Days", "Present", "Leave", "Total OT Hours"];
+
+  // Title + subtitle rows so the sheet reads like a proper monthly register.
+  const aoa = [
+    [`Monthly Attendance Report — ${monthLabel}`],
+    [`Working days this month: ${data?.workingDaysInMonth ?? "—"}`],
+    [],
+    cols,
+    ...rows.map((r) => cols.map((c) => r[c])),
+  ];
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!merges"] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: cols.length - 1 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: cols.length - 1 } },
+  ];
+  ws["!cols"] = [
+    { wch: 6 }, { wch: 22 }, { wch: 18 }, { wch: 11 }, { wch: 11 },
+    { wch: 17 }, { wch: 12 }, { wch: 16 }, { wch: 9 }, { wch: 8 }, { wch: 14 },
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Monthly Attendance");
+  XLSX.writeFile(wb, `monthly-attendance-${yearStr}-${monthStr}.xlsx`);
+
+  pushToast?.(`Exported ${rows.length} staff record${rows.length !== 1 ? "s" : ""} for ${monthLabel}`, "success");
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function StaffAdminPanel() {
   const { user } = useSelector(s => s.authSlice);
@@ -389,6 +466,7 @@ export default function StaffAdminPanel() {
   const [staffList,      setStaffList]      = useState([]);
   const [loading,        setLoading]        = useState(true);
   const [refreshing,     setRefreshing]     = useState(false);
+  const [exporting,      setExporting]      = useState(false);
   const [search,         setSearch]         = useState("");
   const [statusFilter,   setStatusFilter]   = useState("");
   const [selectedStaff,  setSelectedStaff]  = useState(null);
@@ -426,6 +504,20 @@ export default function StaffAdminPanel() {
   const totalOT      = staffList.reduce((a, s) => a + (s.overtimeSecondsToday || 0), 0);
   const totalWork    = staffList.reduce((a, s) => a + (s.workingSecondsToday || 0), 0);
 
+  const handleExport = () => {
+    setExporting(true);
+    try {
+      // Exports whatever is currently visible (search + status filter applied)
+      // so "Export Excel" matches what the admin is actually looking at.
+      exportAttendanceToExcel(filtered, pushToast);
+    } catch (err) {
+      console.error("[exportAttendance]", err);
+      pushToast("Export failed — please try again", "error");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div style={{  background: C.bg, fontFamily: "'Inter',system-ui,sans-serif" }}>
       <style>{CSS}</style>
@@ -434,7 +526,7 @@ export default function StaffAdminPanel() {
       {/* Header */}
       <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, boxShadow: "0 1px 6px rgba(0,0,0,.04)" }}>
         <div style={{ maxWidth: 1280, margin: "0 auto", padding: "0 16px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 0 12px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 0 12px", gap: 10, flexWrap: "wrap" }}>
             <div>
               <div style={{ fontWeight: 800, fontSize: 18, color: C.ink, fontFamily: "'DM Sans',sans-serif" }}>👥 Staff Management</div>
               <div style={{ fontSize: 11, color: C.ink4, marginTop: 1 }}>
@@ -453,6 +545,14 @@ export default function StaffAdminPanel() {
               ].filter(Boolean).map(({ label, color }) => (
                 <span key={label} style={{ fontSize: 11.5, fontWeight: 600, color, background: C.bg2, borderRadius: 7, padding: "4px 10px", border: `1px solid ${C.border}` }}>{label}</span>
               ))}
+              <button
+                onClick={handleExport}
+                disabled={exporting || loading || !filtered.length}
+                className="btn-export"
+                title="Download an attendance-style spreadsheet (in time, out time, break, OT) for the staff currently shown"
+              >
+                {exporting ? "…" : "⬇"} Export Excel
+              </button>
               <button onClick={() => fetchStaff()} disabled={loading} className="btn-ghost">
                 {loading ? "…" : "↻ Refresh"}
               </button>

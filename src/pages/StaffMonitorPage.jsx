@@ -13,6 +13,14 @@ http.interceptors.request.use((config) => {
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
+
+// NOTE: every path/body below is matched 1:1 against the Express router +
+// controller you shared. In particular:
+//   - assignTask expects { staffIds: [...], tasks: [{ title, description, estimated_hours, due_at }] }
+//   - stopAssignedTask expects body key "notes" (not "note")
+//   - the resume-request route is "/assigned-tasks/:taskId/request-resume"
+//   - there is NO reject-resume-request or note-based cancel route on the
+//     backend, so those calls have been removed instead of silently 404-ing
 const api = {
   getMonitorList:  ()       => http.get("/monitor").then((r) => r.data),
   getStaffDetails: (id)     => http.get(`/monitor/${id}/details`).then((r) => r.data),
@@ -23,16 +31,18 @@ const api = {
   recordLogout:    (staffId)=> http.post("/session/logout", { staffId }).then((r) => r.data),
 
   // ── Admin-assigned tasks (e.g. "Stock checking — 2 hours") ──────────────
-  assignTask:           (p)            => http.post("/assigned-tasks", p).then((r) => r.data),
-  getAllAssignedTasks:  (params = {})   => http.get("/assigned-tasks", { params }).then((r) => r.data),
-  getStaffAssignedTasks:(staffId)       => http.get(`/assigned-tasks/staff/${staffId}`).then((r) => r.data),
-  startAssignedTask:    (taskId)        => http.post(`/assigned-tasks/${taskId}/start`).then((r) => r.data),
-  stopAssignedTask:     (taskId, note)  => http.post(`/assigned-tasks/${taskId}/stop`, { note }).then((r) => r.data),
-  completeAssignedTask: (taskId, note)  => http.post(`/assigned-tasks/${taskId}/complete`, { note }).then((r) => r.data),
-  requestResumeTask:    (taskId, note)  => http.post(`/assigned-tasks/${taskId}/resume-request`, { note }).then((r) => r.data),
-  resumeAssignedTask:   (taskId)        => http.post(`/assigned-tasks/${taskId}/resume`).then((r) => r.data),
-  rejectResumeRequest:  (taskId, note)  => http.post(`/assigned-tasks/${taskId}/resume-request/reject`, { resolve_note: note }).then((r) => r.data),
-  cancelAssignedTask:   (taskId)        => http.delete(`/assigned-tasks/${taskId}`).then((r) => r.data),
+  // payload: { staffIds: string[], tasks: [{ title, description, estimated_hours, due_at }] }
+  assignTask:            (payload)      => http.post("/assigned-tasks", payload).then((r) => r.data),
+  getAllAssignedTasks:   (params = {})  => http.get("/assigned-tasks", { params }).then((r) => r.data),
+  getStaffAssignedTasks: (staffId)      => http.get(`/assigned-tasks/staff/${staffId}`).then((r) => r.data),
+  startAssignedTask:     (taskId)       => http.post(`/assigned-tasks/${taskId}/start`).then((r) => r.data),
+  // notes are REQUIRED by the backend when stopping a task
+  stopAssignedTask:      (taskId, notes)=> http.post(`/assigned-tasks/${taskId}/stop`, { notes }).then((r) => r.data),
+  completeAssignedTask:  (taskId)       => http.post(`/assigned-tasks/${taskId}/complete`).then((r) => r.data),
+  // staff can optionally ask; admin is the only one who can actually resume
+  requestResumeTask:     (taskId)       => http.post(`/assigned-tasks/${taskId}/request-resume`).then((r) => r.data),
+  resumeAssignedTask:    (taskId)       => http.post(`/assigned-tasks/${taskId}/resume`).then((r) => r.data), // super admin only
+  deleteAssignedTask:    (taskId)       => http.delete(`/assigned-tasks/${taskId}`).then((r) => r.data),       // super admin only
 };
 
 // ─── Design Tokens ────────────────────────────────────────────────────────
@@ -94,13 +104,14 @@ const STAGE_CFG = {
 const stageColor = (s = "") => STAGE_CFG[s.toLowerCase()] || STAGE_CFG.default;
 
 // ── Assigned-task status config ────────────────────────────────────────────
+// NOTE: these keys match the Mongoose enum exactly:
+// ["pending", "in_progress", "stopped", "resume_requested", "completed"]
 const TASK_STATUS_CFG = {
   pending:          { bg: T.bg2,     text: T.ink3,   border: T.border,  label: "Pending"          },
   in_progress:      { bg: T.amberL,  text: T.amberD, border: "#FDE68A", label: "In progress"      },
-  paused:           { bg: "#FEF2F2", text: T.red,    border: "#FECACA", label: "Stopped"          },
+  stopped:          { bg: "#FEF2F2", text: T.red,    border: "#FECACA", label: "Stopped"          },
   resume_requested: { bg: T.violetL, text: T.violet, border: "#DDD6FE", label: "Resume requested" },
   completed:        { bg: T.greenL,  text: T.green,  border: "#86EFAC", label: "Completed"        },
-  cancelled:        { bg: T.bg2,     text: T.ink4,   border: T.border,  label: "Cancelled"        },
 };
 
 // ─── Utilities ────────────────────────────────────────────────────────────
@@ -301,6 +312,14 @@ const CSS = `
   .btn-primary:hover:not(:disabled) { background: ${T.amberD}; }
   .btn-primary:disabled { background: ${T.border2}; color: ${T.ink4}; cursor: not-allowed; }
 
+  .btn-card-assign {
+    padding: 6px 11px; border-radius: 8px; border: 1px solid #FDE68A;
+    background: ${T.amberL}; color: ${T.amberD}; font-weight: 700;
+    font-size: 11.5px; cursor: pointer; transition: all .13s;
+    display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+  }
+  .btn-card-assign:hover { background: #FDE68A; }
+
   .filter-btn {
     padding: 8px 14px; border-radius: ${T.r}; border: 1px solid ${T.border};
     background: ${T.surface}; color: ${T.ink3}; font-weight: 600;
@@ -443,9 +462,9 @@ function StatTile({ label, value, color, bg, icon }) {
 }
 
 // ─── NotePromptModal ───────────────────────────────────────────────────────
-// Generic confirm+note popup, used for: stop (note required), complete,
-// resume-request, reject-resume, and cancel-task.
-function NotePromptModal({ open, title, description, placeholder="Add a note…", required=true, submitLabel="Submit", danger=false, onSubmit, onCancel }) {
+// Generic confirm+note popup. Now only used for: stop (note required) and
+// delete/cancel (confirm, no note needed by the backend).
+function NotePromptModal({ open, title, description, placeholder="Add a note…", required=true, showTextarea=true, submitLabel="Submit", danger=false, onSubmit, onCancel }) {
   const [val, setVal] = useState("");
   useEffect(() => { if (open) setVal(""); }, [open]);
   if (!open) return null;
@@ -455,8 +474,12 @@ function NotePromptModal({ open, title, description, placeholder="Add a note…"
       <div style={{background:T.surface,borderRadius:T.r2,width:"100%",maxWidth:400,padding:20,boxShadow:"0 24px 64px rgba(0,0,0,.22)",animation:"slideUp .2s ease"}}>
         <div style={{fontWeight:800,fontSize:15,color:T.ink,fontFamily:"'DM Sans',sans-serif",marginBottom:4}}>{title}</div>
         {description && <div style={{fontSize:12,color:T.ink4,marginBottom:12,lineHeight:1.5}}>{description}</div>}
-        <textarea autoFocus value={val} onChange={e=>setVal(e.target.value)} placeholder={placeholder} rows={4} className="field-inp" style={{resize:"vertical",marginTop:description?0:8}} />
-        {required && <div style={{fontSize:10.5,color:T.ink4,marginTop:5}}>A note is required to continue.</div>}
+        {showTextarea && (
+          <>
+            <textarea autoFocus value={val} onChange={e=>setVal(e.target.value)} placeholder={placeholder} rows={4} className="field-inp" style={{resize:"vertical",marginTop:description?0:8}} />
+            {required && <div style={{fontSize:10.5,color:T.ink4,marginTop:5}}>A note is required to continue.</div>}
+          </>
+        )}
         <div style={{display:"flex",gap:8,marginTop:14}}>
           <button onClick={onCancel} style={{flex:1,padding:10,borderRadius:T.r,border:`1px solid ${T.border}`,background:T.surface,color:T.ink3,fontWeight:700,fontSize:13,cursor:"pointer"}}>Cancel</button>
           <button onClick={()=>canSubmit && onSubmit(val.trim())} disabled={!canSubmit} style={{flex:1,padding:10,borderRadius:T.r,border:"none",background:canSubmit?(danger?T.red:T.amber):T.border2,color:"#fff",fontWeight:700,fontSize:13,cursor:canSubmit?"pointer":"not-allowed"}}>{submitLabel}</button>
@@ -467,87 +490,91 @@ function NotePromptModal({ open, title, description, placeholder="Add a note…"
 }
 
 // ─── AssignedTaskCard ───────────────────────────────────────────────────────
-function AssignedTaskCard({ task, isSuperAdmin, onStart, onStop, onComplete, onRequestResume, onResume, onReject, onCancel }) {
-  const openSession = task.sessions?.find(s => !s.end) || null;
-  const pendingReq  = task.resume_requests?.find(r => r.status === "pending") || null;
-  const lastStop    = task.stop_logs?.length ? task.stop_logs[task.stop_logs.length-1] : null;
-  const liveTotal   = task.total_seconds + (openSession ? Math.floor((Date.now()-new Date(openSession.start).getTime())/1000) : 0);
-  const overEstimate= task.estimated_seconds>0 && liveTotal>task.estimated_seconds;
+// Fields here match the StaffAssignedTask mongoose schema exactly:
+// status, sessions[{start,end,duration_seconds}], total_seconds, stop_notes,
+// stop_history[{notes,stopped_at}], resume_requested_at, estimated_hours,
+// assigned_at, completed_at.
+function AssignedTaskCard({ task, isSuperAdmin, isOwner, onStart, onStop, onComplete, onRequestResume, onResume, onDelete }) {
+  const openSession   = (task.sessions || []).find(s => !s.end) || null;
+  const estimatedSecs = (task.estimated_hours || 0) * 3600;
+  const liveTotal      = (task.total_seconds || 0) + (openSession ? Math.floor((Date.now()-new Date(openSession.start).getTime())/1000) : 0);
+  const overEstimate   = estimatedSecs > 0 && liveTotal > estimatedSecs;
+  const lastStop        = task.stop_history?.length ? task.stop_history[task.stop_history.length - 1] : (task.stop_notes ? { notes: task.stop_notes, stopped_at: task.assigned_at } : null);
 
   return (
     <div style={{background:T.surface,borderRadius:T.r2,border:`1px solid ${task.status==="in_progress"?"#FDE68A":T.border}`,padding:"13px 15px",display:"flex",flexDirection:"column",gap:9}}>
       <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8}}>
         <div style={{minWidth:0}}>
           <div style={{fontWeight:700,fontSize:13.5,color:T.ink,fontFamily:"'DM Sans',sans-serif"}}>{task.title}</div>
-          {task.notes && <div style={{fontSize:11.5,color:T.ink3,marginTop:2,lineHeight:1.45}}>{task.notes}</div>}
+          {task.description && <div style={{fontSize:11.5,color:T.ink3,marginTop:2,lineHeight:1.45}}>{task.description}</div>}
         </div>
         <AssignedTaskStatusBadge status={task.status} />
       </div>
 
       <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
         {task.status==="in_progress"
-          ? <LiveJobTimer baseSeconds={task.total_seconds} openSince={openSession?.start} />
-          : <span style={{fontSize:12,fontWeight:700,color:T.ink3,background:T.bg2,borderRadius:7,padding:"3px 9px"}}>{fmtD(task.total_seconds)}</span>
+          ? <LiveJobTimer baseSeconds={task.total_seconds || 0} openSince={openSession?.start} />
+          : <span style={{fontSize:12,fontWeight:700,color:T.ink3,background:T.bg2,borderRadius:7,padding:"3px 9px"}}>{fmtD(task.total_seconds || 0)}</span>
         }
-        {task.estimated_seconds>0 && (
+        {estimatedSecs>0 && (
           <span style={{fontSize:11,color:overEstimate?T.red:T.ink4,fontWeight:600}}>
-            Target: {fmtD(task.estimated_seconds)}{overEstimate?" · over target":""}
+            Target: {fmtD(estimatedSecs)}{overEstimate?" · over target":""}
           </span>
         )}
         <span style={{fontSize:10.5,color:T.ink4}}>Assigned {fmtDT(task.assigned_at)}</span>
       </div>
 
-      {lastStop && task.status!=="in_progress" && task.status!=="completed" && (
+      {lastStop && ["stopped","resume_requested"].includes(task.status) && (
         <div style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:8,padding:"7px 10px"}}>
           <div style={{fontSize:10,fontWeight:700,color:T.red,textTransform:"uppercase",letterSpacing:.4,marginBottom:2}}>Stop note · {fmtDT(lastStop.stopped_at)}</div>
-          <div style={{fontSize:12,color:T.ink2,lineHeight:1.45}}>{lastStop.note}</div>
+          <div style={{fontSize:12,color:T.ink2,lineHeight:1.45}}>{lastStop.notes}</div>
         </div>
       )}
 
-      {pendingReq && (
+      {task.status==="stopped" && (
+        <div style={{fontSize:12,color:T.ink3,fontWeight:600}}>
+          {isSuperAdmin ? "Only you can resume this task." : "Stopped — only an admin can resume this task."}
+        </div>
+      )}
+
+      {task.status==="resume_requested" && (
         <div style={{background:T.violetL,border:"1px solid #DDD6FE",borderRadius:8,padding:"7px 10px"}}>
-          <div style={{fontSize:10,fontWeight:700,color:T.violet,textTransform:"uppercase",letterSpacing:.4,marginBottom:2}}>Resume requested · {fmtDT(pendingReq.requested_at)}</div>
-          {pendingReq.note && <div style={{fontSize:12,color:T.ink2,lineHeight:1.45}}>{pendingReq.note}</div>}
+          <div style={{fontSize:10,fontWeight:700,color:T.violet,textTransform:"uppercase",letterSpacing:.4,marginBottom:2}}>Resume requested · {fmtDT(task.resume_requested_at)}</div>
+          <div style={{fontSize:12,color:T.ink2}}>{isSuperAdmin ? "Waiting for your approval." : "Waiting for admin approval."}</div>
         </div>
       )}
 
       {task.status==="completed" && (
         <div style={{background:T.greenL,border:"1px solid #86EFAC",borderRadius:8,padding:"7px 10px"}}>
-          <div style={{fontSize:10,fontWeight:700,color:T.green,textTransform:"uppercase",letterSpacing:.4,marginBottom:2}}>Completed · {fmtDT(task.completed_at)}</div>
-          {task.completion_notes && <div style={{fontSize:12,color:T.ink2,lineHeight:1.45}}>{task.completion_notes}</div>}
+          <div style={{fontSize:10,fontWeight:700,color:T.green,textTransform:"uppercase",letterSpacing:.4}}>Completed · {fmtDT(task.completed_at)}</div>
         </div>
       )}
 
       <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-        {task.status==="pending" && (
+        {/* pending -> start (staff owner or admin) */}
+        {task.status==="pending" && (isOwner || isSuperAdmin) && (
           <button onClick={()=>onStart(task._id)} style={{padding:"7px 14px",borderRadius:T.r,border:"none",background:T.amber,color:"#fff",fontWeight:700,fontSize:12.5,cursor:"pointer"}}>▶ Start</button>
         )}
-        {task.status==="in_progress" && (
+        {/* in_progress -> stop / complete (staff owner or admin) */}
+        {task.status==="in_progress" && (isOwner || isSuperAdmin) && (
           <>
             <button onClick={()=>onStop(task._id)} style={{padding:"7px 14px",borderRadius:T.r,border:"none",background:T.red,color:"#fff",fontWeight:700,fontSize:12.5,cursor:"pointer"}}>■ Stop</button>
             <button onClick={()=>onComplete(task._id)} style={{padding:"7px 14px",borderRadius:T.r,border:"none",background:T.green,color:"#fff",fontWeight:700,fontSize:12.5,cursor:"pointer"}}>✓ Complete</button>
           </>
         )}
-        {task.status==="paused" && (
+        {/* stopped -> ONLY admin can resume; staff can just ask */}
+        {task.status==="stopped" && (
           isSuperAdmin ? (
-            <>
-              <button onClick={()=>onResume(task._id)} style={{padding:"7px 14px",borderRadius:T.r,border:"none",background:T.amber,color:"#fff",fontWeight:700,fontSize:12.5,cursor:"pointer"}}>↻ Resume</button>
-              <button onClick={()=>onComplete(task._id)} style={{padding:"7px 14px",borderRadius:T.r,border:`1px solid ${T.border}`,background:T.surface,color:T.ink3,fontWeight:700,fontSize:12.5,cursor:"pointer"}}>✓ Complete</button>
-              <button onClick={()=>onCancel(task._id)} style={{padding:"7px 14px",borderRadius:T.r,border:`1px solid ${T.border}`,background:T.surface,color:T.red,fontWeight:700,fontSize:12.5,cursor:"pointer"}}>Cancel</button>
-            </>
-          ) : (
-            <button onClick={()=>onRequestResume(task._id)} style={{padding:"7px 14px",borderRadius:T.r,border:"none",background:T.violet,color:"#fff",fontWeight:700,fontSize:12.5,cursor:"pointer"}}>Request resume</button>
-          )
+            <button onClick={()=>onResume(task._id)} style={{padding:"7px 14px",borderRadius:T.r,border:"none",background:T.amber,color:"#fff",fontWeight:700,fontSize:12.5,cursor:"pointer"}}>↻ Resume</button>
+          ) : isOwner ? (
+            <button onClick={()=>onRequestResume(task._id)} style={{padding:"7px 14px",borderRadius:T.r,border:"none",background:T.violet,color:"#fff",fontWeight:700,fontSize:12.5,cursor:"pointer"}}>Ask admin to resume</button>
+          ) : null
         )}
-        {task.status==="resume_requested" && (
-          isSuperAdmin ? (
-            <>
-              <button onClick={()=>onResume(task._id)} style={{padding:"7px 14px",borderRadius:T.r,border:"none",background:T.amber,color:"#fff",fontWeight:700,fontSize:12.5,cursor:"pointer"}}>✓ Approve &amp; Resume</button>
-              <button onClick={()=>onReject(task._id)} style={{padding:"7px 14px",borderRadius:T.r,border:`1px solid ${T.border}`,background:T.surface,color:T.red,fontWeight:700,fontSize:12.5,cursor:"pointer"}}>✕ Reject</button>
-            </>
-          ) : (
-            <span style={{fontSize:12,color:T.violet,fontWeight:600}}>Waiting for admin approval…</span>
-          )
+        {task.status==="resume_requested" && isSuperAdmin && (
+          <button onClick={()=>onResume(task._id)} style={{padding:"7px 14px",borderRadius:T.r,border:"none",background:T.amber,color:"#fff",fontWeight:700,fontSize:12.5,cursor:"pointer"}}>✓ Approve &amp; Resume</button>
+        )}
+        {isSuperAdmin && task.status!=="completed" && (
+          <button onClick={()=>onDelete(task._id)} style={{padding:"7px 14px",borderRadius:T.r,border:`1px solid ${T.border}`,background:T.surface,color:T.red,fontWeight:700,fontSize:12.5,cursor:"pointer"}}>Delete</button>
         )}
       </div>
     </div>
@@ -557,7 +584,7 @@ function AssignedTaskCard({ task, isSuperAdmin, onStart, onStop, onComplete, onR
 // ─── AssignedTasksTab ───────────────────────────────────────────────────────
 function AssignedTasksTab({ staffId, initialTasks, isSuperAdmin, push }) {
   const [tasks, setTasks]     = useState(initialTasks || []);
-  const [prompt, setPrompt]   = useState(null); // { type, taskId }
+  const [prompt, setPrompt]   = useState(null); // { type: "stop"|"delete", taskId }
   const [busy, setBusy]       = useState(false);
   const [showAssign, setShowAssign] = useState(false);
   const [aTitle, setATitle]   = useState("");
@@ -567,9 +594,10 @@ function AssignedTasksTab({ staffId, initialTasks, isSuperAdmin, push }) {
   useEffect(() => { setTasks(initialTasks || []); }, [initialTasks]);
 
   const replaceTask = (updated) => setTasks(ts => ts.map(t => t._id === updated._id ? updated : t));
+  const removeTask  = (taskId)  => setTasks(ts => ts.filter(t => t._id !== taskId));
 
-  const runSimple = async (fn, taskId, successMsg) => {
-    try { setBusy(true); const res = await fn(taskId); replaceTask(res?.data ?? res); push(successMsg); }
+  const runSimple = async (fn, taskId, successMsg, onOk) => {
+    try { setBusy(true); const res = await fn(taskId); const updated = res?.data ?? res; onOk ? onOk(updated) : replaceTask(updated); push(successMsg); }
     catch (err) { push(err?.response?.data?.message ?? "Action failed", "error"); }
     finally { setBusy(false); }
   };
@@ -584,7 +612,10 @@ function AssignedTasksTab({ staffId, initialTasks, isSuperAdmin, push }) {
     if (!aTitle.trim()) return;
     try {
       setBusy(true);
-      const res = await api.assignTask({ staffIds: [staffId], title: aTitle.trim(), notes: aNotes.trim(), estimated_hours: aHours || 0 });
+      const res = await api.assignTask({
+        staffIds: [staffId],
+        tasks: [{ title: aTitle.trim(), description: aNotes.trim(), estimated_hours: aHours ? Number(aHours) : 0, due_at: null }],
+      });
       const created = res?.data ?? res;
       setTasks(ts => [...(Array.isArray(created) ? created : [created]), ...ts]);
       setATitle(""); setANotes(""); setAHours(""); setShowAssign(false);
@@ -593,15 +624,12 @@ function AssignedTasksTab({ staffId, initialTasks, isSuperAdmin, push }) {
     finally { setBusy(false); }
   };
 
-  const active = tasks.filter(t => ["pending","in_progress","paused","resume_requested"].includes(t.status));
-  const done   = tasks.filter(t => ["completed","cancelled"].includes(t.status));
+  const active = tasks.filter(t => ["pending","in_progress","stopped","resume_requested"].includes(t.status));
+  const done   = tasks.filter(t => t.status === "completed");
 
   const promptCfg = {
-    stop:           { title:"Why are you stopping this task?", description:"This note is required and will be visible to the admin.", required:true,  submitLabel:"Stop task",     danger:true  },
-    complete:       { title:"Mark task complete",               description:"Add a closing note (optional).",                          required:false, submitLabel:"Mark complete", danger:false },
-    "resume-request":{ title:"Request resume",                   description:"Let the admin know why you need to resume (optional).",   required:false, submitLabel:"Send request",  danger:false },
-    reject:         { title:"Reject resume request",             description:"Let the staff member know why (optional).",               required:false, submitLabel:"Reject",        danger:true  },
-    cancel:         { title:"Cancel this task?",                 description:"This cannot be undone once cancelled.",                   required:false, submitLabel:"Cancel task",   danger:true  },
+    stop:   { title:"Why are you stopping this task?", description:"This note is required and will be visible to the admin.", required:true, showTextarea:true,  submitLabel:"Stop task",   danger:true  },
+    delete: { title:"Delete this task?",                description:"This cannot be undone.",                                 required:false, showTextarea:false, submitLabel:"Delete task", danger:true  },
   };
   const activeCfg = prompt ? promptCfg[prompt.type] : null;
 
@@ -636,14 +664,13 @@ function AssignedTasksTab({ staffId, initialTasks, isSuperAdmin, push }) {
               <div style={{display:"flex",flexDirection:"column",gap:9}}>
                 {active.map(t => (
                   <AssignedTaskCard
-                    key={t._id} task={t} isSuperAdmin={isSuperAdmin}
+                    key={t._id} task={t} isSuperAdmin={isSuperAdmin} isOwner={true}
                     onStart={(id)=>runSimple(api.startAssignedTask, id, "Task started")}
                     onStop={(id)=>setPrompt({ type:"stop", taskId:id })}
-                    onComplete={(id)=>setPrompt({ type:"complete", taskId:id })}
-                    onRequestResume={(id)=>setPrompt({ type:"resume-request", taskId:id })}
+                    onComplete={(id)=>runSimple(api.completeAssignedTask, id, "Task completed")}
+                    onRequestResume={(id)=>runSimple(api.requestResumeTask, id, "Resume request sent")}
                     onResume={(id)=>runSimple(api.resumeAssignedTask, id, "Task resumed")}
-                    onReject={(id)=>setPrompt({ type:"reject", taskId:id })}
-                    onCancel={(id)=>setPrompt({ type:"cancel", taskId:id })}
+                    onDelete={(id)=>setPrompt({ type:"delete", taskId:id })}
                   />
                 ))}
               </div>
@@ -651,13 +678,14 @@ function AssignedTasksTab({ staffId, initialTasks, isSuperAdmin, push }) {
           )}
           {done.length>0 && (
             <div>
-              <div style={{fontWeight:700,fontSize:11,color:T.ink4,marginBottom:8,textTransform:"uppercase",letterSpacing:.5}}>Completed / cancelled ({done.length})</div>
+              <div style={{fontWeight:700,fontSize:11,color:T.ink4,marginBottom:8,textTransform:"uppercase",letterSpacing:.5}}>Completed ({done.length})</div>
               <div style={{display:"flex",flexDirection:"column",gap:9}}>
                 {done.map(t => (
                   <AssignedTaskCard
-                    key={t._id} task={t} isSuperAdmin={isSuperAdmin}
+                    key={t._id} task={t} isSuperAdmin={isSuperAdmin} isOwner={true}
                     onStart={()=>{}} onStop={()=>{}} onComplete={()=>{}}
-                    onRequestResume={()=>{}} onResume={()=>{}} onReject={()=>{}} onCancel={()=>{}}
+                    onRequestResume={()=>{}} onResume={()=>{}}
+                    onDelete={(id)=>setPrompt({ type:"delete", taskId:id })}
                   />
                 ))}
               </div>
@@ -671,6 +699,7 @@ function AssignedTasksTab({ staffId, initialTasks, isSuperAdmin, push }) {
         title={activeCfg?.title || ""}
         description={activeCfg?.description || ""}
         required={!!activeCfg?.required}
+        showTextarea={activeCfg?.showTextarea !== false}
         danger={!!activeCfg?.danger}
         submitLabel={activeCfg?.submitLabel || "Submit"}
         onCancel={()=>setPrompt(null)}
@@ -678,11 +707,8 @@ function AssignedTasksTab({ staffId, initialTasks, isSuperAdmin, push }) {
           if (!prompt) return;
           const { type, taskId } = prompt;
           setPrompt(null);
-          if (type==="stop")            runWithNote(api.stopAssignedTask, taskId, note, "Task stopped");
-          if (type==="complete")        runWithNote(api.completeAssignedTask, taskId, note, "Task completed");
-          if (type==="resume-request")  runWithNote(api.requestResumeTask, taskId, note, "Resume request sent");
-          if (type==="reject")          runWithNote(api.rejectResumeRequest, taskId, note, "Resume request rejected");
-          if (type==="cancel")          runSimple(api.cancelAssignedTask, taskId, "Task cancelled");
+          if (type==="stop")   runWithNote(api.stopAssignedTask, taskId, note, "Task stopped");
+          if (type==="delete") runSimple(api.deleteAssignedTask, taskId, "Task deleted", ()=>removeTask(taskId));
         }}
       />
     </div>
@@ -691,7 +717,9 @@ function AssignedTasksTab({ staffId, initialTasks, isSuperAdmin, push }) {
 
 // ─── AssignTaskModal ────────────────────────────────────────────────────────
 // Global "assign to one or many staff at once" modal (e.g. "Stock checking" for everyone).
-function AssignTaskModal({ open, staffList, onClose, push, onAssigned }) {
+// Accepts an optional preselectedStaffId so the per-card "Assign Task" button
+// can open this modal with that staff member already checked.
+function AssignTaskModal({ open, staffList, preselectedStaffId, onClose, push, onAssigned }) {
   const [selected, setSelected] = useState([]);
   const [title, setTitle]       = useState("");
   const [notes, setNotes]       = useState("");
@@ -700,8 +728,11 @@ function AssignTaskModal({ open, staffList, onClose, push, onAssigned }) {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (open) { setSelected([]); setTitle(""); setNotes(""); setHours(""); setSearch(""); }
-  }, [open]);
+    if (open) {
+      setSelected(preselectedStaffId ? [preselectedStaffId] : []);
+      setTitle(""); setNotes(""); setHours(""); setSearch("");
+    }
+  }, [open, preselectedStaffId]);
 
   if (!open) return null;
 
@@ -713,7 +744,10 @@ function AssignTaskModal({ open, staffList, onClose, push, onAssigned }) {
     if (!title.trim() || !selected.length) return;
     try {
       setSubmitting(true);
-      const res = await api.assignTask({ staffIds: selected, title: title.trim(), notes: notes.trim(), estimated_hours: hours || 0 });
+      const res = await api.assignTask({
+        staffIds: selected,
+        tasks: [{ title: title.trim(), description: notes.trim(), estimated_hours: hours ? Number(hours) : 0, due_at: null }],
+      });
       push(`Task assigned to ${selected.length} staff member${selected.length!==1?"s":""}`);
       onAssigned?.(res?.data ?? res);
       onClose();
@@ -721,12 +755,16 @@ function AssignTaskModal({ open, staffList, onClose, push, onAssigned }) {
     finally { setSubmitting(false); }
   };
 
+  const preselectedStaff = preselectedStaffId ? staffList.find(s => s._id === preselectedStaffId) : null;
+
   return (
     <div onClick={e=>{ if (e.target===e.currentTarget) onClose(); }} style={{position:"fixed",inset:0,zIndex:800,background:"rgba(12,17,29,.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,animation:"fadeIn .16s ease"}}>
       <div style={{background:T.surface,borderRadius:T.r2,width:"100%",maxWidth:480,maxHeight:"88vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.22)",animation:"slideUp .2s ease"}}>
         <div style={{padding:"18px 20px 0",flexShrink:0}}>
           <div style={{fontWeight:800,fontSize:16,color:T.ink,fontFamily:"'DM Sans',sans-serif"}}>Assign a task</div>
-          <div style={{fontSize:12,color:T.ink4,marginTop:2}}>e.g. "Stock checking" for one or more staff members</div>
+          <div style={{fontSize:12,color:T.ink4,marginTop:2}}>
+            {preselectedStaff ? `For ${preselectedStaff.name} — add more staff below if needed` : `e.g. "Stock checking" for one or more staff members`}
+          </div>
         </div>
         <div style={{padding:"14px 20px",overflowY:"auto",flex:1}}>
           <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="Task title" className="field-inp" style={{marginBottom:8}} />
@@ -762,7 +800,7 @@ function AssignTaskModal({ open, staffList, onClose, push, onAssigned }) {
 }
 
 // ─── MonitorCard ─────────────────────────────────────────────────────────
-function MonitorCard({ staff, onClick, onOpenSelfie }) {
+function MonitorCard({ staff, onClick, onOpenSelfie, onAssignTask }) {
   const isOnline     = staff.isOnline;
   const ls           = staff.latestSelfie ?? null;
   const js           = staff.jobStats ?? {};
@@ -779,7 +817,6 @@ function MonitorCard({ staff, onClick, onOpenSelfie }) {
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontWeight:700,fontSize:14.5,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontFamily:"'DM Sans',sans-serif"}}>{staff.name}</div>
             <div style={{fontSize:11,color:T.ink4,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{staff.email}</div>
-            {/* <div style={{marginTop:5}}><RoleBadge role={staff.role} /></div> */}
           </div>
           <div style={{flexShrink:0}}>
             {isOnline
@@ -841,7 +878,7 @@ function MonitorCard({ staff, onClick, onOpenSelfie }) {
         )}
 
         {/* Assigned-task chips */}
-        {(ats.active>0 || ats.pending>0 || ats.paused>0 || ats.resumeRequested>0) && (
+        {(ats.active>0 || ats.pending>0 || ats.stopped>0 || ats.resumeRequested>0) && (
           <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
             {ats.active>0 && (
               <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:6,background:T.amberL,color:T.amberD,border:"1px solid #FDE68A",display:"inline-flex",alignItems:"center",gap:4}}>
@@ -853,9 +890,9 @@ function MonitorCard({ staff, onClick, onOpenSelfie }) {
                 ⏳ {ats.resumeRequested} resume request{ats.resumeRequested!==1?"s":""}
               </span>
             )}
-            {ats.paused>0 && (
+            {ats.stopped>0 && (
               <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:6,background:"#FEF2F2",color:T.red,border:"1px solid #FECACA"}}>
-                ■ {ats.paused} stopped
+                ■ {ats.stopped} stopped
               </span>
             )}
             {ats.pending>0 && (
@@ -867,11 +904,14 @@ function MonitorCard({ staff, onClick, onOpenSelfie }) {
         )}
 
         {/* Footer */}
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <span style={{fontSize:11,color:T.ink4,fontWeight:500}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+          <span style={{fontSize:11,color:T.ink4,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
             {staff.lastActivity ? `Active ${fmtDT(staff.lastActivity)}` : "No activity yet"}
           </span>
-          <span style={{fontSize:11,color:T.amber,fontWeight:700}}>Details →</span>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+            <button className="btn-card-assign" onClick={(e)=>{ e.stopPropagation(); onAssignTask(staff); }}>🗂 Assign</button>
+            <span style={{fontSize:11,color:T.amber,fontWeight:700}}>Details →</span>
+          </div>
         </div>
       </div>
     </div>
@@ -1413,11 +1453,6 @@ function StaffDetailModal({ open, staff, onClose, push, isSuperAdmin }) {
                     🔨 {jobTimeSummary.activeJobCount} active job{jobTimeSummary.activeJobCount!==1?"s":""}
                   </span>
                 )}
-                {allTaskAssignments.pendingResumeRequests>0 && (
-                  <span style={{fontSize:10.5,fontWeight:700,color:T.violet,background:T.violetL,borderRadius:6,padding:"2px 7px",border:"1px solid #DDD6FE"}}>
-                    ⏳ {allTaskAssignments.pendingResumeRequests} resume request{allTaskAssignments.pendingResumeRequests!==1?"s":""}
-                  </span>
-                )}
               </div>
             </div>
             {/* Best selfie thumbnail in header */}
@@ -1494,7 +1529,6 @@ function StaffDetailModal({ open, staff, onClose, push, isSuperAdmin }) {
                         {label:"Pending Pickups",  value:allTaskAssignments.pendingPickups??0,     color:"#B45309"},
                         {label:"Done Pickups",     value:allTaskAssignments.completedPickups??0,   color:T.green},
                         {label:"Materials Issued", value:allTaskAssignments.issuedMaterials??0,    color:T.amber},
-                        {label:"Assigned Tasks",   value:allTaskAssignments.totalAssignedTasks??0, color:T.violet},
                       ].map(({label,value,color})=>(
                         <div key={label} style={{background:T.surface,borderRadius:8,padding:"9px 10px",border:`1px solid ${T.border}`,textAlign:"center"}}>
                           <div style={{fontWeight:800,fontSize:18,color,lineHeight:1,fontFamily:"'DM Sans',sans-serif"}}>{value}</div>
@@ -1524,24 +1558,18 @@ function StaffDetailModal({ open, staff, onClose, push, isSuperAdmin }) {
                 )}
 
                 {/* Assigned tasks summary */}
-                {(allTaskAssignments.totalAssignedTasks ?? 0) > 0 && (
-                  <div style={{background:allTaskAssignments.pendingResumeRequests>0?T.violetL:T.bg2,borderRadius:12,padding:"13px 15px",border:`1px solid ${allTaskAssignments.pendingResumeRequests>0?"#DDD6FE":T.border}`}}>
-                    <SectionHeader icon="🗂" label="Assigned Tasks" color={allTaskAssignments.pendingResumeRequests>0?T.violet:T.ink3} />
+                {assignedTasks.length > 0 && (
+                  <div style={{background:T.bg2,borderRadius:12,padding:"13px 15px",border:`1px solid ${T.border}`}}>
+                    <SectionHeader icon="🗂" label="Assigned Tasks" color={T.ink3} />
                     <div style={{display:"flex",gap:18,flexWrap:"wrap"}}>
                       <div>
-                        <div style={{fontSize:20,fontWeight:900,color:T.ink,fontFamily:"'DM Sans',sans-serif"}}>{allTaskAssignments.totalAssignedTasks}</div>
+                        <div style={{fontSize:20,fontWeight:900,color:T.ink,fontFamily:"'DM Sans',sans-serif"}}>{assignedTasks.length}</div>
                         <div style={{fontSize:10,color:T.ink4,fontWeight:600}}>TOTAL</div>
                       </div>
                       <div>
-                        <div style={{fontSize:20,fontWeight:900,color:allTaskAssignments.activeAssignedTasks>0?T.green:T.ink4,fontFamily:"'DM Sans',sans-serif"}}>{allTaskAssignments.activeAssignedTasks}</div>
+                        <div style={{fontSize:20,fontWeight:900,color:T.green,fontFamily:"'DM Sans',sans-serif"}}>{assignedTasks.filter(t=>t.status==="in_progress").length}</div>
                         <div style={{fontSize:10,color:T.ink4,fontWeight:600}}>ACTIVE NOW</div>
                       </div>
-                      {allTaskAssignments.pendingResumeRequests>0 && (
-                        <div>
-                          <div style={{fontSize:20,fontWeight:900,color:T.violet,fontFamily:"'DM Sans',sans-serif"}}>{allTaskAssignments.pendingResumeRequests}</div>
-                          <div style={{fontSize:10,color:T.ink4,fontWeight:600}}>RESUME REQUESTS</div>
-                        </div>
-                      )}
                     </div>
                     <button onClick={()=>setTab("tasks")} style={{marginTop:9,fontSize:12,color:T.violet,fontWeight:700,background:"none",border:"none",cursor:"pointer",padding:0}}>View assigned tasks →</button>
                   </div>
@@ -1717,6 +1745,7 @@ export default function StaffMonitorPage() {
   const [selectedStaff, setSelectedStaff] = useState(null);
   const [lightbox,      setLightbox]      = useState(null);
   const [showAssignModal, setShowAssignModal] = useState(false);
+  const [assignTargetId, setAssignTargetId]   = useState(null); // staff pre-selected via card button
   const { toasts, push } = useToast();
   const pollRef = useRef(null);
   const isSuperAdmin = true;
@@ -1733,6 +1762,9 @@ export default function StaffMonitorPage() {
 
   useEffect(()=>{ fetchList(false); pollRef.current=setInterval(()=>fetchList(true),30000); return()=>clearInterval(pollRef.current); },[fetchList]);
 
+  const openAssignModal = (staff) => { setAssignTargetId(staff?._id ?? null); setShowAssignModal(true); };
+  const closeAssignModal = () => { setShowAssignModal(false); setAssignTargetId(null); };
+
   const filtered = staffList.filter(s=>{
     const q=search.toLowerCase();
     return (!q||s.name?.toLowerCase().includes(q)||s.email?.toLowerCase().includes(q)||s.role?.toLowerCase().includes(q))
@@ -1740,7 +1772,6 @@ export default function StaffMonitorPage() {
   });
 
   const onlineCount    = staffList.filter(s=>s.isOnline).length;
-  const offlineCount   = staffList.length - onlineCount;
   const totalTodaySecs = staffList.reduce((a,s)=>a+(s.todaySeconds??0),0);
   const activeJobs     = staffList.reduce((a,s)=>a+(s.jobStats?.activeJobs??0),0);
   const activeTasks    = staffList.reduce((a,s)=>a+(s.assignedTaskStats?.active??0),0);
@@ -1753,7 +1784,8 @@ export default function StaffMonitorPage() {
       <AssignTaskModal
         open={showAssignModal}
         staffList={staffList}
-        onClose={()=>setShowAssignModal(false)}
+        preselectedStaffId={assignTargetId}
+        onClose={closeAssignModal}
         push={push}
         onAssigned={()=>fetchList(true)}
       />
@@ -1790,7 +1822,7 @@ export default function StaffMonitorPage() {
                 <span key={label} style={{fontSize:11.5,fontWeight:600,color,background:T.bg2,borderRadius:7,padding:"5px 10px",border:`1px solid ${T.border}`}}>{label}</span>
               ))}
               {isSuperAdmin && (
-                <button onClick={()=>setShowAssignModal(true)} style={{padding:"7px 14px",borderRadius:9,border:`1px solid #FDE68A`,background:T.amberL,color:T.amberD,fontWeight:700,fontSize:12,cursor:"pointer"}}>
+                <button onClick={()=>openAssignModal(null)} style={{padding:"7px 14px",borderRadius:9,border:`1px solid #FDE68A`,background:T.amberL,color:T.amberD,fontWeight:700,fontSize:12,cursor:"pointer"}}>
                   🗂 Assign Task
                 </button>
               )}
@@ -1799,12 +1831,6 @@ export default function StaffMonitorPage() {
               </button>
             </div>
           </div>
-
-          {/* Mobile-only assign button */}
-          {isSuperAdmin && (
-            <div className="hide-sm" style={{display:"none"}} />
-          )}
-          <div style={{display:"none"}} />
 
           {/* Search + filter row */}
           <div style={{display:"flex",gap:8,paddingBottom:12,flexWrap:"wrap"}}>
@@ -1856,7 +1882,7 @@ export default function StaffMonitorPage() {
             </div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(296px,1fr))",gap:11}}>
               {filtered.filter(s=>s.isOnline).map(s=>(
-                <MonitorCard key={s._id} staff={s} onClick={()=>setSelectedStaff(s)} onOpenSelfie={setLightbox} />
+                <MonitorCard key={s._id} staff={s} onClick={()=>setSelectedStaff(s)} onOpenSelfie={setLightbox} onAssignTask={openAssignModal} />
               ))}
             </div>
           </div>
@@ -1872,7 +1898,7 @@ export default function StaffMonitorPage() {
             </div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(296px,1fr))",gap:11}}>
               {filtered.filter(s=>!s.isOnline).map(s=>(
-                <MonitorCard key={s._id} staff={s} onClick={()=>setSelectedStaff(s)} onOpenSelfie={setLightbox} />
+                <MonitorCard key={s._id} staff={s} onClick={()=>setSelectedStaff(s)} onOpenSelfie={setLightbox} onAssignTask={openAssignModal} />
               ))}
             </div>
           </div>
