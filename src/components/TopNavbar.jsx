@@ -134,6 +134,8 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
     user?.role?.toLowerCase?.()
   );
 
+  const is_hari=user.is_Special==true;
+
   // ── On mount: restore session & break state from server ──────────────────
   useEffect(() => {
     if (!user?._id) return;
@@ -464,7 +466,7 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
             )}
 
             {/* New Job (admin only) */}
-            {isAdmin && (
+            {isAdmin||is_hari && (
               <Button
                 type="primary"
                 icon={<PlusOutlined />}
