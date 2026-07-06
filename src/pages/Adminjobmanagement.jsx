@@ -12,12 +12,13 @@ import {
   PhoneOutlined, WalletOutlined, BankOutlined, InfoCircleOutlined,
   ExclamationCircleOutlined, CameraOutlined, CompassOutlined,
   CalendarOutlined, CheckOutlined, ToolOutlined, AppstoreOutlined,
-  UploadOutlined, SearchOutlined,
+  UploadOutlined, SearchOutlined,FileExcelOutlined
 } from "@ant-design/icons";
 import CustomTable from "../components/CustomTable";
 import { ERROR_NOTIFICATION, SUCCESS_NOTIFICATION } from "../helper/notification_helper";
 import dayjs from "dayjs";
 import jsPDF from "jspdf";
+import * as XLSX from "xlsx";
 
 
 
@@ -1257,6 +1258,95 @@ const AdminJobManagement = () => {
       if (!silent) setLoading(false);
     }
   }, []);
+const getExportQtyDisplay = (item) => {
+  const cat = item.item_category;
+
+  if (cat === "service_office") {
+    if (item.office_type === "website") return `${item.days || 0} day(s)`;
+    if (item.office_type === "social_media") return `${item.reels_count || 0} reels + ${item.post_count || 0} posts`;
+    return `${item.hours || 0} hr(s)`;
+  }
+
+  if (cat === "service_labour") {
+    const parts = [];
+    if (item.sq_ft > 0) parts.push(`${item.sq_ft} sq.ft`);
+    if (item.hours > 0) parts.push(`${item.hours} hr(s)`);
+    return parts.join(" + ") || "—";
+  }
+
+  // product
+  if (item.quantity_type === "sq.ft") {
+    const sizeStr = item.width && item.height ? `${item.width}×${item.height} ${item.size_unit}` : "";
+    return [
+      `${item.quantity || 0} qty`,
+      `${item.sq_ft || 0} sq.ft`,
+      sizeStr,
+    ].filter(Boolean).join(" · ");
+  }
+
+  return `${item.quantity || 0} pcs`;
+};
+
+const exportJobsToExcel = (jobsToExport) => {
+  const rows = [];
+
+  jobsToExport.forEach((job) => {
+    const items = (job.cart_items && job.cart_items.length) ? job.cart_items : [{}];
+
+    items.forEach((item, idx) => {
+      const isFirstRow = idx === 0;
+      const itemAmount = item.line_total !== undefined ? parseFloat(item.line_total || 0) : "";
+
+      rows.push({
+        "Order Date": isFirstRow
+          ? (job.order_date
+              ? dayjs(job.order_date).format("DD MMM YYYY")
+              : job.createdAt
+              ? dayjs(job.createdAt).format("DD MMM YYYY")
+              : "")
+          : "",
+        "Job No": isFirstRow ? (job.job_no || "") : "",
+        "Customer Name": isFirstRow
+          ? (job.customer_name
+              ? job.customer_name.charAt(0).toUpperCase() + job.customer_name.slice(1)
+              : "")
+          : "",
+        "Customer Phone": isFirstRow ? (job.customer_phone || "") : "",
+        "Product / Service": item.product_name || item.service_name || "",
+        "Qty / Size": (item.product_name || item.service_name) ? getExportQtyDisplay(item) : "",
+        // "Notes": item.notes || "",
+        "Item Amount": itemAmount,
+        "Total Amount": isFirstRow ? parseFloat(job.total_amount || 0) : "",
+        "Paid": isFirstRow ? parseFloat(job.payment_amount || 0) : "",
+        "Balance": isFirstRow ? parseFloat(job.balance_amount || 0) : "",
+      });
+    });
+  });
+
+  if (!rows.length) {
+    ERROR_NOTIFICATION({ message: "No jobs to export" });
+    return;
+  }
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws["!cols"] = [
+    { wch: 14 }, // Order Date
+    { wch: 14 }, // Job No
+    { wch: 22 }, // Customer Name
+    { wch: 14 }, // Customer Phone
+    { wch: 24 }, // Product / Service
+    { wch: 30 }, // Qty / Size
+    { wch: 32 }, // Notes
+    { wch: 14 }, // Item Amount
+    { wch: 14 }, // Total Amount
+    { wch: 14 }, // Paid
+    { wch: 14 }, // Balance
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Jobs");
+  XLSX.writeFile(wb, `Jobs-Export-${dayjs().format("YYYY-MM-DD_HHmm")}.xlsx`);
+};
 
   const startAutoRefresh = useCallback(() => {
     clearInterval(autoRefreshRef.current);
@@ -1706,6 +1796,12 @@ const AdminJobManagement = () => {
               <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#22c55e", boxShadow: "0 0 0 2px #bbf7d0", display: "inline-block", animation: "pulse 1.5s infinite" }} />
               <span style={{ fontSize: 11, color: "#15803d", fontWeight: 600, fontFamily: "monospace" }}>{formatCountdown(countdown)}</span>
             </div>
+             <Tooltip title="Export filtered jobs to Excel">
+    <Button icon={<FileExcelOutlined />} onClick={() => exportJobsToExcel(filteredJobs)}
+      style={{ borderRadius: 8, color: "#16a34a", borderColor: "#86efac" }}>
+      {!isMobile && "Export"}
+    </Button>
+  </Tooltip>
             <Tooltip title="Refresh now"><Button icon={<ReloadOutlined spin={loading} />} onClick={() => { loadJobs(); startAutoRefresh(); }} style={{ borderRadius: 8 }} /></Tooltip>
           </div>
         </div>
