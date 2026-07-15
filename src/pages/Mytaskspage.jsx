@@ -1,6 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useEffect, useState, useCallback, useRef } from "react";
 import axios from "axios";
+import { admintoken } from "../helper/notification_helper";
 
 // ─── Axios Instance ────────────────────────────────────────────────────────
 const http = axios.create({
@@ -9,10 +10,13 @@ const http = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 http.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token") || localStorage.getItem("adminToken");
+  // Real auth token lives at localStorage[admintoken] ("admin_token") —
+  // see pages/Login.jsx. "token"/"adminToken" are never set.
+  const token = localStorage.getItem(admintoken) || localStorage.getItem("token");
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
+
 
 // Matches the Express router / controller exactly:
 //   GET  /assigned-tasks/staff/:staffId

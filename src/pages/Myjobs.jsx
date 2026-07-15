@@ -178,6 +178,8 @@ const buildInvoicePDF = async (job) => {
   const designChg=parseFloat(job.design_charges||0);
   const discountAmt=parseFloat(job.discount_amount||0);
   const discountPct=parseFloat(job.discount_percentage||0);
+  const taxAmt=parseFloat(job.tax_amount||0);
+
   y=8;
   doc.setFillColor(...WHITE); doc.roundedRect(MARGIN,y,4,6,1,1,"F");
   doc.setTextColor(...BLUE); doc.setFontSize(9.5); doc.setFont("helvetica","bold");
@@ -233,10 +235,37 @@ const buildInvoicePDF = async (job) => {
   });
   autoTable(doc,{startY:y,head:[["#","Item","Rate / Item","Qty","Amount"]],body:tableRows.length?tableRows:[["","No items","","",""]],theme:"grid",headStyles:{fillColor:[235,235,235],textColor:DARK,fontSize:8.5,fontStyle:"bold",halign:"center",valign:"middle",cellPadding:{top:4,bottom:4,left:3,right:3}},bodyStyles:{fontSize:8.5,textColor:DARK,cellPadding:{top:4,bottom:4,left:3,right:3},valign:"middle"},alternateRowStyles:{fillColor:BGLIGHT},columnStyles:{0:{cellWidth:10,halign:"center"},1:{cellWidth:78,halign:"left"},2:{cellWidth:32,halign:"right"},3:{cellWidth:26,halign:"center"},4:{cellWidth:36,halign:"right",fontStyle:"bold"}},margin:{left:MARGIN,right:MARGIN},tableLineColor:LGRAY,tableLineWidth:0.25});
   y=doc.lastAutoTable.finalY;
-  const extraRows=[...(discountAmt>0?[{label:`Discount (${discountPct}%)`,value:`- Rs. ${discountAmt.toFixed(2)}`,green:true}]:[]),(designChg>0?{label:"Design Charges",value:`Rs. ${designChg.toFixed(2)}`}:null),(deliveryChg>0?{label:"Delivery Charges",value:`Rs. ${deliveryChg.toFixed(2)}`}:null),(job.free_delivery?{label:"Delivery Charges",value:"Free"}:null)].filter(Boolean);
+
+  // ── Summary rows: Discount, Design Charges, GST, Delivery ─────────────────
+  const extraRows = [
+    ...(discountAmt > 0
+      ? [{ label: `Discount (${discountPct}%)`, value: `- Rs. ${discountAmt.toFixed(2)}`, green: true }]
+      : []),
+    ...(designChg > 0
+      ? [{ label: "Design Charges", value: `Rs. ${designChg.toFixed(2)}` }]
+      : []),
+    ...(taxAmt > 0
+      ? [{ label: "GST", value: `Rs. ${taxAmt.toFixed(2)}` }]
+      : []),
+    ...(job.free_delivery
+      ? [{ label: "Delivery Charges", value: "Free" }]
+      : deliveryChg > 0
+        ? [{ label: "Delivery Charges", value: `Rs. ${deliveryChg.toFixed(2)}` }]
+        : []),
+  ];
+
   const totX=PW-MARGIN-90, totRX=PW-MARGIN;
   let ty=y+4;
-  extraRows.forEach(({label,value,green})=>{doc.setFontSize(8);doc.setFont("helvetica","normal");doc.setTextColor(...(green?[0,140,60]:MID));doc.text(label,totX,ty);doc.setFont("helvetica",green?"bold":"normal");doc.setTextColor(...(green?[0,140,60]:DARK));doc.text(value,totRX,ty,{align:"right"});ty+=5.5;doc.setDrawColor(...LGRAY);doc.setLineWidth(0.2);doc.line(totX,ty-1,totRX,ty-1);});
+  extraRows.forEach(({label,value,green})=>{
+    doc.setFontSize(8);doc.setFont("helvetica","normal");
+    doc.setTextColor(...(green?[0,140,60]:MID));
+    doc.text(label,totX,ty);
+    doc.setFont("helvetica",green?"bold":"normal");
+    doc.setTextColor(...(green?[0,140,60]:DARK));
+    doc.text(value,totRX,ty,{align:"right"});
+    ty+=5.5;
+    doc.setDrawColor(...LGRAY);doc.setLineWidth(0.2);doc.line(totX,ty-1,totRX,ty-1);
+  });
   fillRect(MARGIN,ty,CW,10,[235,235,235],LGRAY);
   const totalQty=cartItems.reduce((s,it)=>s+parseFloat(it.quantity||1),0);
   doc.setFontSize(7.5);doc.setFont("helvetica","normal");doc.setTextColor(...MID);doc.text(`Total Items / Qty: ${cartItems.length} / ${totalQty}`,MARGIN+3,ty+6.5);
@@ -267,6 +296,14 @@ const buildJobSheetPDF = async (job) => {
   const addr=job.delivery_address||{};
   const invDate=job.order_date?dayjs(job.order_date).format("DD MMM YYYY"):dayjs().format("DD MMM YYYY");
   const estDate=job.estimated_delivery_date?dayjs(job.estimated_delivery_date).format("DD MMM YYYY"):"";
+
+  // Charges
+  const discountAmt2 = parseFloat(job.discount_amount||0);
+  const discountPct2 = parseFloat(job.discount_percentage||0);
+  const designChg2   = parseFloat(job.design_charges||0);
+  const taxAmt2      = parseFloat(job.tax_amount||0);
+  const deliveryChg2 = job.free_delivery ? 0 : parseFloat(job.delivery_charges||0);
+
   const hr=(yy,color=LGRAY,lw=0.3)=>{doc.setDrawColor(...color);doc.setLineWidth(lw);doc.line(MARGIN,yy,PW-MARGIN,yy);};
   const txt=(text,x,y,opts={})=>{doc.text(String(text??""),x,y,opts);};
   const buildSizeString=(it)=>{
@@ -311,13 +348,53 @@ const buildJobSheetPDF = async (job) => {
   });
   autoTable(doc,{startY:y,head:[["S.No","Product","Size","Quantity","Amount"]],body:tableRows,theme:"grid",headStyles:{fillColor:[230,230,230],textColor:DARK,fontSize:8.5,fontStyle:"bold",halign:"center",valign:"middle",cellPadding:{top:3,bottom:3,left:2,right:2}},bodyStyles:{fontSize:8,textColor:DARK,cellPadding:{top:5,bottom:5,left:2,right:1},valign:"middle",minCellHeight:10},columnStyles:{0:{cellWidth:12,halign:"center"},1:{cellWidth:72,halign:"left"},2:{cellWidth:36,halign:"center"},3:{cellWidth:28,halign:"center"},4:{cellWidth:34,halign:"right",fontStyle:"bold",cellPadding:{right:2}}}});
   y=doc.lastAutoTable.finalY+4;
-  const footerY=y+4;
-  const labelText="Total Job Amount : ", amountText=`Rs. ${grandTotal.toLocaleString("en-IN",{minimumFractionDigits:2})}`;
+
+  // ── Summary rows: Discount, Design Charges, GST, Delivery ─────────────────
+  const summaryRows = [
+    ...(discountAmt2 > 0
+      ? [{ label: `Discount (${discountPct2}%)`, value: `- Rs. ${discountAmt2.toFixed(2)}`, green: true }]
+      : []),
+    ...(designChg2 > 0
+      ? [{ label: "Design Charges", value: `Rs. ${designChg2.toFixed(2)}` }]
+      : []),
+    ...(taxAmt2 > 0
+      ? [{ label: "GST", value: `Rs. ${taxAmt2.toFixed(2)}` }]
+      : []),
+    ...(job.free_delivery
+      ? [{ label: "Delivery Charges", value: "Free" }]
+      : deliveryChg2 > 0
+        ? [{ label: "Delivery Charges", value: `Rs. ${deliveryChg2.toFixed(2)}` }]
+        : []),
+  ];
+
+  const rightEdge = MARGIN + CW - 8;
+  const labelCol  = rightEdge - 80;
+
+  let sy = y;
+  summaryRows.forEach(({ label, value, green }) => {
+    doc.setFontSize(8.5);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(...(green ? [0, 140, 60] : MID));
+    txt(label, labelCol, sy);
+    doc.setFont("helvetica", green ? "bold" : "normal");
+    doc.setTextColor(...(green ? [0, 140, 60] : DARK));
+    txt(value, rightEdge, sy, { align: "right" });
+    doc.setDrawColor(...LGRAY); doc.setLineWidth(0.2);
+    doc.line(labelCol, sy + 2, rightEdge, sy + 2);
+    sy += 6;
+  });
+
+  // Add a small gap after summary rows before grand total
+  if (summaryRows.length > 0) sy += 2;
+
+  const footerY = sy + 2;
+  const labelText = "Total Job Amount : ";
+  const amountText = `Rs. ${grandTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
   doc.setFont("helvetica","normal");doc.setFontSize(9);
-  const labelWidth=doc.getTextWidth(labelText);
+  const labelWidth = doc.getTextWidth(labelText);
   doc.setFont("helvetica","bold");doc.setFontSize(10);
-  const totalWidth=labelWidth+doc.getTextWidth(amountText);
-  const rightX=MARGIN+CW-8, startX=rightX-totalWidth;
+  const totalWidth = labelWidth + doc.getTextWidth(amountText);
+  const startX = rightEdge - totalWidth;
   doc.setFont("helvetica","normal");doc.setFontSize(9);doc.setTextColor(...MID);txt(labelText,startX,footerY);
   doc.setFont("helvetica","bold");doc.setFontSize(10);doc.setTextColor(...DARK);txt(amountText,startX+labelWidth,footerY);
   y=footerY+24;hr(y,LGRAY);
@@ -423,11 +500,10 @@ const drawVoucherCanvas = async (canvas, { job, couponCode, couponDiscount, disc
 
   // ═══ LEFT PANEL ═══════════════════════════════════════════════════════════
 
-  // ── TOP HEADER ROW: black badge (left) + printe.in logo (right), same Y ──
-  const headerY = 16;   // top of header row
-  const headerH = 44;   // height of header row
+  const headerY = 16;
+  const headerH = 44;
 
-  // 1) Black badge — D-MEDIA | EXCLUSIVE VOUCHER (top-left)
+  // Black badge — D-MEDIA | EXCLUSIVE VOUCHER
   const bW = 240, bH = 34, bX = 22, bY = headerY + (headerH - 34) / 2;
   rr(bX, bY, bW, bH, 8, BROWN_DARK, BROWN_MID, 1.5);
   ctx.font = "bold 13px Arial, sans-serif";
@@ -439,13 +515,11 @@ const drawVoucherCanvas = async (canvas, { job, couponCode, couponDiscount, disc
   ctx.font = "600 10px Arial, sans-serif";
   ctx.fillText("EXCLUSIVE VOUCHER", bX + 14 + brandWidth + 18, bY + bH / 2);
 
-  // 2) printe.in logo — same row, right-aligned inside the left panel
+  // printe.in logo
   const LOGO_URL = "https://www.printe.in/assets/without_bg-B7FPZzwZ.png";
   const logoW = 130, logoH = 44;
-  // Place logo flush right of the left panel with a small margin
   const logoX = splitX - logoW - 18;
   const logoY = headerY + (headerH - logoH) / 2;
-
   try {
     const logoImg = await new Promise((resolve, reject) => {
       const img = new Image();
@@ -455,11 +529,7 @@ const drawVoucherCanvas = async (canvas, { job, couponCode, couponDiscount, disc
       img.src = LOGO_URL;
     });
     ctx.drawImage(logoImg, logoX, logoY, logoW, logoH);
-  } catch {
-    // Fallback: skip logo silently
-  }
-
-  // ── Rest of left panel ──
+  } catch {}
 
   // Tagline
   ctx.fillStyle = BROWN_DARK;
@@ -507,7 +577,6 @@ const drawVoucherCanvas = async (canvas, { job, couponCode, couponDiscount, disc
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillText(couponCode||"Click Generate below", lcx, cbY+39);
 
-  // Applicable product badge (if set)
   if(applicableProduct){
     const prod = APPLICABLE_PRODUCTS.find(p=>p.value===applicableProduct);
     if(prod){
@@ -519,15 +588,12 @@ const drawVoucherCanvas = async (canvas, { job, couponCode, couponDiscount, disc
     }
   }
 
-  // Website footer
   ctx.fillStyle = "rgba(0,0,0,0.50)";
   ctx.font = "12px Arial, sans-serif";
   ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
   ctx.fillText("https://printe.in", lcx, H-16);
 
-// ═══ RIGHT PANEL ═══════════════════════════════════════════════════════════
-
-  // Logo above "YOUR DISCOUNT"
+  // ═══ RIGHT PANEL ═══════════════════════════════════════════════════════════
   const RIGHT_LOGO_URL = "https://dmedia.in/assets/images/edit_white_logo1.png";
   const rLogoW = 110, rLogoH = 32;
   const rLogoX = rcx - rLogoW / 2;
@@ -541,9 +607,7 @@ const drawVoucherCanvas = async (canvas, { job, couponCode, couponDiscount, disc
       img.src = RIGHT_LOGO_URL;
     });
     ctx.drawImage(rLogoImg, rLogoX, rLogoY, rLogoW, rLogoH);
-  } catch {
-    // Fallback: skip logo silently
-  }
+  } catch {}
 
   ctx.strokeStyle = YELLOW; ctx.lineWidth = 1; ctx.globalAlpha = 0.5;
   ctx.beginPath(); ctx.moveTo(rcx-80,58); ctx.lineTo(rcx+80,58); ctx.stroke();
@@ -578,7 +642,6 @@ const drawVoucherCanvas = async (canvas, { job, couponCode, couponDiscount, disc
   ctx.beginPath(); ctx.moveTo(rcx-90,274); ctx.lineTo(rcx+90,274); ctx.stroke();
   ctx.globalAlpha = 1;
 
-  // Customer details
   const dy=282, lh=23;
   ctx.fillStyle = "rgba(255,255,255,0.40)";
   ctx.font = "10px Arial, sans-serif"; ctx.letterSpacing = "2px";
@@ -597,7 +660,6 @@ const drawVoucherCanvas = async (canvas, { job, couponCode, couponDiscount, disc
   ctx.font = `bold 11px "Courier New", Courier, monospace`; ctx.textAlign = "center";
   ctx.fillText(`REF: ${job.job_no||"—"}`, rcx, dy+lh*3+4);
 
-  // Barcode
   const bcy=H-44, bsx=rcx-52;
   const barData=[4,2,6,2,3,2,5,2,4,2,3,2,5,2,4,2,3];
   let bx2=bsx;
@@ -687,9 +749,9 @@ const PdfShareModal = ({ open, onClose, job, type = "jobsheet", couponStoreRef }
   // Coupon state
   const [showCoupon, setShowCoupon] = useState(false);
   const [couponCode, setCouponCode] = useState("");
-const [couponDiscount, setCouponDiscount] = useState("400");
-const [discountType, setDiscountType] = useState("fixed");
-const [couponValidity, setCouponValidity] = useState("6");
+  const [couponDiscount, setCouponDiscount] = useState("400");
+  const [discountType, setDiscountType] = useState("fixed");
+  const [couponValidity, setCouponValidity] = useState("6");
   const [applicableProduct, setApplicableProduct] = useState(APPLICABLE_PRODUCTS[0].value);
   const [couponGenerated, setCouponGenerated] = useState(false);
   const [couponSending, setCouponSending] = useState(false);
@@ -720,9 +782,9 @@ const [couponValidity, setCouponValidity] = useState("6");
       setCouponGenerated(true);
     } else {
       setCouponCode("");
-     setCouponDiscount("400");
-setDiscountType("fixed");
-setCouponValidity("6");
+      setCouponDiscount("400");
+      setDiscountType("fixed");
+      setCouponValidity("6");
       setApplicableProduct(APPLICABLE_PRODUCTS[0].value);
       setCouponGenerated(false);
     }
@@ -753,7 +815,6 @@ setCouponValidity("6");
     }
   }, [open]);
 
-  // Redraw canvas — handles async drawVoucherCanvas
   const redrawCanvas = useCallback(() => {
     drawVoucherCanvas(couponCanvasRef.current, { job, couponCode, couponDiscount, discountType, couponValidity, applicableProduct })
       .catch(err => console.warn("Canvas draw error:", err));
@@ -1048,8 +1109,7 @@ setCouponValidity("6");
             <div>
               <div style={{fontSize:10,fontWeight:700,color:C.BROWN_MID,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Valid (days)</div>
               <Select value={couponValidity} onChange={v=>{setCouponValidity(v);invalidateCoupon();}} size="small" style={{width:"100%"}}>
-               {["6","7","14","30","60","90"].map(v=><Option key={v} value={v}>{v}d</Option>)}
-
+                {["6","7","14","30","60","90"].map(v=><Option key={v} value={v}>{v}d</Option>)}
               </Select>
             </div>
             <div>
@@ -1183,6 +1243,7 @@ const JobDetailView = ({ job, isMobile, onOpenJobSheetShare, onOpenQuotationShar
         {[
           {label:"Subtotal",value:`₹${parseFloat(job.subtotal||0).toFixed(2)}`},
           ...(job.discount_amount>0?[{label:`Discount (${job.discount_percentage}%)`,value:`- ₹${parseFloat(job.discount_amount).toFixed(2)}`,green:true}]:[]),
+          ...(parseFloat(job.design_charges||0)>0?[{label:"Design Charges",value:`₹${parseFloat(job.design_charges).toFixed(2)}`}]:[]),
           {label:"GST",value:`₹${parseFloat(job.tax_amount||0).toFixed(2)}`},
           {label:"Delivery",value:job.free_delivery?"Free 🎉":`₹${parseFloat(job.delivery_charges||0).toFixed(2)}`},
         ].map(({label,value,green})=>(

@@ -1,17 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useSelector } from "react-redux";
 
 // ─── Config ────────────────────────────────────────────────────────────────
 const API_BASE = "https://api.dmedia.in/api";
 
-// ─── Auth — swap with your real auth selector ──────────────────────────────
-const useCurrentUser = () => ({
-  _id: "675be0febb62992beaa0b1c0",
-  name: "Danyi",
-  role: "super admin", // "super admin" | "admin" | anything else
-});
+// ─── Auth — reads from Redux store (populated at login) ────────────────────
+const useCurrentUser = () => useSelector((state) => state.authSlice.user);
 
-const isAdminRole = (role = "") =>
-  ["super admin", "admin"].includes(role.toLowerCase().trim());
+// Super admin, admin, OR individually flagged is_Special users see all data
+const useIsAdmin = (user) =>
+  ["super admin", "admin"].includes((user?.role || "").toLowerCase().trim()) ||
+  user?.is_Special === true;
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 const DELIVERY_OPTIONS = [
@@ -43,9 +42,6 @@ const PICKUP_STATUS_META = {
 };
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
-const fmtTime = (iso) =>
-  new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
 const fmtDate = (iso) =>
   new Date(iso).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" }) +
   " " + new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -58,9 +54,15 @@ const countdown = (isoStr) => {
   return { label: h > 0 ? `${h}h ${m}m` : `${m}m`, past: false };
 };
 
+// Build Authorization header from localStorage token
+const authHeader = () => {
+  const token = localStorage.getItem("admin_token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
 const apiCall = async (url, options = {}) => {
   const res = await fetch(`${API_BASE}${url}`, {
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeader() },
     ...options,
   });
   const data = await res.json();
@@ -82,9 +84,7 @@ const groupIssues = (issues) => {
     outsource_type: items[0].outsource_type,
     outsource_vendor: items[0].outsource_vendor,
     issues: items,
-    // Use shared assignment from first assigned item
     pickup_assignment: items.find(i => i.pickup_assignment)?.pickup_assignment || null,
-    // A group is fully assigned if all items have same assignee
     allAssigned: items.every(i => i.pickup_assignment),
     partiallyAssigned: items.some(i => i.pickup_assignment) && !items.every(i => i.pickup_assignment),
   }));
@@ -338,7 +338,6 @@ function DeliveredModal({ group, onClose, onConfirm, saving }) {
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="scale-in modal-box" style={{ maxWidth: 440 }}>
-        {/* Header */}
         <div style={{ background: "linear-gradient(135deg,#0f172a,#1e293b)", padding: "20px 24px", flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{ width: 44, height: 44, borderRadius: 13, background: typeMeta.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>
@@ -358,7 +357,6 @@ function DeliveredModal({ group, onClose, onConfirm, saving }) {
             {isCustomer && <span style={{ color: "#be123c" }}> Mobile number is required for customer handover.</span>}
           </p>
 
-          {/* Task summary */}
           <div style={{ marginBottom: 18, background: "#f8fafc", borderRadius: 12, padding: "10px 14px", border: "1px solid #f1f5f9" }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".07em", marginBottom: 8 }}>Tasks Being Delivered</div>
             {group.issues.map((issue, i) => (
@@ -414,9 +412,8 @@ function DeliveredModal({ group, onClose, onConfirm, saving }) {
   );
 }
 
-// ─── Assign Modal (multi-select issues) ────────────────────────────────────
+// ─── Assign Modal ─────────────────────────────────────────────────────────
 function AssignModal({ groups, allIssues, admins, onClose, onSaved, onError }) {
-  // Pre-select the first group's issues
   const [selectedIssueIds, setSelectedIssueIds] = useState(
     groups.length === 1 ? groups[0].issues.map(i => i._id) : []
   );
@@ -430,10 +427,7 @@ function AssignModal({ groups, allIssues, admins, onClose, onSaved, onError }) {
   const isReassign = groups.length === 1 && !!groups[0].pickup_assignment;
   const minDT = new Date(Date.now() + 60000).toISOString().slice(0, 16);
 
-  // All unassigned issues (for multi-select)
   const eligibleIssues = allIssues.filter(i => !i.pickup_assignment && !i.is_deleted);
-
-  // Group eligible issues by job+type for display
   const eligibleGroups = groupIssues(eligibleIssues);
 
   const toggleIssue = (id) => {
@@ -492,7 +486,6 @@ function AssignModal({ groups, allIssues, admins, onClose, onSaved, onError }) {
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="scale-in modal-box">
-        {/* Header */}
         <div style={{ background: "linear-gradient(135deg,#0f172a,#1e293b)", padding: "20px 24px", flexShrink: 0,
           display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
@@ -518,7 +511,6 @@ function AssignModal({ groups, allIssues, admins, onClose, onSaved, onError }) {
         <div className="modal-scroll">
           <div style={{ padding: "18px 24px", display: "flex", flexDirection: "column", gap: 18 }}>
 
-            {/* Task selection (hidden in reassign mode for single group) */}
             {!isReassign && (
               <div>
                 <Label required>Select Tasks</Label>
@@ -534,7 +526,6 @@ function AssignModal({ groups, allIssues, admins, onClose, onSaved, onError }) {
                     const someIn = grp.issues.some(i => selectedIssueIds.includes(i._id));
                     return (
                       <div key={grp.groupKey} style={{ marginBottom: 8 }}>
-                        {/* Group header row */}
                         <div
                           onClick={() => toggleGroup(grp)}
                           style={{
@@ -570,7 +561,6 @@ function AssignModal({ groups, allIssues, admins, onClose, onSaved, onError }) {
                             {grp.issues.filter(i => selectedIssueIds.includes(i._id)).length}/{grp.issues.length}
                           </span>
                         </div>
-                        {/* Individual issues within group */}
                         <div style={{ paddingLeft: 16 }}>
                           {grp.issues.map(issue => {
                             const checked = selectedIssueIds.includes(issue._id);
@@ -608,7 +598,6 @@ function AssignModal({ groups, allIssues, admins, onClose, onSaved, onError }) {
               </div>
             )}
 
-            {/* Pickup person */}
             <div>
               <Label required>Pickup Person</Label>
               <select
@@ -624,7 +613,6 @@ function AssignModal({ groups, allIssues, admins, onClose, onSaved, onError }) {
               <FieldErr msg={errors.userId} />
             </div>
 
-            {/* Delivery destination */}
             <div>
               <Label required>Deliver To</Label>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
@@ -646,7 +634,6 @@ function AssignModal({ groups, allIssues, admins, onClose, onSaved, onError }) {
               <FieldErr msg={errors.deliveryTo} />
             </div>
 
-            {/* Pickup time */}
             <div>
               <Label required>Pickup Time</Label>
               <input
@@ -658,7 +645,6 @@ function AssignModal({ groups, allIssues, admins, onClose, onSaved, onError }) {
               <FieldErr msg={errors.pickupTime} />
             </div>
 
-            {/* Notes */}
             <div>
               <Label>Notes <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: "normal", color: "#94a3b8", fontSize: 11 }}>(optional)</span></Label>
               <textarea
@@ -671,7 +657,6 @@ function AssignModal({ groups, allIssues, admins, onClose, onSaved, onError }) {
           </div>
         </div>
 
-        {/* Footer */}
         <div style={{ padding: "12px 24px 22px", display: "flex", gap: 10, flexShrink: 0, borderTop: "1px solid #f1f5f9" }}>
           <button onClick={onClose} className="btn-ghost" style={{ flex: 1, padding: "12px 0", fontSize: 14 }}>
             Cancel
@@ -723,11 +708,11 @@ function PickupStatusPanel({ group, isAdmin, currentUserId, onUpdated, onError, 
     }
   };
 
+  // Admin OR the assigned person can act on a pickup
   const canAct = isAdmin || isMyTask;
 
   return (
     <div style={{ borderRadius: 12, border: `1px solid ${sm.dot}30`, overflow: "hidden" }}>
-      {/* Assignment info */}
       <div style={{ padding: "10px 12px", background: sm.bg }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
@@ -756,7 +741,6 @@ function PickupStatusPanel({ group, isAdmin, currentUserId, onUpdated, onError, 
           </div>
         </div>
 
-        {/* Timestamps */}
         <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 8 }}>
           <div style={{ fontSize: 10, color: "#94a3b8" }}>
             📋 Assigned: <span style={{ fontWeight: 600, color: "#64748b" }}>{fmtDate(pa.assigned_at)}</span>
@@ -776,7 +760,6 @@ function PickupStatusPanel({ group, isAdmin, currentUserId, onUpdated, onError, 
           )}
         </div>
 
-        {/* Receiver info (stored after delivery) */}
         {pa.received_by && (
           <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #e2e8f040" }}>
             <div style={{ fontSize: 11, color: "#334155" }}>
@@ -795,7 +778,6 @@ function PickupStatusPanel({ group, isAdmin, currentUserId, onUpdated, onError, 
         )}
       </div>
 
-      {/* Action buttons */}
       {canAct && !["delivered", "cancelled"].includes(currentStatus) && (
         <div style={{ display: "flex", gap: 6, padding: "8px 10px", background: "#f8fafc", borderTop: "1px solid #f1f5f9" }}>
           {currentStatus === "pending" && (
@@ -830,15 +812,12 @@ function GroupCard({ group, isAdmin, currentUserId, onAssign, onStatusUpdated, o
   const [expanded, setExpanded] = useState(false);
   const typeMeta = TYPE_META[group.outsource_type] || { icon: "📦", color: "#475569", bg: "#f8fafc", ring: "#e2e8f0" };
   const totalQty = group.issues.reduce((s, i) => s + (i.issued_qty || 0), 0);
-  const assigneeName = group.pickup_assignment?.assigned_to?.name || null;
   const assigneeId = group.pickup_assignment?.assigned_to?.user_id?._id || group.pickup_assignment?.assigned_to?.user_id || null;
   const isMyTask = !isAdmin && assigneeId === currentUserId;
 
   return (
     <div className="group-card fade-up" style={{ "--card-accent": typeMeta.color }}>
-      {/* Card header */}
       <div style={{ padding: "16px 18px 14px" }}>
-        {/* Top row */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 12 }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
@@ -862,7 +841,6 @@ function GroupCard({ group, isAdmin, currentUserId, onAssign, onStatusUpdated, o
             </div>
           </div>
 
-          {/* Stats */}
           <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
             <div style={{ textAlign: "center", background: "#f8fafc", borderRadius: 10, padding: "6px 10px", border: "1px solid #f1f5f9" }}>
               <div style={{ fontSize: 14, fontWeight: 900, color: "#0f172a" }}>{group.issues.length}</div>
@@ -877,7 +855,6 @@ function GroupCard({ group, isAdmin, currentUserId, onAssign, onStatusUpdated, o
           </div>
         </div>
 
-        {/* Task list (collapsed / expanded) */}
         <div style={{ marginBottom: 12 }}>
           {group.issues.slice(0, expanded ? group.issues.length : 2).map((issue) => {
             const sm = STATUS_META[issue.status] || STATUS_META.issued;
@@ -918,7 +895,6 @@ function GroupCard({ group, isAdmin, currentUserId, onAssign, onStatusUpdated, o
           )}
         </div>
 
-        {/* Pickup section */}
         {group.pickup_assignment ? (
           <>
             <PickupStatusPanel
@@ -968,7 +944,6 @@ const SkeletonCard = () => (
   </div>
 );
 
-// ─── Empty ──────────────────────────────────────────────────────────────────
 const Empty = ({ icon, title, sub, action }) => (
   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "80px 24px", gap: 10, textAlign: "center" }}>
     <div style={{ fontSize: 48 }}>{icon}</div>
@@ -1014,7 +989,8 @@ function KPIStrip({ stats, isAdmin }) {
 // ─── Main Dashboard ─────────────────────────────────────────────────────────
 function PickupDashboard() {
   const currentUser = useCurrentUser();
-  const isAdmin = isAdminRole(currentUser?.role);
+  // FIX: derive isAdmin from real Redux user (role string + is_Special flag)
+  const isAdmin = useIsAdmin(currentUser);
 
   const [issues,        setIssues]   = useState([]);
   const [admins,        setAdmins]   = useState([]);
@@ -1024,12 +1000,10 @@ function PickupDashboard() {
   const [toast,         setToast]    = useState(null);
   const toastTimer = useRef(null);
 
-  // Modals
-  const [assignGroups,   setAssignGroups]   = useState(null); // groups[] for AssignModal
-  const [deliveredGroup, setDeliveredGroup] = useState(null); // group for DeliveredModal
+  const [assignGroups,   setAssignGroups]   = useState(null);
+  const [deliveredGroup, setDeliveredGroup] = useState(null);
   const [deliverSaving,  setDeliverSaving]  = useState(false);
 
-  // Filters
   const [typeFilter,   setTypeFilter]   = useState("all");
   const [pickupFilter, setPickupFilter] = useState("all");
   const [search,       setSearch]       = useState("");
@@ -1046,25 +1020,26 @@ function PickupDashboard() {
     try {
       let raw = [];
       if (isAdmin) {
+        // Admins / super admin / is_Special: fetch ALL outsource issues
         const data = await apiCall("/material/outsource?limit=200");
         raw = data.data?.issues || data.issues || [];
       } else {
+        // Regular users: fetch ONLY their assigned pickups
         const data = await apiCall(`/material/pickups/user/${currentUser._id}?limit=200`);
         raw = data.data?.issues || data.issues || [];
       }
       setIssues(raw.filter(i => !i.is_deleted));
     } catch (err) {
-      if (isAdmin) {
-        try {
-          const data2 = await apiCall("/material?limit=200");
-          const raw2 = data2.data?.issues || data2.issues || [];
-          setIssues(raw2.filter(i => i.calc_mode === "outsource" && !i.is_deleted));
-        } catch { setIssueErr(err.message); }
-      } else {
-        setIssueErr(err.message);
-      }
-    } finally { setLI(false); }
+      setIssueErr(err.message);
+    } finally {
+      setLI(false);
+    }
   }, [isAdmin, currentUser._id]);
+
+  useEffect(() => {
+    if (!currentUser._id) return; // wait until user is loaded from Redux
+    fetchIssues();
+  }, [fetchIssues, currentUser._id]);
 
   useEffect(() => {
     if (!isAdmin) { setLA(false); return; }
@@ -1077,8 +1052,6 @@ function PickupDashboard() {
       finally { setLA(false); }
     })();
   }, [isAdmin]);
-
-  useEffect(() => { fetchIssues(); }, [fetchIssues]);
 
   // ── Handlers ─────────────────────────────────────────────────────────────
   const handleSaved = useCallback((results) => {
@@ -1098,7 +1071,6 @@ function PickupDashboard() {
     setIssues(prev => {
       const resultMap = new Map();
       results.forEach(r => {
-        // Match by issue_no or find all from the group
         if (r.issue_no) resultMap.set(r.issue_no, r);
       });
       return prev.map(issue => {
@@ -1135,7 +1107,6 @@ function PickupDashboard() {
           })
         )
       );
-      // Update state with receiver info
       setIssues(prev => prev.map(issue => {
         const matched = deliveredGroup.issues.find(gi => gi._id === issue._id);
         if (!matched || !issue.pickup_assignment) return issue;
@@ -1215,7 +1186,6 @@ function PickupDashboard() {
     <div style={{ minHeight: "100vh", background: "#f0f2f5" }}>
       <style>{CSS}</style>
 
-      {/* Header */}
       <header style={{ background: "#fff", borderBottom: "1px solid #e8edf3", position: "sticky", top: 0, zIndex: 50, boxShadow: "0 1px 8px rgba(0,0,0,.06)" }}>
         <div style={{ maxWidth: 1280, margin: "0 auto", padding: "0 20px" }}>
           <div style={{ padding: "16px 0 12px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
@@ -1237,6 +1207,7 @@ function PickupDashboard() {
                     border: `1px solid ${isAdmin ? "#c7d2fe" : "#bbf7d0"}`,
                   }}>
                     {isAdmin ? "🔑" : "👤"} {currentUser.role}
+                    {currentUser.is_Special && <span style={{ fontSize: 9, background: "#7c3aed", color: "#fff", padding: "1px 5px", borderRadius: 99, marginLeft: 4 }}>★</span>}
                   </span>
                 </div>
               </div>
@@ -1254,7 +1225,6 @@ function PickupDashboard() {
             </div>
           </div>
 
-          {/* Tabs */}
           <div style={{ display: "flex", alignItems: "center", gap: 0, overflowX: "auto" }}>
             {tabs.map(t => (
               <button key={t.id} onClick={() => setPickupFilter(t.id)}
@@ -1275,7 +1245,6 @@ function PickupDashboard() {
         </div>
       </header>
 
-      {/* Filter bar */}
       <div style={{ background: "#fff", borderBottom: "1px solid #e8edf3" }}>
         <div style={{ maxWidth: 1280, margin: "0 auto", padding: "10px 20px", display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           <div style={{ position: "relative", flexGrow: 1, minWidth: 200 }}>
@@ -1298,7 +1267,6 @@ function PickupDashboard() {
         </div>
       </div>
 
-      {/* Body */}
       <main style={{ maxWidth: 1280, margin: "0 auto", padding: "24px 20px 64px" }}>
         {loading ? (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
@@ -1342,7 +1310,6 @@ function PickupDashboard() {
         )}
       </main>
 
-      {/* Assign Modal */}
       {assignGroups && isAdmin && (
         <AssignModal
           groups={assignGroups}
@@ -1354,7 +1321,6 @@ function PickupDashboard() {
         />
       )}
 
-      {/* Delivered / Handover Modal */}
       {deliveredGroup && (
         <DeliveredModal
           group={deliveredGroup}
@@ -1370,3 +1336,4 @@ function PickupDashboard() {
 }
 
 export default PickupDashboard;
+

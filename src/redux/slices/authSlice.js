@@ -9,6 +9,7 @@ const initialState = {
     phone: "",
     profileImg: "",
     pagePermissions: [],
+    is_Special: false,   // FIX: added so PickupDashboard can read it
   },
 };
 

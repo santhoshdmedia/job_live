@@ -650,7 +650,7 @@ const QuantityCalcCard = ({ printQty, mediaQty, unit = "pcs" }) => {
           <p className="text-[10px] text-slate-400">{unit}</p>
         </div>
         <div className={`rounded-xl p-3 border text-center ${hasMedia ? "bg-teal-50 border-teal-100" : "bg-slate-50 border-slate-100 opacity-50"}`}>
-          <p className="text-[10px] font-bold text-teal-600 uppercase tracking-wide mb-1">📋 Test Qty</p>
+          <p className="text-[10px] font-bold text-teal-600 uppercase tracking-wide mb-1">📋 Issued Qty</p>
           <p className="text-xl font-black text-teal-700 mt-1">{hasMedia ? mQty : "—"}</p>
           <p className="text-[10px] text-slate-400">{unit}</p>
         </div>
@@ -967,7 +967,7 @@ const InHouseFileForm = ({ file, item, products, onAddMaterial, stateRef, stateK
                 <div className="w-5 h-5 rounded bg-teal-600 flex items-center justify-center">
                   <span className="text-white text-[9px] font-black">T</span>
                 </div>
-                <p className="text-xs font-bold text-teal-700 uppercase tracking-wide">Test Quantity</p>
+                <p className="text-xs font-bold text-teal-700 uppercase tracking-wide">Issued Quantity</p>
                 <span className="text-[10px] text-slate-400">Total pieces needed</span>
               </div>
               <QuantityInput label="Qty" value={mediaQty} onChange={setMediaQty} unit={selectedProduct?.primary_unit || "pcs"} />

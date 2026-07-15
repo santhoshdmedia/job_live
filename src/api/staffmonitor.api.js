@@ -20,4 +20,16 @@ export const smApi = {
   getStaffJobTime: (id)                   => http.get(`/monitor/${id}/job-time`),
   submitTaskLog:   (payload)              => http.post("/task-log", payload),
   deleteTaskLog:   (logId)               => http.delete(`/task-log/${logId}`),
+
+  // ── Force logout (super admin) ─────────────────────────────────────────
+  // Closes out a staff member's session — for staff who "didn't log out
+  // correctly" (forgot to log out, crashed tab, left it open overnight…).
+  forceLogout: (staffId) => http.post("/session/force-logout", { staffId }),
+
+  // ── After-7-PM work permission ─────────────────────────────────────────
+  requestPermission:     (staffId, reason, requested_until) =>
+    http.post("/session/permission/request", { staffId, reason, requested_until }),
+  getPendingPermissions: () => http.get("/session/permission/pending"),
+  respondPermission:     (staffId, status, permitted_until, note) =>
+    http.post(`/session/permission/${staffId}/respond`, { status, permitted_until, note }),
 };

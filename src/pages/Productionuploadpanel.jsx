@@ -79,6 +79,84 @@ const WASTAGE_REASONS = [
   { value: "other",             label: "Other" },
 ];
 
+// ─── Cart / Design-File Logic (mirrors Store Manager's material issuance) ────
+// Production is driven by the SAME cart_items[].design_files[] structure the
+// store manager uses to issue material — so "how many design files are in
+// the cart" (and which of them actually need material) is computed exactly
+// the same way here as it is there.
+const NO_MATERIAL_LABELS = ["Cutting File"];
+
+const FILE_TYPE_ICON = (ft = "") => {
+  const t = (ft || "").toUpperCase();
+  if (t === "PDF") return "📄";
+  if (["PNG", "JPG", "JPEG", "WEBP", "GIF", "SVG"].includes(t)) return "🖼";
+  if (["AI", "PSD", "EPS"].includes(t)) return "🎨";
+  return "📎";
+};
+
+const LABEL_COLOR = (label) => {
+  const map = {
+    "Printing File": "bg-violet-100 text-violet-700 border-violet-200",
+    "Cutting File":  "bg-slate-100 text-slate-500 border-slate-200",
+    "Mockup":        "bg-sky-100 text-sky-700 border-sky-200",
+    "Reference":     "bg-amber-100 text-amber-700 border-amber-200",
+    "Final Artwork": "bg-emerald-100 text-emerald-700 border-emerald-200",
+    "Other":         "bg-slate-100 text-slate-600 border-slate-200",
+  };
+  return map[label] || "bg-slate-100 text-slate-600 border-slate-200";
+};
+
+// A cutting file needs no material → "skip". A file assigned to an outside
+// vendor needs no in-house production task → "outsource". Everything else
+// is a real in-house production task that must be matched to an issue.
+const getFileMode = (file) => {
+  if (NO_MATERIAL_LABELS.includes(file?.label)) return "skip";
+  if (file?.assigned_to?.role === "outsource" || file?.assigned_to?.name?.toLowerCase() === "outsource")
+    return "outsource";
+  return "inhouse";
+};
+
+// Cart items created before per-file design_files existed only have a single
+// legacy design_file — fall back to treating the whole item as one file, the
+// same fallback the store manager's IssuePanel uses.
+const getItemFiles = (item, itemIdx) =>
+  (item.design_files || []).length > 0
+    ? item.design_files
+    : [{ _id: `item_${itemIdx}`, file_name: item.product_name || "Item", file_type: "", label: "Other", assigned_to: item.issued_to }];
+
+// Production only ever deals with in-house work (+ cutting files shown for
+// context). Outsourced design files are handled entirely outside the
+// production floor, so they're excluded here altogether.
+const getProductionFiles = (item, itemIdx) =>
+  getItemFiles(item, itemIdx).filter((f) => getFileMode(f) !== "outsource");
+
+// Flatten every cart item's production-relevant design files into one list,
+// tagging each with its mode and a stable key for matching against issues.
+const flattenJobFiles = (job) => {
+  const cartItems = job?.cart_items || [];
+  const rows = [];
+  cartItems.forEach((item, itemIdx) => {
+    const files = getProductionFiles(item, itemIdx);
+    files.forEach((file, fileIdx) => {
+      rows.push({ item, itemIdx, file, fileIdx, mode: getFileMode(file) });
+    });
+  });
+  return rows;
+};
+
+// Match a material issue to the design file it was issued against. Real
+// design files match on design_file_id; legacy single-file items (whose
+// placeholder id starts with "item_") match on cart_item_index instead —
+// exactly how the store manager builds the issue payload (see
+// Materialissuemanager.jsx `payload.design_file_id`).
+const findIssueForFile = (issues, itemIdx, file) => {
+  const isRealFile = file._id && !String(file._id).startsWith("item_");
+  return issues.find((iss) => {
+    if (isRealFile) return String(iss.design_file_id || "") === String(file._id);
+    return !iss.design_file_id && Number(iss.cart_item_index) === Number(itemIdx);
+  }) || null;
+};
+
 // ─── Toast ────────────────────────────────────────────────────────────────────
 const useToast = () => {
   const [toasts, setToasts] = useState([]);
@@ -291,9 +369,9 @@ const SessionControls = ({ job, user, task, onSessionChange, show: showToast }) 
         role:    user?.role || "printing team",
       };
       if (action === "start") {
-        await api(`/jobs/${job._id}/start`, {
+        await api(`/jobs/${job._id}/session/open`, {
           method: "POST",
-          body: JSON.stringify({ stage, handled_by: handledBy, notes: notesInput || undefined }),
+          body: JSON.stringify({ stage, user: handledBy, notes: notesInput || undefined }),
         });
         showToast(`Session started`, "success");
       } else if (action === "pause") {
@@ -697,25 +775,103 @@ const makeMachineEntry = (machineId = "solvent") => {
 
 // ─── Task Work Item ───────────────────────────────────────────────────────────
 // Shows a single material issue as a "task" with its own session timer
-const TaskWorkItem = ({ issue, job, user, show: showToast, onReturnClick }) => {
+const DesignFileProductionTask = ({ issue, job, user, show: showToast, onReturnClick, onProductionSaved }) => {
   const [expanded, setExpanded] = useState(false);
-  const taskLabel = issue.cart_item_name || issue.material?.product_name || issue.issue_no;
+  const taskLabel = issue.design_file_label || issue.cart_item_name || issue.material?.product_name || issue.issue_no;
   const hasReturn = !!issue.return;
   const isPending = !hasReturn;
+  const isCompleted = issue.production_status === "completed";
+
+  // ── Per-design-file production state (own machines/inks, own photos, own notes) ──
+  const [machineEntries, setMachineEntries] = useState(() =>
+    issue.machines?.length
+      ? issue.machines.map((m) => ({
+          machineId: m.machine_id || "solvent",
+          printingTime: m.printing_time_mins ? String(m.printing_time_mins) : "",
+          machineRunTime: m.machine_run_time_mins ? String(m.machine_run_time_mins) : "",
+          notes: m.notes || "",
+          inkUsage: (m.inks || []).reduce((acc, ink) => {
+            const machineDef = MACHINES.find((md) => md.id === (m.machine_id || "solvent")) || MACHINES[0];
+            const key = machineDef.inks.find((i) => i.label === ink.color)?.key || ink.color;
+            acc[key] = String(ink.quantity ?? "");
+            return acc;
+          }, {}),
+        }))
+      : [makeMachineEntry()]
+  );
+  const [photos, setPhotos]       = useState(issue.production_photos || []);
+  const [notesText, setNotesText] = useState(issue.production_notes || "");
+  const [saving, setSaving]       = useState(false);
+  const [editing, setEditing]     = useState(!isCompleted);
+
+  const addMachine    = ()  => setMachineEntries((p) => [...p, makeMachineEntry()]);
+  const removeMachine = (i) => setMachineEntries((p) => p.length > 1 ? p.filter((_, idx) => idx !== i) : p);
+  const updateMachine = (i, v) => setMachineEntries((p) => p.map((e, idx) => idx === i ? v : e));
+
+  const handlePhotoUploaded = useCallback((url) => {
+    if (url) setPhotos((prev) => prev.includes(url) ? prev : [...prev, url]);
+  }, []);
+  const removePhoto = (idx) => setPhotos((prev) => prev.filter((_, i) => i !== idx));
+
+  const canSave = photos.length > 0 && notesText.trim().length > 0;
+
+  const handleSaveProduction = async () => {
+    if (!canSave) { showToast("Add at least one photo and a note for this design file first.", "error"); return; }
+    setSaving(true);
+    try {
+      const machines = machineEntries.map((entry) => {
+        const machine = MACHINES.find((m) => m.id === entry.machineId) || MACHINES[0];
+        return {
+          machine_id: machine.id,
+          machine_name: machine.label,
+          printing_time_mins: parseFloat(entry.printingTime) || 0,
+          machine_run_time_mins: parseFloat(entry.machineRunTime) || 0,
+          notes: entry.notes || "",
+          inks: Object.entries(entry.inkUsage || {})
+            .filter(([, qty]) => qty !== "" && parseFloat(qty) > 0)
+            .map(([key, qty]) => ({
+              color: machine.inks.find((i) => i.key === key)?.label || key,
+              quantity: parseFloat(qty),
+              unit: "ml",
+            })),
+        };
+      });
+
+      const res = await api(`/material/${issue._id}/production`, {
+        method: "POST",
+        body: JSON.stringify({ machines, production_photos: photos, production_notes: notesText.trim() }),
+      });
+
+      showToast("Production details saved for this design file.", "success");
+      setEditing(false);
+      onProductionSaved?.(issue._id, {
+        machines, production_photos: photos, production_notes: notesText.trim(),
+        production_status: "completed",
+        ...(res.data || {}),
+      });
+    } catch (err) {
+      showToast(err.message, "error");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
-    <div className={`border rounded-xl overflow-hidden transition-all ${expanded ? "border-violet-300" : "border-slate-200"}`}>
+    <div className={`border rounded-xl overflow-hidden transition-all ${expanded ? "border-violet-300" : isCompleted ? "border-emerald-200" : "border-slate-200"}`}>
       {/* Task header */}
       <div
         className={`flex items-center gap-3 px-3 py-3 cursor-pointer select-none ${expanded ? "bg-slate-900 text-white" : "bg-white hover:bg-slate-50"}`}
         onClick={() => setExpanded((p) => !p)}
       >
-        <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-[9px] font-black tracking-wider ${expanded ? "bg-violet-500/30 text-violet-200" : "bg-violet-100 text-violet-700"}`}>TASK</div>
+        <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-[9px] font-black tracking-wider ${expanded ? "bg-violet-500/30 text-violet-200" : isCompleted ? "bg-emerald-100 text-emerald-700" : "bg-violet-100 text-violet-700"}`}>
+          {isCompleted ? "✓" : "TASK"}
+        </div>
         <div className="flex-1 min-w-0">
           <p className={`text-xs font-black truncate ${expanded ? "text-white" : "text-slate-800"}`}>{taskLabel}</p>
           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
             <span className={`text-[10px] font-mono font-bold ${expanded ? "text-white/40" : "text-slate-400"}`}>{issue.issue_no}</span>
-            <span className={`text-[10px] font-bold ${expanded ? "text-violet-300" : "text-sky-600"}`}>{issue.issued_qty} sqft issued</span>
+            <span className={`text-[10px] font-bold ${expanded ? "text-violet-300" : "text-sky-600"}`}>{issue.issued_qty} {issue.material?.unit || "sqft"} issued</span>
+            {isCompleted && <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-100">✓ Production saved</span>}
             {hasReturn && <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-100">✓ Returned</span>}
             {isPending && <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full border border-amber-100">⏳ Return pending</span>}
           </div>
@@ -744,6 +900,69 @@ const TaskWorkItem = ({ issue, job, user, show: showToast, onReturnClick }) => {
             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-2">⏱ Work Timer</p>
             <SessionControls job={job} user={user} task={issue} onSessionChange={() => {}} show={showToast} />
           </div>
+
+          {/* Machine & Ink Log — scoped to this design file only */}
+          <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">🖨 Machine & Ink Log — this file</p>
+              {editing && (
+                <button type="button" onClick={addMachine} className="text-[10px] font-bold text-violet-600 hover:text-violet-700">+ Add machine</button>
+              )}
+            </div>
+            {!editing ? (
+              <div className="space-y-1.5">
+                {(issue.machines || []).map((m, i) => (
+                  <div key={i} className="bg-emerald-50 border border-emerald-100 rounded-lg px-2.5 py-1.5">
+                    <p className="text-xs font-bold text-emerald-800">{m.machine_name} · {m.printing_time_mins}min print / {m.machine_run_time_mins}min run</p>
+                    {m.inks?.length > 0 && <p className="text-[10px] text-emerald-600 mt-0.5">{m.inks.map((ink) => `${ink.color}: ${ink.quantity}ml`).join(" · ")}</p>}
+                    {m.notes && <p className="text-[10px] text-emerald-500 mt-0.5 italic">{m.notes}</p>}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {machineEntries.map((entry, i) => (
+                  <MachineInkEntry key={i} entry={entry} index={i} onChange={updateMachine} onRemove={removeMachine} />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Production photos — scoped to this design file only */}
+          <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-2">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">📸 Production Photo — this file</p>
+            <div className="flex gap-2 flex-wrap">
+              {photos.map((url, idx) => (
+                <ImageThumb key={url + idx} url={url} index={idx} onRemove={editing ? removePhoto : () => {}} />
+              ))}
+              {editing && <CameraUpload onUploaded={handlePhotoUploaded} />}
+            </div>
+            {photos.length === 0 && <p className="text-[10px] text-slate-400">At least one photo of this printed/produced file is required.</p>}
+          </div>
+
+          {/* Production notes — scoped to this design file only */}
+          <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-2">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">📝 Production Notes — this file</p>
+            <textarea
+              value={notesText}
+              onChange={(e) => setNotesText(e.target.value)}
+              disabled={!editing}
+              rows={3}
+              placeholder="e.g. Printed 2 passes, color matched to sample, no misprints…"
+              className="w-full px-2.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-violet-400 placeholder:text-slate-300 disabled:bg-slate-100 disabled:text-slate-500 resize-none"
+            />
+          </div>
+
+          {/* Save this design file's production details */}
+          {editing ? (
+            <Btn variant="primary" size="sm" fullWidth loading={saving} disabled={!canSave} onClick={handleSaveProduction}>
+              💾 Save Production Details
+            </Btn>
+          ) : (
+            <Btn variant="ghost" size="sm" fullWidth onClick={() => setEditing(true)}>
+              ✏️ Edit Production Details
+            </Btn>
+          )}
 
           {/* Return CTA */}
           {isPending ? (
@@ -950,24 +1169,146 @@ const ReturnModal = ({ issue, user, onClose, onSaved, show: showToast }) => {
   );
 };
 
+// ─── Skip / Awaiting file rows ────────────────────────────────────────────────
+const SkipFileRow = ({ file }) => (
+  <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200">
+    <span className="text-base flex-shrink-0 opacity-50">{FILE_TYPE_ICON(file.file_type)}</span>
+    <div className="flex-1 min-w-0">
+      <p className="text-xs font-semibold text-slate-500 truncate">{file.label || file.file_name}</p>
+      <p className="text-[10px] text-slate-400">No material needed — cutting file</p>
+    </div>
+    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex-shrink-0 ${LABEL_COLOR(file.label)}`}>{file.label}</span>
+  </div>
+);
+
+const AwaitingFileRow = ({ file }) => (
+  <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-amber-50 border border-amber-200">
+    <span className="text-base flex-shrink-0">{FILE_TYPE_ICON(file.file_type)}</span>
+    <div className="flex-1 min-w-0">
+      <p className="text-xs font-semibold text-amber-800 truncate">{file.label || file.file_name}</p>
+      <p className="text-[10px] text-amber-600">Awaiting material issue from store</p>
+    </div>
+    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-200 bg-amber-100 text-amber-700 flex-shrink-0">⏳ Pending</span>
+  </div>
+);
+
+// ─── Cart Item Production Card ────────────────────────────────────────────────
+// One card per cart item — shows exactly how many design files it has and
+// how many need material (outsource files are excluded entirely — they're
+// not production's concern), then a row per file (skip / awaiting / task).
+const CartItemProductionCard = ({ item, itemIdx, issues, job, user, show: showToast, onReturnClick, onProductionSaved }) => {
+  const files = getProductionFiles(item, itemIdx);
+
+  const rows = files.map((file, fileIdx) => {
+    const mode  = getFileMode(file); // "inhouse" or "skip" only — outsource already filtered out
+    const issue = mode === "skip" ? null : findIssueForFile(issues, itemIdx, file);
+    return { file, fileIdx, mode, issue };
+  });
+
+  const counts = rows.reduce((acc, r) => {
+    acc[r.mode] = (acc[r.mode] || 0) + 1;
+    return acc;
+  }, {});
+
+  if (files.length === 0) return null; // every file on this item is outsourced — nothing for production to do
+
+  return (
+    <div className="rounded-2xl border border-slate-200 overflow-hidden">
+      <div className="bg-gradient-to-r from-slate-900 to-slate-800 px-4 py-3 flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <div className="font-bold text-sm text-white flex items-center gap-2">
+            <span className="text-violet-400">▣</span>
+            {item.product_name}
+            {item.variation && <span className="text-white/40 font-normal text-xs"> · {item.variation}</span>}
+          </div>
+          <div className="text-xs text-white/50 mt-1 flex items-center gap-2 flex-wrap">
+            <span>Qty: {item.quantity} {item.quantity_type}</span>
+            {parseFloat(item.sq_ft) > 0 && <span className="text-violet-300 font-bold">· {item.sq_ft} sqft</span>}
+            <span>· {files.length} design file{files.length > 1 ? "s" : ""}</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {counts.inhouse > 0 && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300">{counts.inhouse} in-house</span>}
+          {counts.skip > 0    && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/10 border border-white/20 text-white/60">{counts.skip} skip</span>}
+        </div>
+      </div>
+
+      <div className="p-3 space-y-2 bg-slate-50/50">
+        {rows.map(({ file, fileIdx, mode, issue }) => {
+          if (mode === "skip") return <SkipFileRow key={file._id || fileIdx} file={file} />;
+          if (!issue) return <AwaitingFileRow key={file._id || fileIdx} file={file} />;
+          return (
+            <DesignFileProductionTask
+              key={issue._id}
+              issue={issue}
+              job={job}
+              user={user}
+              show={showToast}
+              onReturnClick={onReturnClick}
+              onProductionSaved={onProductionSaved}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 // ─── Production Tasks Section ─────────────────────────────────────────────────
-// Shows all material issues for this job as individual work tasks
-const ProductionTasksSection = ({ job, user, show: showToast, onReturnClick, returnVersion }) => {
+// Groups every material issue under the cart item + design file it belongs
+// to — the same "how many design files in the cart" logic the store manager
+// uses to issue material — instead of showing a flat list of issues.
+// Outsource files are excluded entirely: production only tracks in-house
+// design-file work.
+const ProductionTasksSection = ({ job, user, show: showToast, onReturnClick, returnVersion, onIssuesLoaded }) => {
   const [issues,  setIssues]  = useState([]);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState(null);
 
   useEffect(() => {
     if (!job._id) return;
+    let cancelled = false;
     setLoading(true);
-    api(`/material`)
-      .then((r) => {
-        const all = r.data?.issues || r.data || [];
-        setIssues(all.filter((i) => i.job_id === job._id));
+    setError(null);
+
+    // Prefer the job-scoped endpoint (accurate, not paginated). Fall back to
+    // the global list (older backend deployments) filtered client-side.
+    api(`/jobs/${job._id}/material`)
+      .then((r) => r.data?.issues || [])
+      .catch(() =>
+        api(`/material?limit=1000`).then((r) => {
+          const all = r.data?.issues || r.data || [];
+          return all.filter((i) => String(i.job_id?._id || i.job_id) === String(job._id));
+        })
+      )
+      .then((list) => {
+        if (cancelled) return;
+        setIssues(list);
+        onIssuesLoaded?.(job._id, list);
       })
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+      .catch((e) => !cancelled && setError(e.message))
+      .finally(() => !cancelled && setLoading(false));
+
+    return () => { cancelled = true; };
   }, [job._id, returnVersion]);
+
+  // A design file's production was just saved — patch it into local state
+  // immediately (no refetch needed) and bubble the fresh list up so the
+  // job-level "ready to submit" gate updates right away.
+  const handleProductionSaved = useCallback((issueId, patch) => {
+    setIssues((prev) => {
+      const next = prev.map((i) => (i._id === issueId ? { ...i, ...patch } : i));
+      onIssuesLoaded?.(job._id, next);
+      return next;
+    });
+  }, [job._id, onIssuesLoaded]);
+
+  const fileRows = useMemo(() => flattenJobFiles(job), [job]);
+  const requiredRows = fileRows.filter((r) => r.mode !== "skip");
+
+  const matchedCount = useMemo(() => {
+    return requiredRows.filter((r) => findIssueForFile(issues, r.itemIdx, r.file)).length;
+  }, [requiredRows, issues]);
 
   if (loading) return (
     <div className="flex items-center justify-center py-8 gap-2 text-slate-400">
@@ -981,30 +1322,59 @@ const ProductionTasksSection = ({ job, user, show: showToast, onReturnClick, ret
     </div>
   );
 
-  if (!issues.length) return (
+  if (requiredRows.length === 0) return (
+    <div className="flex items-start gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-4">
+      <span className="text-2xl flex-shrink-0 opacity-40">✂️</span>
+      <div>
+        <p className="text-xs font-bold text-slate-500">No material-requiring design files</p>
+        <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">Every design file on this job's cart items is a cutting file — nothing to issue or produce.</p>
+      </div>
+    </div>
+  );
+
+  if (matchedCount === 0) return (
     <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-4">
       <span className="text-2xl flex-shrink-0">🔒</span>
       <div>
         <p className="text-xs font-bold text-amber-800">No material issued yet</p>
         <p className="text-xs text-amber-700 mt-0.5 leading-relaxed">
-          This job won't appear in production until the store manager issues material. Ask the store manager to issue material for job <span className="font-bold">{job.job_no}</span> first.
+          This job has {requiredRows.length} design file{requiredRows.length > 1 ? "s" : ""} awaiting material. Ask the store manager to issue material for job <span className="font-bold">{job.job_no}</span> first.
         </p>
       </div>
     </div>
+  );
+
+  const completedCount = useMemo(
+    () => requiredRows.filter((r) => {
+      const iss = findIssueForFile(issues, r.itemIdx, r.file);
+      return iss?.production_status === "completed";
+    }).length,
+    [requiredRows, issues]
   );
 
   const pendingCount  = issues.filter((i) => !i.return).length;
   const returnedCount = issues.filter((i) =>  i.return).length;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
-        <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full">📦 {issues.length} task{issues.length > 1 ? "s" : ""}</span>
+        <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-violet-700 bg-violet-100 px-2.5 py-1 rounded-full">
+          🎨 {matchedCount}/{requiredRows.length} design file{requiredRows.length > 1 ? "s" : ""} issued
+        </span>
+        <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-full">
+          🖨 {completedCount}/{requiredRows.length} production saved
+        </span>
         {returnedCount > 0 && <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full">✓ {returnedCount} returned</span>}
         {pendingCount  > 0 && <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-amber-700 bg-amber-100 px-2.5 py-1 rounded-full">⏳ {pendingCount} pending return</span>}
       </div>
-      {issues.map((issue) => (
-        <TaskWorkItem key={issue._id} issue={issue} job={job} user={user} show={showToast} onReturnClick={onReturnClick} />
+      {(job.cart_items || []).map((item, itemIdx) => (
+        <CartItemProductionCard
+          key={item._id || item.item_id || itemIdx}
+          item={item} itemIdx={itemIdx}
+          issues={issues} job={job} user={user}
+          show={showToast} onReturnClick={onReturnClick}
+          onProductionSaved={handleProductionSaved}
+        />
       ))}
     </div>
   );
@@ -1013,22 +1383,37 @@ const ProductionTasksSection = ({ job, user, show: showToast, onReturnClick, ret
 // ─── JobCard ──────────────────────────────────────────────────────────────────
 const JobCard = ({
   job, user, expanded, onSelect,
-  productionImages, notes, machineEntries,
-  onImagesChange, onNotesChange, onMachineEntriesChange,
   onSubmit, submitting, show: showToast,
   returnModalIssue, setReturnModalIssue, returnVersion,
-  hasMaterial,
+  hasMaterial, onIssuesLoaded,
 }) => {
-  const addMachine    = ()  => onMachineEntriesChange((p) => [...p, makeMachineEntry()]);
-  const removeMachine = (i) => onMachineEntriesChange((p) => p.filter((_, idx) => idx !== i));
-  const updateMachine = (i, v) => onMachineEntriesChange((p) => p.map((e, idx) => idx === i ? v : e));
+  // How many of this job's cart-item design files (in-house only — outsource
+  // is excluded from production entirely) actually need material, how many
+  // have been issued, and how many have had their OWN production details
+  // (machine/ink log, photo, notes) saved. This is the same per-design-file
+  // accounting the store manager does when issuing.
+  const [jobIssues, setJobIssues] = useState([]);
+  const handleIssuesLoaded = useCallback((jobId, list) => {
+    setJobIssues(list);
+    onIssuesLoaded?.(jobId, list);
+  }, [onIssuesLoaded]);
 
-  const handleImageUploaded = useCallback((url) => {
-    if (url) onImagesChange((prev) => prev.includes(url) ? prev : [...prev, url]);
-  }, [onImagesChange]);
-  const removeImage = (idx) => onImagesChange((prev) => prev.filter((_, i) => i !== idx));
+  const requiredFileRows = useMemo(
+    () => flattenJobFiles(job).filter((r) => r.mode !== "skip"),
+    [job]
+  );
+  const issuedFileCount = useMemo(
+    () => requiredFileRows.filter((r) => findIssueForFile(jobIssues, r.itemIdx, r.file)).length,
+    [requiredFileRows, jobIssues]
+  );
+  const completedFileCount = useMemo(
+    () => requiredFileRows.filter((r) => findIssueForFile(jobIssues, r.itemIdx, r.file)?.production_status === "completed").length,
+    [requiredFileRows, jobIssues]
+  );
+  const allMaterialIssued  = requiredFileRows.length === 0 || issuedFileCount    >= requiredFileRows.length;
+  const allProductionSaved = requiredFileRows.length === 0 || completedFileCount >= requiredFileRows.length;
 
-  const canSubmit = productionImages.length > 0 && notes.trim().length > 0 && hasMaterial;
+  const canSubmit = hasMaterial && allMaterialIssued && allProductionSaved;
 
   const hasDesignFile  = !!job.design_file;
   const hasDriveLink   = !!job.design_drive_link;
@@ -1081,86 +1466,48 @@ const JobCard = ({
           {/* Design file */}
           <DesignFileSection job={job} />
 
-          {/* Production Tasks — material issues as work tasks */}
+          {/* Production Tasks — grouped by cart item / design file, same as the store manager */}
           <Card className="p-4">
             <SectionHeader
               icon="📋"
               title="Work Tasks"
-              subtitle={`Material issued to production — each task has its own timer`}
-              badge={<span className="text-[10px] font-bold bg-violet-100 text-violet-600 px-2 py-0.5 rounded-full">Per task</span>}
+              subtitle="Each design file has its own timer, Machine & Ink Log, photo, and notes"
+              badge={
+                requiredFileRows.length > 0
+                  ? <span className="text-[10px] font-bold bg-violet-100 text-violet-600 px-2 py-0.5 rounded-full">{issuedFileCount}/{requiredFileRows.length} files</span>
+                  : <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">No material needed</span>
+              }
             />
             <ProductionTasksSection
               job={job} user={user}
               show={showToast}
               onReturnClick={setReturnModalIssue}
               returnVersion={returnVersion}
+              onIssuesLoaded={handleIssuesLoaded}
             />
           </Card>
 
-          {/* Photos */}
+          {/* Final job-level gate — every required design file's own production
+              details (machine/ink log, photo, notes) must be saved first */}
           <Card className="p-4">
-            <SectionHeader icon="📸" title="Production Photos" subtitle="Photograph the finished print output"
-              badge={
-                productionImages.length > 0
-                  ? <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">{productionImages.length} captured</span>
-                  : <span className="text-[10px] font-bold bg-rose-100 text-rose-600 px-2 py-0.5 rounded-full">Required</span>
-              }
-            />
-            {productionImages.length > 0 && (
-              <div className="flex flex-wrap gap-2 mb-4">
-                {productionImages.map((url, idx) => <ImageThumb key={`${url}-${idx}`} url={url} index={idx} onRemove={removeImage} />)}
-              </div>
-            )}
-            <div className="flex items-center gap-4">
-              <CameraUpload onUploaded={handleImageUploaded} />
-              <div className="text-xs text-slate-400 leading-relaxed">
-                {productionImages.length === 0
-                  ? <><span>Tap to open camera</span><br /><span className="text-slate-300">PNG · JPG · WebP supported</span></>
-                  : <><span className="font-bold text-violet-600">{productionImages.length} photo{productionImages.length > 1 ? "s" : ""} captured</span><br /><span>Tap again to add more</span></>}
-              </div>
-            </div>
-          </Card>
+            <SectionHeader icon="🚚" title="Submit to Quality Check" subtitle="Requires every in-house design file's production to be saved" />
 
-          {/* Machine & Ink */}
-          <Card className="p-4">
-            <SectionHeader icon="🖨" title="Machine & Ink Log" subtitle="Record each printer used, run times, and ink quantities"
-              badge={
-                machineEntries.length > 0
-                  ? <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">{machineEntries.length} machine{machineEntries.length > 1 ? "s" : ""}</span>
-                  : <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">Optional</span>
-              }
-            />
-            <div className="space-y-3">
-              {machineEntries.map((entry, i) => (
-                <MachineInkEntry key={i} entry={entry} index={i} onChange={updateMachine} onRemove={removeMachine} />
-              ))}
-              <Btn variant="ghost" size="sm" onClick={addMachine} className="w-full border-dashed">
-                + Add Machine
-              </Btn>
-            </div>
-          </Card>
-
-          {/* Notes & Submit */}
-          <Card className="p-4">
-            <SectionHeader icon="📝" title="Production Notes" subtitle="Describe the completed output"
-              badge={notes.trim().length > 0
-                ? <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">✓ Added</span>
-                : <span className="text-[10px] font-bold bg-rose-100 text-rose-600 px-2 py-0.5 rounded-full">Required</span>}
-            />
-            <textarea value={notes} onChange={(e) => onNotesChange(e.target.value)} rows={3}
-              placeholder="e.g. Printed on 13oz flex, colour adjusted for brightness. Ready for lamination and dispatch."
-              className="w-full px-3 py-2.5 text-sm bg-white border border-slate-200 rounded-xl outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-50 transition-all resize-none placeholder:text-slate-300" />
-
-            {/* Checklist */}
-            <div className={`rounded-xl p-4 mt-3 border ${canSubmit ? "bg-violet-50 border-violet-100" : "bg-slate-50 border-slate-100"}`}>
+            <div className={`rounded-xl p-4 border ${canSubmit ? "bg-violet-50 border-violet-100" : "bg-slate-50 border-slate-100"}`}>
               <p className={`text-xs font-bold mb-2.5 uppercase tracking-wide ${canSubmit ? "text-violet-600" : "text-slate-400"}`}>
                 {canSubmit ? "✓ Ready to Submit" : "Checklist"}
               </p>
               <div className="space-y-1.5">
                 {[
-                  { label: "Material issued for this job", done: hasMaterial,                         detail: null },
-                  { label: "Photo(s) captured",            done: productionImages.length > 0,         detail: productionImages.length > 0 ? `${productionImages.length} photo${productionImages.length > 1 ? "s" : ""}` : null },
-                  { label: "Production notes added",       done: notes.trim().length > 0,             detail: null },
+                  {
+                    label: requiredFileRows.length > 0 ? "All design files' material issued" : "No material needed for this job",
+                    done: allMaterialIssued,
+                    detail: requiredFileRows.length > 0 ? `${issuedFileCount}/${requiredFileRows.length} files` : null,
+                  },
+                  {
+                    label: requiredFileRows.length > 0 ? "All design files' production details saved" : "Nothing to produce",
+                    done: allProductionSaved,
+                    detail: requiredFileRows.length > 0 ? `${completedFileCount}/${requiredFileRows.length} files` : null,
+                  },
                 ].map(({ label, done, detail }) => (
                   <div key={label} className="flex items-center gap-2 text-xs">
                     <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black flex-shrink-0 ${done ? "bg-emerald-500 text-white" : "bg-slate-200 text-slate-400"}`}>{done ? "✓" : "○"}</span>
@@ -1177,15 +1524,20 @@ const JobCard = ({
                   <p className="text-xs font-bold text-amber-700">🔒 Waiting for material</p>
                   <p className="text-xs text-amber-600 mt-1">Ask the store manager to issue material before submitting production.</p>
                 </div>
+              ) : !allMaterialIssued ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-center">
+                  <p className="text-xs font-bold text-amber-700">🔒 {requiredFileRows.length - issuedFileCount} design file{requiredFileRows.length - issuedFileCount > 1 ? "s" : ""} still awaiting material</p>
+                  <p className="text-xs text-amber-600 mt-1">All design files in the cart must have material issued before submitting.</p>
+                </div>
+              ) : !allProductionSaved ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-center">
+                  <p className="text-xs font-bold text-amber-700">🔒 {requiredFileRows.length - completedFileCount} design file{requiredFileRows.length - completedFileCount > 1 ? "s" : ""} still need production details</p>
+                  <p className="text-xs text-amber-600 mt-1">Open each task above and save its photo, notes, and machine/ink log.</p>
+                </div>
               ) : (
                 <Btn onClick={onSubmit} loading={submitting} variant="success" size="lg" fullWidth disabled={!canSubmit}>
                   🚚 Submit & Move to Quality Check
                 </Btn>
-              )}
-              {hasMaterial && !canSubmit && (
-                <p className="text-xs text-center text-slate-400 mt-2">
-                  {productionImages.length === 0 ? "Capture at least one photo" : "Add production notes to continue"}
-                </p>
               )}
             </div>
           </Card>
@@ -1206,25 +1558,10 @@ const ProductionUploadPanel = () => {
   const [jobMaterials,  setJobMaterials]  = useState({});
   const [filter,        setFilter]        = useState("");
   const [expandedId,    setExpandedId]    = useState(null);
-  const [formByJob,     setFormByJob]     = useState({});
+  const [submittingJobs, setSubmittingJobs] = useState({});
   const [returnModalIssue, setReturnModalIssue] = useState(null);
   const [returnVersion,    setReturnVersion]    = useState(0);
   const [submittedJobs,    setSubmittedJobs]    = useState([]);
-
-  const getForm = (jobId) => formByJob[jobId] || {
-    productionImages: [],
-    notes:            "",
-    machineEntries:   [],
-    submitting:       false,
-  };
-
-  const setForm = (jobId, updater) =>
-    setFormByJob((prev) => ({
-      ...prev,
-      [jobId]: typeof updater === "function"
-        ? updater(prev[jobId] || getForm(jobId))
-        : { ...getForm(jobId), ...updater },
-    }));
 
   // Fetch production jobs
   const fetchJobs = useCallback(async () => {
@@ -1236,12 +1573,17 @@ const ProductionUploadPanel = () => {
       const productionJobs = list.filter((j) => j.job_status === "production");
       setJobs(productionJobs);
 
-      // Fetch material issues for all jobs in parallel to determine which have material
-      const allMaterialRes = await api(`/material`);
+      // Fetch material issues for all jobs to determine which have material.
+      // NOTE: `/material` defaults to a paginated 20-item page — without an
+      // explicit limit, jobs could wrongly show as "no material" once more
+      // than 20 issues exist system-wide. Always pass a high limit here.
+      const allMaterialRes = await api(`/material?limit=1000`);
       const allIssues      = allMaterialRes.data?.issues || allMaterialRes.data || [];
       const materialMap    = {};
       productionJobs.forEach((j) => {
-        materialMap[j._id] = allIssues.filter((i) => i.job_id === j._id);
+        materialMap[j._id] = allIssues.filter(
+          (i) => String(i.job_id?._id || i.job_id) === String(j._id)
+        );
       });
       setJobMaterials(materialMap);
     } catch (err) {
@@ -1252,6 +1594,13 @@ const ProductionUploadPanel = () => {
   }, [show]);
 
   useEffect(() => { fetchJobs(); }, [fetchJobs]);
+
+  // Once a job card is expanded, ProductionTasksSection fetches the accurate
+  // job-scoped issue list — merge it in so jobMaterials stays the single
+  // source of truth used both for list-gating and for handleSubmit below.
+  const handleIssuesLoaded = useCallback((jobId, list) => {
+    setJobMaterials((prev) => ({ ...prev, [jobId]: list }));
+  }, []);
 
   // Only show jobs that have at least one material issue
   const filteredJobs = useMemo(() => {
@@ -1271,95 +1620,31 @@ const ProductionUploadPanel = () => {
   const toggleExpand = (jobId) => setExpandedId((prev) => prev === jobId ? null : jobId);
 
   const handleSubmit = async (job) => {
-    const form = getForm(job._id);
-    if (!form.notes.trim())           return show("Add production notes before submitting", "error");
-    if (form.productionImages.length === 0) return show("Capture at least one photo before submitting", "error");
+    const requiredFileRows = flattenJobFiles(job).filter((r) => r.mode !== "skip");
+    const issues = jobMaterials[job._id] || [];
+    const allIssued    = requiredFileRows.every((r) => findIssueForFile(issues, r.itemIdx, r.file));
+    const allCompleted = requiredFileRows.every((r) => findIssueForFile(issues, r.itemIdx, r.file)?.production_status === "completed");
 
-    setForm(job._id, { submitting: true });
+    if (!allIssued)    return show("All design files must have material issued before submitting", "error");
+    if (!allCompleted) return show("Save production details (photo, notes, machine/ink log) for every design file first", "error");
+
+    setSubmittingJobs((prev) => ({ ...prev, [job._id]: true }));
     try {
-      const handledBy = {
-        user_id: user?._id  || "",
-        name:    user?.name || "Production Team",
-        role:    user?.role || "printing team",
-      };
-
-      await api(`/jobs/${job._id}/approve_production`, {
-        method: "POST",
-        body: JSON.stringify({ handled_by: handledBy, productionimg: form.productionImages[0] }),
-      });
-
+      // Every design file's production data is already saved on its own
+      // material issue — the only remaining step is moving the job forward.
       await api(`/jobs/${job._id}/status`, {
         method: "PATCH",
         body: JSON.stringify({ job_status: "quality_check" }),
       });
 
-      await api(`/jobs/${job._id}/complete-stage`, {
-        method: "POST",
-        body: JSON.stringify({
-          stage:      job.current_stage?.stage || "production",
-          handled_by: handledBy,
-          notes:      form.notes,
-          next_stage: "quality_check",
-        }),
-      });
-
-      // Save machine/ink data to all material issues for this job
-      const issues = jobMaterials[job._id] || [];
-      if (issues.length && form.machineEntries.length > 0) {
-        // Use first non-returned issue as the primary material record
-        const latestIssue = issues.find((i) => i.status === "issued") || issues[0];
-        if (latestIssue) {
-          // Build flat ink_used list from all machine entries
-          const inkUsedFlat = form.machineEntries.flatMap((entry) => {
-            const machine = MACHINES.find((m) => m.id === entry.machineId);
-            return Object.entries(entry.inkUsage || {})
-              .filter(([, qty]) => qty !== "" && parseFloat(qty) > 0)
-              .map(([key, qty]) => ({
-                machine: machine?.label || entry.machineId,
-                machine_id: entry.machineId,
-                color: machine?.inks.find((ink) => ink.key === key)?.label || key,
-                color_key: key,
-                quantity: parseFloat(qty),
-                printing_time_mins:     parseFloat(entry.printingTime)    || 0,
-                machine_run_time_mins:  parseFloat(entry.machineRunTime)  || 0,
-                notes: entry.notes || "",
-              }));
-          });
-
-          // Also send per-machine summary
-          const machinesSummary = form.machineEntries.map((entry) => {
-            const machine = MACHINES.find((m) => m.id === entry.machineId);
-            return {
-              machine_id:             entry.machineId,
-              machine_name:           machine?.label || entry.machineId,
-              printing_time_mins:     parseFloat(entry.printingTime)   || 0,
-              machine_run_time_mins:  parseFloat(entry.machineRunTime) || 0,
-              notes:                  entry.notes || "",
-            };
-          });
-
-          try {
-            await api(`/material/${latestIssue._id}/production`, {
-              method: "POST",
-              body: JSON.stringify({
-                machines:   machinesSummary,
-                ink_used:   inkUsedFlat,
-              }),
-            });
-          } catch {
-            show("Production submitted, but machine/ink metadata not saved — contact store manager.", "warning");
-          }
-        }
-      }
-
       show(`Production submitted for ${job.job_no}! Moved to quality check.`, "success");
       setSubmittedJobs((prev) => [...prev, { jobId: job._id, jobNo: job.job_no }]);
-      setFormByJob((prev) => { const next = { ...prev }; delete next[job._id]; return next; });
       setExpandedId(null);
       fetchJobs();
     } catch (err) {
       show(err.message, "error");
-      setForm(job._id, { submitting: false });
+    } finally {
+      setSubmittingJobs((prev) => ({ ...prev, [job._id]: false }));
     }
   };
 
@@ -1463,7 +1748,6 @@ const ProductionUploadPanel = () => {
             ) : (
               <div className="space-y-3">
                 {filteredJobs.map((job) => {
-                  const form        = getForm(job._id);
                   const hasMaterial = (jobMaterials[job._id] || []).length > 0;
                   return (
                     <JobCard
@@ -1472,19 +1756,14 @@ const ProductionUploadPanel = () => {
                       user={user}
                       expanded={expandedId === job._id}
                       onSelect={() => toggleExpand(job._id)}
-                      productionImages={form.productionImages}
-                      notes={form.notes}
-                      machineEntries={form.machineEntries}
-                      onImagesChange={(updater) => setForm(job._id, (f) => ({ ...f, productionImages: typeof updater === "function" ? updater(f.productionImages || []) : updater }))}
-                      onNotesChange={(v) => setForm(job._id, { notes: v })}
-                      onMachineEntriesChange={(updater) => setForm(job._id, (f) => ({ ...f, machineEntries: typeof updater === "function" ? updater(f.machineEntries || []) : updater }))}
                       onSubmit={() => handleSubmit(job)}
-                      submitting={form.submitting}
+                      submitting={!!submittingJobs[job._id]}
                       show={show}
                       returnModalIssue={returnModalIssue}
                       setReturnModalIssue={setReturnModalIssue}
                       returnVersion={returnVersion}
                       hasMaterial={hasMaterial}
+                      onIssuesLoaded={handleIssuesLoaded}
                     />
                   );
                 })}
@@ -1511,4 +1790,4 @@ const ProductionUploadPanel = () => {
   );
 };
 
-export default ProductionUploadPanel; 
+export default ProductionUploadPanel;

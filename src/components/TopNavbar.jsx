@@ -119,6 +119,16 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
   const [breakStart, setBreakStart] = useState(null); // ISO string from DB
   const [totalBreakSecs, setTotalBreakSecs] = useState(0); // accumulated from DB
 
+  // ── After-7-PM work permission ────────────────────────────────────────
+  // status: "none" | "pending" | "approved" | "rejected"
+  const [permission, setPermission] = useState({ status: "none" });
+  const [showPermModal, setShowPermModal] = useState(false);
+  const [permReason, setPermReason] = useState("");
+  const [permUntilHour, setPermUntilHour] = useState("21:00");
+  const [permSubmitting, setPermSubmitting] = useState(false);
+  const [nowTick, setNowTick] = useState(() => new Date()); // ticks every minute so the "past 7pm" UI updates live
+  const autoLogoutHandledRef = useRef(false);
+
   // UI
   const [loading, setLoading] = useState(false);
   const [showBreakMenu, setShowBreakMenu] = useState(false);
@@ -144,10 +154,11 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
       try {
         // 1. Try to restore an existing active session
         const res = await smApi.getSession(user._id);
-        const { login_at, active_break, break_seconds } = res?.data?.data || {};
+        const { login_at, active_break, break_seconds, permission: perm } = res?.data?.data || {};
 
         if (login_at) setSessionStart(login_at);
         if (break_seconds) setTotalBreakSecs(break_seconds);
+        if (perm) setPermission(perm);
 
         // Restore mid-break state — timer resumes from original break_start
         if (active_break?.start && active_break?.type) {
@@ -171,6 +182,49 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
 
     initSession();
   }, [user?._id]);
+
+  // ── Minute ticker so "past 7 PM" UI (the late-work button/badges) updates live ──
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(new Date()), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  // ── Poll the server session every 45s while "logged in" here ──────────────
+  // Two jobs:
+  //   1. Pick up permission approve/reject decisions made by a super admin.
+  //   2. Notice if the server already closed our session for us (force-logout
+  //      by admin, or the automatic 7 PM / permission-expiry cutoff) and mirror
+  //      that locally instead of pretending we're still clocked in.
+  useEffect(() => {
+    if (!user?._id || !initialized || !sessionStart) return;
+    const poll = async () => {
+      try {
+        const res = await smApi.getSession(user._id);
+        const perm = res?.data?.data?.permission;
+        if (perm) setPermission(perm);
+      } catch {
+        // No active session on the server anymore — we were logged out remotely.
+        if (autoLogoutHandledRef.current) return;
+        autoLogoutHandledRef.current = true;
+        const pastCutoff = new Date().getHours() >= 19;
+        Modal.info({
+          title: "You've been logged out",
+          content: pastCutoff
+            ? "Your session was automatically closed because it's past the 7:00 PM work cutoff. If you need to keep working, log back in and request permission."
+            : "A super admin has logged you out of your active session.",
+          okText: "OK",
+          centered: true,
+          onOk: () => {
+            localStorage.removeItem(admintoken);
+            dispatch(isLoginSuccess({}));
+            navigate("/");
+          },
+        });
+      }
+    };
+    const id = setInterval(poll, 45000);
+    return () => clearInterval(id);
+  }, [user?._id, initialized, sessionStart]);
 
   // ── Close break menu on outside click / Escape ───────────────────────────
   useEffect(() => {
@@ -262,7 +316,48 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
     });
   };
 
+  // ── After-7-PM permission actions ─────────────────────────────────────────
+  const handleOpenPermModal = () => {
+    setPermReason("");
+    setPermUntilHour("21:00");
+    setShowPermModal(true);
+  };
+
+  const handleSubmitPermRequest = async () => {
+    if (!permReason.trim()) {
+      message.warning("Please add a short reason for working late.");
+      return;
+    }
+    if (!user?._id) return;
+    setPermSubmitting(true);
+    try {
+      // Build a full Date from the chosen "HH:mm" using today's date.
+      const [h, m] = permUntilHour.split(":").map(Number);
+      const requestedUntil = new Date();
+      requestedUntil.setHours(h, m, 0, 0);
+      if (requestedUntil <= new Date()) requestedUntil.setDate(requestedUntil.getDate() + 1);
+
+      const res = await smApi.requestPermission(user._id, permReason.trim(), requestedUntil.toISOString());
+      const perm = res?.data?.data?.permission;
+      if (perm) setPermission(perm);
+      setShowPermModal(false);
+      message.success("Request sent. Waiting for super admin approval.");
+    } catch (err) {
+      message.error(err?.response?.data?.message || "Failed to send request");
+    } finally {
+      setPermSubmitting(false);
+    }
+  };
+
   // ── Derived display values ────────────────────────────────────────────────
+  const isPastAutoLogoutHour = nowTick.getHours() >= 19; // 7 PM
+  const isApproachingCutoff  = nowTick.getHours() === 12; // 6 PM hour — give a heads-up
+  const permStatus           = permission?.status || "none";
+  const permApprovedActive   =
+    permStatus === "approved" &&
+    permission?.permitted_until &&
+    new Date(permission.permitted_until) > nowTick;
+
   const otSecs = Math.max(0, workSecs - STANDARD_WORK_SECS);
   const showOT = otSecs > 0;
   const workPct = Math.min(100, Math.round((workSecs / STANDARD_WORK_SECS) * 100));
@@ -465,6 +560,93 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
               )
             )}
 
+            {/* ── After-7-PM work permission ────────────────────────────────── */}
+            {initialized && sessionStart && (
+              <>
+                {permStatus === "pending" && (
+                  <Tooltip title={`Requested: ${permission.reason || ""}`}>
+                    <span
+                      className="hidden sm:inline-flex items-center gap-1.5"
+                      style={{
+                        background: "#FEF3C7", border: "1px solid #FCD34D", color: "#92400E",
+                        fontWeight: 700, fontSize: 11, borderRadius: 10, padding: "6px 10px", height: 34,
+                      }}
+                    >
+                      ⏳ Waiting for approval
+                    </span>
+                  </Tooltip>
+                )}
+
+                {permApprovedActive && (
+                  <Tooltip title="A super admin approved you to keep working past 7 PM">
+                    <span
+                      className="hidden sm:inline-flex items-center gap-1.5"
+                      style={{
+                        background: "#F0FDF4", border: "1px solid #86EFAC", color: "#15803D",
+                        fontWeight: 700, fontSize: 11, borderRadius: 10, padding: "6px 10px", height: 34,
+                      }}
+                    >
+                      ✓ Approved until{" "}
+                      {new Date(permission.permitted_until).toLocaleTimeString("en-IN", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  </Tooltip>
+                )}
+           {  <Button
+                      onClick={handleOpenPermModal}
+                      size="middle"
+                      style={{
+                        borderRadius: 10,
+                        fontWeight: 600,
+                        borderColor: isPastAutoLogoutHour ? "#FCA5A5" : "#E2E8F0",
+                        color: isPastAutoLogoutHour ? "#DC2626" : "#374151",
+                        background: isPastAutoLogoutHour ? "#FEF2F2" : undefined,
+                        height: 34,
+                        paddingInline: 10,
+                      }}
+                      title={
+                        isPastAutoLogoutHour
+                          ? "It's past 7 PM — you'll be auto-logged-out unless a super admin approves this"
+                          : "Ask a super admin for permission to work past 7 PM"
+                      }
+                    >
+                      <span className="hidden md:inline">
+                        {isPastAutoLogoutHour ? "⚠ Request late permission" : "🌙 Work late?"}
+                      </span>
+                      <span className="md:hidden">🌙</span>
+                    </Button>}
+                {(isApproachingCutoff || isPastAutoLogoutHour) &&
+                  permStatus !== "pending" &&
+                  !permApprovedActive && (
+                    <Button
+                      onClick={handleOpenPermModal}
+                      size="middle"
+                      style={{
+                        borderRadius: 10,
+                        fontWeight: 600,
+                        borderColor: isPastAutoLogoutHour ? "#FCA5A5" : "#E2E8F0",
+                        color: isPastAutoLogoutHour ? "#DC2626" : "#374151",
+                        background: isPastAutoLogoutHour ? "#FEF2F2" : undefined,
+                        height: 34,
+                        paddingInline: 10,
+                      }}
+                      title={
+                        isPastAutoLogoutHour
+                          ? "It's past 7 PM — you'll be auto-logged-out unless a super admin approves this"
+                          : "Ask a super admin for permission to work past 7 PM"
+                      }
+                    >
+                      <span className="hidden md:inline">
+                        {isPastAutoLogoutHour ? "⚠ Request late permission" : "🌙 Work late?"}
+                      </span>
+                      <span className="md:hidden">🌙</span>
+                    </Button>
+                  )}
+              </>
+            )}
+
             {/* New Job (admin only) */}
             {isAdmin||is_hari && (
               <Button
@@ -547,6 +729,49 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
         }}
         existingJobs={jobs}
       />
+
+      {/* Request permission to work past 7 PM */}
+      <Modal
+        title="Request permission to work late"
+        open={showPermModal}
+        onCancel={() => setShowPermModal(false)}
+        onOk={handleSubmitPermRequest}
+        okText="Send request"
+        confirmLoading={permSubmitting}
+        okButtonProps={{ style: { borderRadius: 8 } }}
+        cancelButtonProps={{ style: { borderRadius: 8 } }}
+        centered
+      >
+        <p style={{ fontSize: 13, color: "#64748B", marginBottom: 12 }}>
+          Staff are automatically logged out at 7:00 PM. Tell your super admin why you
+          need more time — they'll approve or decline it, and you'll be logged out
+          automatically once your approved time is up.
+        </p>
+        <label style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>Reason</label>
+        <textarea
+          value={permReason}
+          onChange={(e) => setPermReason(e.target.value)}
+          placeholder="e.g. Finishing an urgent job for tomorrow's delivery"
+          rows={3}
+          style={{
+            width: "100%", marginTop: 4, marginBottom: 12, padding: "8px 10px",
+            borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 13, resize: "vertical",
+          }}
+        />
+        <label style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>Need until (approx.)</label>
+        <input
+          type="time"
+          value={permUntilHour}
+          onChange={(e) => setPermUntilHour(e.target.value)}
+          style={{
+            width: "100%", marginTop: 4, padding: "8px 10px",
+            borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 13,
+          }}
+        />
+        <p style={{ fontSize: 11, color: "#94A3B8", marginTop: 6 }}>
+          This is just what you're requesting — the super admin sets the final approved cutoff time.
+        </p>
+      </Modal>
 
       <style>{`
         @keyframes fadeSlideIn {

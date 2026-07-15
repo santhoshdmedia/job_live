@@ -1,6 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useEffect, useState, useCallback, useRef } from "react";
 import axios from "axios";
+import { admintoken } from "../helper/notification_helper";
 
 // ─── Axios Instance ────────────────────────────────────────────────────────
 const http = axios.create({
@@ -9,7 +10,12 @@ const http = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 http.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token") || localStorage.getItem("adminToken");
+  // NOTE: the real auth token is written to localStorage under the
+  // `admintoken` key ("admin_token") at login — see pages/Login.jsx.
+  // This previously looked for "token" / "adminToken", neither of which
+  // is ever set, so every request from this page went out unauthenticated
+  // and silently 401'd on any route that actually checks the token.
+  const token = localStorage.getItem(admintoken) || localStorage.getItem("token");
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
@@ -29,6 +35,14 @@ const api = {
   deleteTaskLog:   (logId)  => http.delete(`/task-log/${logId}`).then((r) => r.data),
   recordLogin:     (staffId)=> http.post("/session/login",  { staffId }).then((r) => r.data),
   recordLogout:    (staffId)=> http.post("/session/logout", { staffId }).then((r) => r.data),
+
+  // ── Force logout (super admin) — for staff who didn't log out correctly ──
+  forceLogout: (staffId) => http.post("/session/force-logout", { staffId }).then((r) => r.data),
+
+  // ── After-7-PM work permission requests ──────────────────────────────────
+  getPendingPermissions: () => http.get("/session/permission/pending").then((r) => r.data),
+  respondPermission: (staffId, status, permitted_until, note) =>
+    http.post(`/session/permission/${staffId}/respond`, { status, permitted_until, note }).then((r) => r.data),
 
   // ── Admin-assigned tasks (e.g. "Stock checking — 2 hours") ──────────────
   // payload: { staffIds: string[], tasks: [{ title, description, estimated_hours, due_at }] }
@@ -859,6 +873,28 @@ function MonitorCard({ staff, onClick, onOpenSelfie, onAssignTask }) {
           </div>
         )}
 
+        {/* Didn't log out correctly — session carried over from a previous day */}
+        {staff.staleOpenSession && (
+          <div style={{background:"#FEF2F2",borderRadius:8,padding:"7px 11px",border:"1px solid #FECACA",marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
+            <span style={{fontSize:13}}>⚠️</span>
+            <span style={{fontSize:11.5,fontWeight:700,color:T.red}}>Didn't log out correctly — session still open from a previous day. Open details to force-logout.</span>
+          </div>
+        )}
+
+        {/* After-7-PM permission request/approval */}
+        {staff.permission?.status==="pending" && (
+          <div style={{background:"#FFFBEB",borderRadius:8,padding:"7px 11px",border:"1px solid #FDE68A",marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
+            <span style={{fontSize:13}}>⏳</span>
+            <span style={{fontSize:11.5,fontWeight:700,color:T.amberD}}>Requested permission to work past 7 PM — needs your approval.</span>
+          </div>
+        )}
+        {staff.permission?.status==="approved" && (
+          <div style={{background:T.greenL,borderRadius:8,padding:"7px 11px",border:"1px solid #86EFAC",marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
+            <span style={{fontSize:13}}>✓</span>
+            <span style={{fontSize:11.5,fontWeight:700,color:T.green}}>Approved to work until {fmtT(staff.permission.permitted_until)}.</span>
+          </div>
+        )}
+
         {/* Job stats */}
         {(js.jobsAssignedTotal > 0 || js.activeJobs > 0) && (
           <div style={{background:js.activeJobs>0?T.amberL:T.bg2,borderRadius:8,padding:"9px 11px",border:`1px solid ${js.activeJobs>0?"#FDE68A":T.border}`,marginBottom:10,display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
@@ -1330,7 +1366,7 @@ function SiteVisitsTab({ visits = [] }) {
 }
 
 // ─── StaffDetailModal ─────────────────────────────────────────────────────
-function StaffDetailModal({ open, staff, onClose, push, isSuperAdmin }) {
+function StaffDetailModal({ open, staff, onClose, push, isSuperAdmin, onChanged }) {
   const [tab,        setTab]        = useState("overview");
   const [details,    setDetails]    = useState(null);
   const [loading,    setLoading]    = useState(false);
@@ -1338,6 +1374,7 @@ function StaffDetailModal({ open, staff, onClose, push, isSuperAdmin }) {
   const [jobRef,     setJobRef]     = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [lightbox,   setLightbox]   = useState(null);
+  const [forcingLogout, setForcingLogout] = useState(false);
 
   useEffect(()=>{
     if (!open||!staff) return;
@@ -1369,6 +1406,27 @@ function StaffDetailModal({ open, staff, onClose, push, isSuperAdmin }) {
   const handleDeleteLog = async (logId) => {
     try { await api.deleteTaskLog(logId); setDetails(d=>({...d,taskLogs:d.taskLogs.filter(l=>l._id!==logId)})); push("Log deleted"); }
     catch(err) { push(err?.response?.data?.message??"Delete failed","error"); }
+  };
+
+  // Super admin closes out a session for a staff member who "didn't log out
+  // correctly" (forgot to log out, crashed tab, left it open overnight…).
+  const handleForceLogout = async () => {
+    if (!staff?._id || forcingLogout) return;
+    if (!window.confirm(`Log out ${staff.name} now? Their active session will be closed immediately.`)) return;
+    try {
+      setForcingLogout(true);
+      await api.forceLogout(staff._id);
+      push(`${staff.name} has been logged out.`);
+      setDetails(d => d ? {
+        ...d,
+        sessions: d.sessions.map(s => s.logout_at ? s : { ...s, logout_at: new Date().toISOString() }),
+      } : d);
+      onChanged?.();
+    } catch (err) {
+      push(err?.response?.data?.message ?? "Failed to force logout", "error");
+    } finally {
+      setForcingLogout(false);
+    }
   };
 
   const handleSubmitLog = async () => {
@@ -1480,7 +1538,42 @@ function StaffDetailModal({ open, staff, onClose, push, isSuperAdmin }) {
                     ? <span style={{fontSize:11,color:T.ink3}}>📍 {currentSession.location.formatted_address}</span>
                     : <span style={{fontSize:11,color:T.ink4}}>No location data</span>
                 }
+                {/* After-7-PM permission status, if any */}
+                {currentSession.permission?.status && currentSession.permission.status!=="none" && (
+                  <div style={{marginTop:6}}>
+                    {currentSession.permission.status==="pending" && (
+                      <span style={{fontSize:10.5,fontWeight:700,color:T.amberD,background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:6,padding:"2px 8px"}}>
+                        ⏳ Asked to work late — waiting on your approval
+                      </span>
+                    )}
+                    {currentSession.permission.status==="approved" && (
+                      <span style={{fontSize:10.5,fontWeight:700,color:T.green,background:T.greenL,border:"1px solid #86EFAC",borderRadius:6,padding:"2px 8px"}}>
+                        ✓ Approved to work until {fmtT(currentSession.permission.permitted_until)}
+                      </span>
+                    )}
+                    {currentSession.permission.status==="rejected" && (
+                      <span style={{fontSize:10.5,fontWeight:700,color:T.red,background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:6,padding:"2px 8px"}}>
+                        ✕ Late-work request declined
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
+              {isSuperAdmin && (
+                <button
+                  onClick={handleForceLogout}
+                  disabled={forcingLogout}
+                  title="Force this staff member to log out now"
+                  style={{
+                    flexShrink:0, fontSize:11, fontWeight:700, color:forcingLogout?T.ink4:T.red,
+                    background:forcingLogout?T.bg2:"#FEF2F2", border:`1px solid ${forcingLogout?T.border:"#FECACA"}`,
+                    borderRadius:8, padding:"6px 10px", cursor:forcingLogout?"not-allowed":"pointer",
+                    display:"flex", alignItems:"center", gap:5, whiteSpace:"nowrap",
+                  }}
+                >
+                  {forcingLogout ? "…" : "⏻ Force logout"}
+                </button>
+              )}
             </div>
           )}
 
@@ -1735,6 +1828,103 @@ function StaffDetailModal({ open, staff, onClose, push, isSuperAdmin }) {
   );
 }
 
+// ─── PermissionRequestsPanel ────────────────────────────────────────────────
+// Queue of staff asking to keep working past the 7 PM auto-logout cutoff.
+// Super admin approves (choosing how long) or declines each request.
+function PermissionRequestsPanel({ open, requests, loading, onClose, onRespond, push }) {
+  const [busyId, setBusyId] = useState(null);
+  const [customTime, setCustomTime] = useState({}); // { [staffId]: "HH:mm" }
+
+  if (!open) return null;
+
+  const approveWithMinutes = async (staffId, minutesFromNow) => {
+    const until = new Date(Date.now() + minutesFromNow * 60000);
+    await respond(staffId, "approved", until.toISOString());
+  };
+
+  const approveWithCustomTime = async (staffId) => {
+    const t = customTime[staffId];
+    if (!t) { push("Pick a time first", "error"); return; }
+    const [h, m] = t.split(":").map(Number);
+    const until = new Date();
+    until.setHours(h, m, 0, 0);
+    if (until <= new Date()) until.setDate(until.getDate() + 1);
+    await respond(staffId, "approved", until.toISOString());
+  };
+
+  const respond = async (staffId, status, permitted_until) => {
+    try {
+      setBusyId(staffId);
+      await onRespond(staffId, status, permitted_until);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:650,background:"rgba(12,17,29,.6)",display:"flex",alignItems:"flex-end",justifyContent:"center",animation:"fadeIn .18s ease"}}
+      onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div style={{background:T.surface,borderRadius:"22px 22px 0 0",width:"100%",maxWidth:600,maxHeight:"88vh",display:"flex",flexDirection:"column",boxShadow:"0 -16px 60px rgba(0,0,0,.14)",animation:"sheetUp .28s cubic-bezier(.32,.72,0,1)"}}>
+        <div style={{display:"flex",justifyContent:"center",paddingTop:10,flexShrink:0}}>
+          <div style={{width:42,height:4,borderRadius:99,background:T.border}} />
+        </div>
+        <div style={{padding:"12px 18px 0",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
+          <div style={{fontWeight:800,fontSize:16,color:T.ink,fontFamily:"'DM Sans',sans-serif"}}>🌙 Late-work requests</div>
+          <button onClick={onClose} style={{width:32,height:32,borderRadius:"50%",border:"none",background:T.bg2,cursor:"pointer",fontSize:17,color:T.ink3}}>×</button>
+        </div>
+        <div style={{padding:"12px 18px 24px",overflowY:"auto"}}>
+          {loading && <div style={{textAlign:"center",padding:"30px 0"}}><Spinner /></div>}
+          {!loading && requests.length===0 && (
+            <div style={{textAlign:"center",padding:"36px 12px",color:T.ink4,fontSize:13}}>
+              No pending requests right now.
+            </div>
+          )}
+          {!loading && requests.map(r => {
+            const staffInfo = r.staff_id || {};
+            const busy = busyId === staffInfo._id;
+            return (
+              <div key={r._id} style={{border:`1px solid ${T.border}`,borderRadius:12,padding:12,marginBottom:10}}>
+                <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:8}}>
+                  <Avatar name={staffInfo.name} src={staffInfo.profileImg} size={34} />
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontWeight:700,fontSize:13.5,color:T.ink}}>{staffInfo.name}</div>
+                    <div style={{fontSize:11,color:T.ink4}}>{staffInfo.role}</div>
+                  </div>
+                  <span style={{fontSize:10.5,color:T.ink4}}>Asked at {fmtT(r.permission?.requested_at)}</span>
+                </div>
+                <div style={{fontSize:12.5,color:T.ink2,background:T.bg2,borderRadius:8,padding:"8px 10px",marginBottom:9,border:`1px solid ${T.border}`}}>
+                  {r.permission?.reason || "No reason given."}
+                  {r.permission?.requested_until && (
+                    <div style={{fontSize:11,color:T.ink4,marginTop:4}}>Requested until ~{fmtT(r.permission.requested_until)}</div>
+                  )}
+                </div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+                  {[["+1h",60],["+2h",120],["+3h",180]].map(([label,mins])=>(
+                    <button key={label} disabled={busy} onClick={()=>approveWithMinutes(staffInfo._id, mins)}
+                      style={{fontSize:11.5,fontWeight:700,padding:"6px 10px",borderRadius:8,border:"1px solid #86EFAC",background:T.greenL,color:T.green,cursor:busy?"not-allowed":"pointer"}}>
+                      ✓ {label}
+                    </button>
+                  ))}
+                  <input type="time" value={customTime[staffInfo._id]||""} onChange={e=>setCustomTime(c=>({...c,[staffInfo._id]:e.target.value}))}
+                    style={{fontSize:11.5,padding:"5px 7px",borderRadius:8,border:`1px solid ${T.border}`}} />
+                  <button disabled={busy} onClick={()=>approveWithCustomTime(staffInfo._id)}
+                    style={{fontSize:11.5,fontWeight:700,padding:"6px 10px",borderRadius:8,border:"1px solid #86EFAC",background:T.greenL,color:T.green,cursor:busy?"not-allowed":"pointer"}}>
+                    ✓ Until
+                  </button>
+                  <button disabled={busy} onClick={()=>respond(staffInfo._id, "rejected", null)}
+                    style={{fontSize:11.5,fontWeight:700,padding:"6px 10px",borderRadius:8,border:"1px solid #FECACA",background:"#FEF2F2",color:T.red,cursor:busy?"not-allowed":"pointer",marginLeft:"auto"}}>
+                    ✕ Decline
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── StaffMonitorPage ─────────────────────────────────────────────────────
 export default function StaffMonitorPage() {
   const [staffList,     setStaffList]     = useState([]);
@@ -1746,8 +1936,12 @@ export default function StaffMonitorPage() {
   const [lightbox,      setLightbox]      = useState(null);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [assignTargetId, setAssignTargetId]   = useState(null); // staff pre-selected via card button
+  const [pendingPermissions, setPendingPermissions] = useState([]);
+  const [permLoading, setPermLoading] = useState(false);
+  const [showPermPanel, setShowPermPanel] = useState(false);
   const { toasts, push } = useToast();
   const pollRef = useRef(null);
+  const permPollRef = useRef(null);
   const isSuperAdmin = true;
 
   const fetchList = useCallback(async (silent=false) => {
@@ -1760,7 +1954,32 @@ export default function StaffMonitorPage() {
     finally { setLoading(false); setRefreshing(false); }
   },[]);
 
+  const fetchPendingPermissions = useCallback(async (silent=false) => {
+    try {
+      if (!silent) setPermLoading(true);
+      const res = await api.getPendingPermissions();
+      const list = res?.data ?? res ?? [];
+      setPendingPermissions(Array.isArray(list) ? list : []);
+    } catch (err) {
+      if (!silent) push(err?.response?.data?.message ?? "Failed to load permission requests", "error");
+    } finally {
+      setPermLoading(false);
+    }
+  }, []);
+
+  const handleRespondPermission = async (staffId, status, permitted_until) => {
+    try {
+      await api.respondPermission(staffId, status, permitted_until);
+      push(status === "approved" ? "Permission approved" : "Permission declined");
+      fetchPendingPermissions(true);
+      fetchList(true);
+    } catch (err) {
+      push(err?.response?.data?.message ?? "Failed to respond", "error");
+    }
+  };
+
   useEffect(()=>{ fetchList(false); pollRef.current=setInterval(()=>fetchList(true),30000); return()=>clearInterval(pollRef.current); },[fetchList]);
+  useEffect(()=>{ fetchPendingPermissions(false); permPollRef.current=setInterval(()=>fetchPendingPermissions(true),30000); return()=>clearInterval(permPollRef.current); },[fetchPendingPermissions]);
 
   const openAssignModal = (staff) => { setAssignTargetId(staff?._id ?? null); setShowAssignModal(true); };
   const closeAssignModal = () => { setShowAssignModal(false); setAssignTargetId(null); };
@@ -1788,6 +2007,14 @@ export default function StaffMonitorPage() {
         onClose={closeAssignModal}
         push={push}
         onAssigned={()=>fetchList(true)}
+      />
+      <PermissionRequestsPanel
+        open={showPermPanel}
+        requests={pendingPermissions}
+        loading={permLoading}
+        onClose={()=>setShowPermPanel(false)}
+        onRespond={handleRespondPermission}
+        push={push}
       />
 
       {/* Header */}
@@ -1821,6 +2048,11 @@ export default function StaffMonitorPage() {
               ].map(({label,color})=>(
                 <span key={label} style={{fontSize:11.5,fontWeight:600,color,background:T.bg2,borderRadius:7,padding:"5px 10px",border:`1px solid ${T.border}`}}>{label}</span>
               ))}
+              {pendingPermissions.length>0 && (
+                <button onClick={()=>setShowPermPanel(true)} style={{padding:"7px 14px",borderRadius:9,border:"1px solid #FDE68A",background:"#FFFBEB",color:T.amberD,fontWeight:700,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
+                  🌙 {pendingPermissions.length} late-work request{pendingPermissions.length!==1?"s":""}
+                </button>
+              )}
               {isSuperAdmin && (
                 <button onClick={()=>openAssignModal(null)} style={{padding:"7px 14px",borderRadius:9,border:`1px solid #FDE68A`,background:T.amberL,color:T.amberD,fontWeight:700,fontSize:12,cursor:"pointer"}}>
                   🗂 Assign Task
@@ -1911,7 +2143,7 @@ export default function StaffMonitorPage() {
         )}
       </div>
 
-      <StaffDetailModal open={!!selectedStaff} staff={selectedStaff} onClose={()=>setSelectedStaff(null)} push={push} isSuperAdmin={isSuperAdmin} />
+      <StaffDetailModal open={!!selectedStaff} staff={selectedStaff} onClose={()=>setSelectedStaff(null)} push={push} isSuperAdmin={isSuperAdmin} onChanged={()=>fetchList(true)} />
       <Toast toasts={toasts} />
     </div>
   );

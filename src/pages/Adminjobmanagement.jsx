@@ -12,7 +12,7 @@ import {
   PhoneOutlined, WalletOutlined, BankOutlined, InfoCircleOutlined,
   ExclamationCircleOutlined, CameraOutlined, CompassOutlined,
   CalendarOutlined, CheckOutlined, ToolOutlined, AppstoreOutlined,
-  UploadOutlined, SearchOutlined,FileExcelOutlined
+  UploadOutlined, SearchOutlined, FileExcelOutlined, BookOutlined,
 } from "@ant-design/icons";
 import CustomTable from "../components/CustomTable";
 import { ERROR_NOTIFICATION, SUCCESS_NOTIFICATION } from "../helper/notification_helper";
@@ -20,12 +20,10 @@ import dayjs from "dayjs";
 import jsPDF from "jspdf";
 import * as XLSX from "xlsx";
 
-
-
 const { Option } = Select;
 const { TextArea } = Input;
 
-// ─── Round half-up (808.20→808, 808.60→809, 808.50→809) ──────────────────────
+// ─── Round half-up ────────────────────────────────────────────────────────────
 const roundHalfUp = (n) => Math.floor(n + 0.5);
 
 // ─── Breakpoint ───────────────────────────────────────────────────────────────
@@ -119,8 +117,7 @@ const STATUS_CONFIG = {
   converted:   { label: "Converted",   color: "geekblue", icon: <SwapOutlined /> },
 };
 
-// ─── Job Request PDF ──────────────────────────────────────────────────────────
-// ─── Job Request Image ─────────────────────────────────────────────────────
+// ─── Job Request Helpers ──────────────────────────────────────────────────────
 const getItemRequestLine = (item) => {
   const cat = item.item_category;
   if (cat === "service_office") {
@@ -154,18 +151,13 @@ const wrapText = (ctx, text, maxWidth) => {
   let line = "";
   words.forEach(word => {
     const test = line ? `${line} ${word}` : word;
-    if (ctx.measureText(test).width > maxWidth && line) {
-      lines.push(line);
-      line = word;
-    } else {
-      line = test;
-    }
+    if (ctx.measureText(test).width > maxWidth && line) { lines.push(line); line = word; }
+    else { line = test; }
   });
   if (line) lines.push(line);
   return lines;
 };
 
-// ─── Canvas drawing helpers ─────────────────────────────────────────────────
 const roundRect = (ctx, x, y, w, h, r) => {
   const rad = typeof r === "number" ? { tl: r, tr: r, br: r, bl: r } : r;
   ctx.beginPath();
@@ -181,60 +173,33 @@ const roundRect = (ctx, x, y, w, h, r) => {
   ctx.closePath();
 };
 
-const drawPill = (ctx, text, x, y, { bg, color, font = "bold 11px Arial" }) => {
-  ctx.font = font;
-  const padX = 10, h = 22;
-  const w = ctx.measureText(text).width + padX * 2;
-  roundRect(ctx, x, y, w, h, h / 2);
-  ctx.fillStyle = bg;
-  ctx.fill();
-  ctx.fillStyle = color;
-  ctx.textBaseline = "middle";
-  ctx.fillText(text, x + padX, y + h / 2 + 1);
-  ctx.textBaseline = "alphabetic";
-  return w;
-};
-
-// ─── Job Request Image (redesigned) ─────────────────────────────────────────
 const generateJobRequestImage = (job) => {
   const width = 760;
-  const padding = 0;
   const marginX = 36;
-  const contentWidth = width - marginX * 2 - 32; // inner card padding
+  const contentWidth = width - marginX * 2 - 32;
   const cardX = 28, cardPad = 28;
   const items = job.cart_items || [];
 
-  // ── Measure (Pass 1) ──
   const measureCanvas = document.createElement("canvas");
   const mctx = measureCanvas.getContext("2d");
 
   const HEADER_H = 110;
-  let y = HEADER_H + 28;        // start after header band
-  y += 30;                       // job no / delivery row
-  y += 36;                       // customer row
-  y += 30;                       // section label "Items"
+  let y = HEADER_H + 28;
+  y += 30; y += 36; y += 30;
 
   const itemBlocks = items.map((item, idx) => {
     const { name, qty, size, notes } = getItemRequestLine(item);
-    let h = 8;     // top padding inside row
-    h += 22;        // name + index
-    h += 20;        // qty/size meta line
+    let h = 8; h += 22; h += 20;
     let noteLines = [];
-    if (notes) {
-      mctx.font = "italic 12px Arial";
-      noteLines = wrapText(mctx, notes, contentWidth - 80);
-      h += noteLines.length * 16 + 6;
-    }
-    h += 14; // bottom padding inside row
+    if (notes) { mctx.font = "italic 12px Arial"; noteLines = wrapText(mctx, notes, contentWidth - 80); h += noteLines.length * 16 + 6; }
+    h += 14;
     return { idx, name, qty, size, notes, noteLines, height: h };
   });
 
-  const itemsHeight = itemBlocks.reduce((acc, b) => acc + b.height + 10, 0); // +10 gap between rows
-  y += itemsHeight;
-  y += 70; // footer area
+  const itemsHeight = itemBlocks.reduce((acc, b) => acc + b.height + 10, 0);
+  y += itemsHeight; y += 70;
   const totalHeight = Math.max(y + 24, 420);
 
-  // ── Draw (Pass 2) ──
   const canvas = document.createElement("canvas");
   const scale = 2;
   canvas.width = width * scale;
@@ -242,11 +207,9 @@ const generateJobRequestImage = (job) => {
   const ctx = canvas.getContext("2d");
   ctx.scale(scale, scale);
 
-  // Page background (soft gray)
   ctx.fillStyle = "#f1f5f9";
   ctx.fillRect(0, 0, width, totalHeight);
 
-  // Card background with shadow
   const cardW = width - cardX * 2;
   const cardH = totalHeight - cardX * 2;
   ctx.save();
@@ -258,7 +221,6 @@ const generateJobRequestImage = (job) => {
   ctx.fill();
   ctx.restore();
 
-  // ── Header band (gradient) ──
   const headerGrad = ctx.createLinearGradient(cardX, cardX, cardX + cardW, cardX);
   headerGrad.addColorStop(0, "#4f46e5");
   headerGrad.addColorStop(1, "#7c3aed");
@@ -267,251 +229,110 @@ const generateJobRequestImage = (job) => {
   ctx.clip();
   ctx.fillStyle = headerGrad;
   ctx.fillRect(cardX, cardX, cardW, HEADER_H);
-  // decorative circles
-  ctx.beginPath();
-  ctx.arc(cardX + cardW - 40, cardX + HEADER_H - 10, 70, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(255,255,255,0.07)";
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(cardX + cardW - 110, cardX + 10, 40, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(255,255,255,0.06)";
-  ctx.fill();
+  ctx.beginPath(); ctx.arc(cardX + cardW - 40, cardX + HEADER_H - 10, 70, 0, Math.PI * 2); ctx.fillStyle = "rgba(255,255,255,0.07)"; ctx.fill();
+  ctx.beginPath(); ctx.arc(cardX + cardW - 110, cardX + 10, 40, 0, Math.PI * 2); ctx.fillStyle = "rgba(255,255,255,0.06)"; ctx.fill();
   ctx.restore();
 
-  // Header text
   let hy = cardX + 38;
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 24px Arial";
-  ctx.fillText("Job Request", marginX, hy);
+  ctx.fillStyle = "#ffffff"; ctx.font = "bold 24px Arial"; ctx.fillText("Job Request", marginX, hy);
+  ctx.font = "12px Arial"; ctx.fillStyle = "rgba(255,255,255,0.85)"; ctx.fillText("Production / Workshop Slip", marginX, hy + 20);
 
-  ctx.font = "12px Arial";
-  ctx.fillStyle = "rgba(255,255,255,0.85)";
-  ctx.fillText("Production / Workshop Slip", marginX, hy + 20);
-
-  // Job No pill on right of header
   ctx.font = "bold 16px Arial";
   const jobNoText = job.job_no || "—";
   const jobNoW = ctx.measureText(jobNoText).width + 24;
   const pillX = cardX + cardW - jobNoW - 28;
   roundRect(ctx, pillX, cardX + 26, jobNoW, 30, 15);
-  ctx.fillStyle = "rgba(255,255,255,0.18)";
-  ctx.fill();
-  ctx.fillStyle = "#ffffff";
-  ctx.textBaseline = "middle";
+  ctx.fillStyle = "rgba(255,255,255,0.18)"; ctx.fill();
+  ctx.fillStyle = "#ffffff"; ctx.textBaseline = "middle";
   ctx.fillText(jobNoText, pillX + 12, cardX + 26 + 15 + 1);
   ctx.textBaseline = "alphabetic";
 
-  // ── Body content ──
   let cy = cardX + HEADER_H + 30;
-
-  // Customer + Delivery info row (two columns)
   const colW = (cardW - cardPad * 2) / 2;
   const col1X = cardX + cardPad;
   const col2X = col1X + colW;
 
   const drawInfoBlock = (x, label, value, valueColor = "#0f172a") => {
-    ctx.font = "bold 10px Arial";
-    ctx.fillStyle = "#94a3b8";
-    ctx.fillText(label.toUpperCase(), x, cy);
-    ctx.font = "bold 15px Arial";
-    ctx.fillStyle = valueColor;
-    ctx.fillText(value, x, cy + 20);
+    ctx.font = "bold 10px Arial"; ctx.fillStyle = "#94a3b8"; ctx.fillText(label.toUpperCase(), x, cy);
+    ctx.font = "bold 15px Arial"; ctx.fillStyle = valueColor; ctx.fillText(value, x, cy + 20);
   };
 
   drawInfoBlock(col1X, "Customer", job.customer_name || "—");
-  drawInfoBlock(
-    col2X,
-    "Delivery",
-    job.estimated_delivery_date ? dayjs(job.estimated_delivery_date).format("DD MMM YYYY, hh:mm A") : "—",
-    job.estimated_delivery_date ? "#dc2626" : "#94a3b8"
-  );
+  drawInfoBlock(col2X, "Delivery", job.estimated_delivery_date ? dayjs(job.estimated_delivery_date).format("DD MMM YYYY, hh:mm A") : "—", job.estimated_delivery_date ? "#dc2626" : "#94a3b8");
   cy += 46;
 
-  // Divider
-  ctx.strokeStyle = "#e2e8f0";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(col1X, cy);
-  ctx.lineTo(cardX + cardW - cardPad, cy);
-  ctx.stroke();
+  ctx.strokeStyle = "#e2e8f0"; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(col1X, cy); ctx.lineTo(cardX + cardW - cardPad, cy); ctx.stroke();
   cy += 26;
 
-  // Items section label
-  ctx.font = "bold 11px Arial";
-  ctx.fillStyle = "#6366f1";
+  ctx.font = "bold 11px Arial"; ctx.fillStyle = "#6366f1";
   ctx.fillText(`ITEMS (${items.length})`, col1X, cy);
   cy += 16;
 
-  if (!itemBlocks.length) {
-    ctx.font = "13px Arial";
-    ctx.fillStyle = "#94a3b8";
-    ctx.fillText("No items in this job.", col1X, cy + 10);
-    cy += 30;
-  }
+  if (!itemBlocks.length) { ctx.font = "13px Arial"; ctx.fillStyle = "#94a3b8"; ctx.fillText("No items in this job.", col1X, cy + 10); cy += 30; }
 
   const rowW = cardW - cardPad * 2;
   itemBlocks.forEach((b, i) => {
-    const rowY = cy;
-    const rowH = b.height;
-
-    // Alternating row background
-    if (i % 2 === 0) {
-      roundRect(ctx, col1X, rowY, rowW, rowH, 10);
-      ctx.fillStyle = "#f8fafc";
-      ctx.fill();
-    }
-
+    const rowY = cy; const rowH = b.height;
+    if (i % 2 === 0) { roundRect(ctx, col1X, rowY, rowW, rowH, 10); ctx.fillStyle = "#f8fafc"; ctx.fill(); }
     let iy = rowY + 8 + 14;
-
-    // Index badge
     const badgeR = 11;
-    ctx.beginPath();
-    ctx.arc(col1X + 16, iy - 4, badgeR, 0, Math.PI * 2);
-    ctx.fillStyle = "#eef2ff";
-    ctx.fill();
-    ctx.font = "bold 11px Arial";
-    ctx.fillStyle = "#4f46e5";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
+    ctx.beginPath(); ctx.arc(col1X + 16, iy - 4, badgeR, 0, Math.PI * 2); ctx.fillStyle = "#eef2ff"; ctx.fill();
+    ctx.font = "bold 11px Arial"; ctx.fillStyle = "#4f46e5"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText(String(b.idx + 1), col1X + 16, iy - 3);
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-
-    // Item name
-    ctx.font = "bold 14px Arial";
-    ctx.fillStyle = "#0f172a";
-    ctx.fillText(b.name || "—", col1X + 36, iy);
-
-    // Qty pill (right aligned)
+    ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    ctx.font = "bold 14px Arial"; ctx.fillStyle = "#0f172a"; ctx.fillText(b.name || "—", col1X + 36, iy);
     ctx.font = "bold 11px Arial";
     const qtyText = b.qty || "—";
     const qtyW = ctx.measureText(qtyText).width + 20;
     const qtyX = col1X + rowW - qtyW - 8;
-    roundRect(ctx, qtyX, iy - 16, qtyW, 22, 11);
-    ctx.fillStyle = "#ecfdf5";
-    ctx.fill();
-    ctx.fillStyle = "#059669";
-    ctx.textBaseline = "middle";
-    ctx.fillText(qtyText, qtyX + 10, iy - 5);
-    ctx.textBaseline = "alphabetic";
-
+    roundRect(ctx, qtyX, iy - 16, qtyW, 22, 11); ctx.fillStyle = "#ecfdf5"; ctx.fill();
+    ctx.fillStyle = "#059669"; ctx.textBaseline = "middle"; ctx.fillText(qtyText, qtyX + 10, iy - 5); ctx.textBaseline = "alphabetic";
     iy += 20;
-
-    // Size meta
-    if (b.size) {
-      ctx.font = "12px Arial";
-      ctx.fillStyle = "#64748b";
-      ctx.fillText(`📐 ${b.size}`, col1X + 36, iy);
-      iy += 18;
-    }
-
-    // Notes
-    if (b.noteLines.length) {
-      ctx.font = "italic 12px Arial";
-      ctx.fillStyle = "#94a3b8";
-      b.noteLines.forEach((line, li) => {
-        ctx.fillText(li === 0 ? `✎ ${line}` : `   ${line}`, col1X + 36, iy);
-        iy += 16;
-      });
-    }
-
+    if (b.size) { ctx.font = "12px Arial"; ctx.fillStyle = "#64748b"; ctx.fillText(`📐 ${b.size}`, col1X + 36, iy); iy += 18; }
+    if (b.noteLines.length) { ctx.font = "italic 12px Arial"; ctx.fillStyle = "#94a3b8"; b.noteLines.forEach((line, li) => { ctx.fillText(li === 0 ? `✎ ${line}` : `   ${line}`, col1X + 36, iy); iy += 16; }); }
     cy += rowH + 10;
   });
 
-  // ── Footer ──
   cy += 6;
-  ctx.strokeStyle = "#e2e8f0";
-  ctx.beginPath();
-  ctx.moveTo(col1X, cy);
-  ctx.lineTo(cardX + cardW - cardPad, cy);
-  ctx.stroke();
+  ctx.strokeStyle = "#e2e8f0"; ctx.beginPath(); ctx.moveTo(col1X, cy); ctx.lineTo(cardX + cardW - cardPad, cy); ctx.stroke();
   cy += 22;
-
-  ctx.font = "10px Arial";
-  ctx.fillStyle = "#94a3b8";
+  ctx.font = "10px Arial"; ctx.fillStyle = "#94a3b8";
   ctx.fillText(`Generated ${dayjs().format("DD MMM YYYY, hh:mm A")}`, col1X, cy);
+  ctx.textAlign = "right"; ctx.fillText("Internal use only", cardX + cardW - cardPad, cy); ctx.textAlign = "left";
 
-  ctx.textAlign = "right";
-  ctx.fillText("Internal use only ", cardX + cardW - cardPad, cy);
-  ctx.textAlign = "left";
-
-  // ── Download ──
   canvas.toBlob((blob) => {
     if (!blob) return;
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `Job-Request-${job.job_no || "job"}.png`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    const a = document.createElement("a"); a.href = url; a.download = `Job-Request-${job.job_no || "job"}.png`;
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   }, "image/png");
 };
 
 const generateJobRequestPDF = (job) => {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
-  const marginX = 40;
-  let y = 50;
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(16);
-  doc.text("Job Request", marginX, y);
-  y += 28;
-
-  doc.setFontSize(11);
-  doc.setFont("helvetica", "normal");
-  doc.text(`Job No: ${job.job_no || "—"}`, marginX, y);
-  y += 18;
-  doc.text(`Customer: ${job.customer_name || "—"}`, marginX, y);
-  y += 24;
-
-  doc.setFont("helvetica", "bold");
-  doc.text("Items", marginX, y);
-  y += 8;
-  doc.setLineWidth(0.5);
-  doc.line(marginX, y, 555, y);
-  y += 16;
-
+  const marginX = 40; let y = 50;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.text("Job Request", marginX, y); y += 28;
+  doc.setFontSize(11); doc.setFont("helvetica", "normal");
+  doc.text(`Job No: ${job.job_no || "—"}`, marginX, y); y += 18;
+  doc.text(`Customer: ${job.customer_name || "—"}`, marginX, y); y += 24;
+  doc.setFont("helvetica", "bold"); doc.text("Items", marginX, y); y += 8;
+  doc.setLineWidth(0.5); doc.line(marginX, y, 555, y); y += 16;
   const items = job.cart_items || [];
-  if (!items.length) {
-    doc.setFont("helvetica", "normal");
-    doc.text("No items.", marginX, y);
-    y += 16;
-  }
-
+  if (!items.length) { doc.setFont("helvetica", "normal"); doc.text("No items.", marginX, y); y += 16; }
   items.forEach((item, idx) => {
     const { name, qty, size, notes } = getItemRequestLine(item);
-
     if (y > 760) { doc.addPage(); y = 50; }
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.text(`${idx + 1}. ${name || "—"}`, marginX, y);
-    y += 16;
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.text(`   Qty: ${qty || "—"}`, marginX, y);
-    y += 14;
-
-    if (size) {
-      doc.text(`   Size: ${size}`, marginX, y);
-      y += 14;
-    }
-
-    if (notes) {
-      const noteLines = doc.splitTextToSize(`   Notes: ${notes}`, 500);
-      doc.text(noteLines, marginX, y);
-      y += 14 * noteLines.length;
-    }
-
+    doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.text(`${idx + 1}. ${name || "—"}`, marginX, y); y += 16;
+    doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.text(`   Qty: ${qty || "—"}`, marginX, y); y += 14;
+    if (size) { doc.text(`   Size: ${size}`, marginX, y); y += 14; }
+    if (notes) { const nl = doc.splitTextToSize(`   Notes: ${notes}`, 500); doc.text(nl, marginX, y); y += 14 * nl.length; }
     y += 8;
   });
-
   doc.save(`Job-Request-${job.job_no || "job"}.pdf`);
 };
 
+// ─── Static Data ──────────────────────────────────────────────────────────────
 const WORKFLOW_STAGES = [
   { value: "design",        label: "Design" },
   { value: "prepress",      label: "Prepress" },
@@ -525,16 +346,14 @@ const WORKFLOW_STAGES = [
 
 const PRODUCTS = [
   {
-    product_id: "P001",
-    product_name: "flex",
-    printing_type: ["Solvent", "Latex", "UV"],
+    product_id: "P001", product_name: "flex", printing_type: ["Solvent", "Latex", "UV"],
     variations: ["Normal Flex", "Flex BB -230gsm", "Flex BB -280gsm", "Flex BB -240gsm", "Flex Star Backlight", "Flex Backlight", "Flex BB Star"],
   },
 ];
 
 const UNIT_OPTIONS     = [{ value: "ft", label: "ft" }, { value: "inch", label: "inch" }, { value: "cm", label: "cm" }];
 const QTY_TYPE_OPTIONS = [{ value: "sq.ft", label: "Sq. Ft" }, { value: "quantity", label: "Quantity" }];
-const GST_OPTIONS      = [0, 5,9, 12, 18, 28];
+const GST_OPTIONS      = [0, 5, 9, 12, 18, 28];
 const PAYMENT_MODES    = ["Cash", "UPI", "Bank Transfer", "Cheque", "Card", "Cash on Delivery"];
 
 const OFFICE_WORK_TYPES = [
@@ -544,28 +363,15 @@ const OFFICE_WORK_TYPES = [
   { value: "photo_shoot",  label: "Photo Shoot",  icon: "📷", calc: "hours"  },
 ];
 
-const EMPTY_PRODUCT_ITEM = {
-  item_category: "product", product_id: "", product_name: "", variation: "", printing_type: "",
-  width: "", height: "", size_unit: "inch", sq_ft: 0, sq_ft_manual: false,
-  quantity_type: "sq.ft", quantity: 1, price: 0, gst_percentage: 0, design_file: "", notes: "",
-};
-const EMPTY_OFFICE_ITEM = {
-  item_category: "service_office", service_name: "", office_type: "website",
-  days: 1, hours: 1, reels_count: 0, post_count: 0, price: 0, gst_percentage: 0, notes: "",
-};
-const EMPTY_LABOUR_ITEM = {
-  item_category: "service_labour", service_name: "",
-  sq_ft: 0, hours: 0, price_per_sqft: 0, price_per_hour: 0, gst_percentage: 0, notes: "",
-};
+const EMPTY_PRODUCT_ITEM = { item_category: "product", product_id: "", product_name: "", variation: "", printing_type: "", width: "", height: "", size_unit: "inch", sq_ft: 0, sq_ft_manual: false, quantity_type: "sq.ft", quantity: 1, price: 0, gst_percentage: 0, design_file: "", notes: "" };
+const EMPTY_OFFICE_ITEM  = { item_category: "service_office", service_name: "", office_type: "website", days: 1, hours: 1, reels_count: 0, post_count: 0, price: 0, gst_percentage: 0, notes: "" };
+const EMPTY_LABOUR_ITEM  = { item_category: "service_labour", service_name: "", sq_ft: 0, hours: 0, price_per_sqft: 0, price_per_hour: 0, gst_percentage: 0, notes: "" };
 
 const DEFAULT_EDIT_FORM = {
-  customer_name: "", customer_phone: "", company_name: "",
-  estimated_delivery_date: "",
+  customer_name: "", customer_phone: "", company_name: "", estimated_delivery_date: "",
   address_line1: "", address_line2: "", city: "", state: "", pincode: "", country: "India",
-  gst_no: "", delivery_charges: 0, free_delivery: false,
-  design_charges: 0, discount_amount: 0,
-  notes: "",
-  terms_and_conditions: "Payment due within 30 days.\nPrices subject to change without notice.\nDelivery: 7-10 business days after confirmation.",
+  gst_no: "", delivery_charges: 0, free_delivery: false, design_charges: 0, discount_amount: 0,
+  notes: "", terms_and_conditions: "Payment due within 30 days.\nPrices subject to change without notice.\nDelivery: 7-10 business days after confirmation.",
 };
 
 const AUTO_REFRESH_INTERVAL = 5 * 60 * 1000;
@@ -607,22 +413,40 @@ const computeLabourLineTotal = (item) => {
   return { base, gstAmt, total: base + gstAmt, sqFtAmt, hoursAmt };
 };
 
+// ── FIX: GST must be calculated on the *taxable* (post-discount) value, not
+// on the pre-discount subtotal. Previously taxAmount was summed from each
+// item's full pre-discount base, while taxableAmount was shown post-discount —
+// this silently overcharged GST whenever a discount was applied (grandTotal
+// included tax that didn't correspond to the taxable value shown). We now
+// apply the discount proportionally across the accumulated tax as well,
+// which is the standard "trade discount before GST" treatment used by
+// accounting systems like Tally.
 const calcJobTotals = (job) => {
   let subtotal = 0, taxAmount = 0;
   (job.cart_items || []).forEach(it => {
     const cat = it.item_category;
     let base = 0, gstAmt = 0;
-    if (cat === "service_office")        { const r = computeOfficeServiceLineTotal(it); base = r.base; gstAmt = r.gstAmt; }
-    else if (cat === "service_labour")   { const r = computeLabourLineTotal(it);        base = r.base; gstAmt = r.gstAmt; }
-    else                                 { const r = computeProductLineTotal(it);       base = r.base; gstAmt = r.gstAmt; }
+    if (cat === "service_office")       { const r = computeOfficeServiceLineTotal(it); base = r.base; gstAmt = r.gstAmt; }
+    else if (cat === "service_labour")  { const r = computeLabourLineTotal(it);        base = r.base; gstAmt = r.gstAmt; }
+    else                                { const r = computeProductLineTotal(it);       base = r.base; gstAmt = r.gstAmt; }
     subtotal += base; taxAmount += gstAmt;
   });
   let discountAmt = parseFloat(job.discount_amount) || 0;
   if (!discountAmt && job.discount_percentage) discountAmt = subtotal * ((parseFloat(job.discount_percentage) || 0) / 100);
-  const taxableAmount   = subtotal - discountAmt;
+  discountAmt = Math.min(discountAmt, subtotal);
+  const taxableAmount = subtotal - discountAmt;
+  const discountRatio = subtotal > 0 ? discountAmt / subtotal : 0;
+  const adjustedTaxAmount = parseFloat((taxAmount * (1 - discountRatio)).toFixed(2));
   const designCharges   = parseFloat(job.design_charges) || 0;
   const deliveryCharges = job.free_delivery ? 0 : parseFloat(job.delivery_charges) || 0;
-  return { subtotal, discountAmt, taxableAmount, taxAmount, designCharges, deliveryCharges, grandTotal: taxableAmount + taxAmount + designCharges + deliveryCharges, freeDelivery: !!job.free_delivery };
+  return {
+    subtotal, discountAmt, taxableAmount,
+    taxAmount: adjustedTaxAmount,
+    rawTaxAmount: taxAmount,
+    designCharges, deliveryCharges,
+    grandTotal: taxableAmount + adjustedTaxAmount + designCharges + deliveryCharges,
+    freeDelivery: !!job.free_delivery,
+  };
 };
 
 const isSiteVisitJob = (r) => !!(r?.site_visit_id || r?.site_visit_no);
@@ -692,9 +516,7 @@ const PaymentInfoPanel = ({ job, onCollectPayment }) => {
   const nextDue = job.next_due_date;
   const hasDue  = nextDue && balance > 0;
   const history = job.payments || [];
-
   if (!history.length && paid <= 0 && balance <= 0) return null;
-
   let dueColor = "#1e40af", dueBg = "#eff6ff", dueBorder = "#93c5fd", dueMsg = "";
   if (hasDue) {
     const diff = dayjs(nextDue).startOf("day").diff(dayjs().startOf("day"), "day");
@@ -703,18 +525,11 @@ const PaymentInfoPanel = ({ job, onCollectPayment }) => {
     else if (diff <= 3) { dueColor = "#c2410c"; dueBg = "#fff7ed"; dueBorder = "#fdba74"; dueMsg = `Due in ${diff} day${diff > 1 ? "s" : ""}`; }
     else { dueMsg = `Due in ${diff} days`; }
   }
-
   return (
     <div style={{ background: "#f0fdf4", borderRadius: 10, padding: "12px 14px", border: "1px solid #bbf7d0" }}>
-      <SectionHeader
-        icon={<WalletOutlined />}
-        title="Payment"
-        action={balance > 0 && onCollectPayment && (
-          <Button size="small" type="primary" icon={<WalletOutlined />} onClick={onCollectPayment} style={{ background: "#16a34a", borderColor: "#16a34a", marginLeft: 8 }}>
-            Collect Payment
-          </Button>
-        )}
-      />
+      <SectionHeader icon={<WalletOutlined />} title="Payment" action={balance > 0 && onCollectPayment && (
+        <Button size="small" type="primary" icon={<WalletOutlined />} onClick={onCollectPayment} style={{ background: "#16a34a", borderColor: "#16a34a", marginLeft: 8 }}>Collect Payment</Button>
+      )} />
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: hasDue ? 12 : 0 }}>
         <InfoRow label="Total Paid" value={paid > 0 ? `₹${paid.toFixed(2)}` : "Unpaid"} valueStyle={{ color: paid > 0 ? "#16a34a" : "#dc2626" }} />
         {balance > 0 && <InfoRow label="Balance Due" value={`₹${balance.toFixed(2)}`} valueStyle={{ color: "#dc2626", fontWeight: 800 }} />}
@@ -737,21 +552,13 @@ const PaymentInfoPanel = ({ job, onCollectPayment }) => {
       )}
       {history.length > 0 && (
         <div style={{ marginTop: 12 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
-            Payment History ({history.length})
-          </div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>Payment History ({history.length})</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 220, overflowY: "auto" }}>
             {[...history].reverse().map((p, i) => (
               <div key={p._id || i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 12, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 6, padding: "6px 10px" }}>
                 <div>
-                  <div style={{ fontWeight: 700, color: "#1a1a2e" }}>
-                    ₹{parseFloat(p.amount || 0).toFixed(2)}
-                    {p.method && <span style={{ fontWeight: 400, color: "#6b7280" }}> · {p.method}</span>}
-                    {p.discount_applied > 0 && <span style={{ fontWeight: 400, color: "#059669" }}> · Disc: ₹{parseFloat(p.discount_applied).toFixed(2)}</span>}
-                  </div>
-                  <div style={{ fontSize: 10, color: "#9ca3af" }}>
-                    {p.paid_at ? dayjs(p.paid_at).format("DD MMM YYYY, HH:mm") : ""}{p.notes ? ` · ${p.notes}` : ""}
-                  </div>
+                  <div style={{ fontWeight: 700, color: "#1a1a2e" }}>₹{parseFloat(p.amount || 0).toFixed(2)}{p.method && <span style={{ fontWeight: 400, color: "#6b7280" }}> · {p.method}</span>}{p.discount_applied > 0 && <span style={{ fontWeight: 400, color: "#059669" }}> · Disc: ₹{parseFloat(p.discount_applied).toFixed(2)}</span>}</div>
+                  <div style={{ fontSize: 10, color: "#9ca3af" }}>{p.paid_at ? dayjs(p.paid_at).format("DD MMM YYYY, HH:mm") : ""}{p.notes ? ` · ${p.notes}` : ""}</div>
                 </div>
                 <div style={{ fontSize: 11, color: "#6b7280", whiteSpace: "nowrap" }}>Bal after: ₹{parseFloat(p.balance_after ?? 0).toFixed(2)}</div>
               </div>
@@ -763,7 +570,7 @@ const PaymentInfoPanel = ({ job, onCollectPayment }) => {
   );
 };
 
-// ─── Image compression helper ──────────────────────────────────────────────────
+// ─── Image compression ────────────────────────────────────────────────────────
 const compressImage = (file, { maxDimension = 1600, quality = 0.8 } = {}) =>
   new Promise((resolve) => {
     if (!file.type?.startsWith("image/")) { resolve(file); return; }
@@ -772,19 +579,11 @@ const compressImage = (file, { maxDimension = 1600, quality = 0.8 } = {}) =>
     const objectUrl = URL.createObjectURL(file);
     img.onload = () => {
       let { width, height } = img;
-      if (width > maxDimension || height > maxDimension) {
-        const scale = maxDimension / Math.max(width, height);
-        width  = Math.round(width * scale);
-        height = Math.round(height * scale);
-      }
-      const canvas = document.createElement("canvas");
-      canvas.width = width; canvas.height = height;
+      if (width > maxDimension || height > maxDimension) { const scale = maxDimension / Math.max(width, height); width = Math.round(width * scale); height = Math.round(height * scale); }
+      const canvas = document.createElement("canvas"); canvas.width = width; canvas.height = height;
       canvas.getContext("2d").drawImage(img, 0, 0, width, height);
       URL.revokeObjectURL(objectUrl);
-      canvas.toBlob((blob) => {
-        if (!blob || blob.size >= file.size) { resolve(file); return; }
-        resolve(new File([blob], file.name.replace(/\.(png|webp)$/i, ".jpg"), { type: "image/jpeg" }));
-      }, "image/jpeg", quality);
+      canvas.toBlob((blob) => { if (!blob || blob.size >= file.size) { resolve(file); return; } resolve(new File([blob], file.name.replace(/\.(png|webp)$/i, ".jpg"), { type: "image/jpeg" })); }, "image/jpeg", quality);
     };
     img.onerror = () => { URL.revokeObjectURL(objectUrl); resolve(file); };
     img.src = objectUrl;
@@ -792,13 +591,8 @@ const compressImage = (file, { maxDimension = 1600, quality = 0.8 } = {}) =>
 
 const uploadDesignFile = async (file) => {
   const compressed = await compressImage(file);
-  const formData = new FormData();
-  formData.append("image", compressed);
-  const res = await fetch("https://api.dmedia.in/api/upload_images", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${localStorage.getItem("authToken")}` },
-    body: formData,
-  });
+  const formData = new FormData(); formData.append("image", compressed);
+  const res = await fetch("https://api.dmedia.in/api/upload_images", { method: "POST", headers: { Authorization: `Bearer ${localStorage.getItem("authToken")}` }, body: formData });
   const data = await res.json();
   if (!res.ok || !data.success) throw new Error(data.message || "Upload failed");
   return data.data.url;
@@ -841,13 +635,10 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
   const ref = useRef(null);
   const matched  = PRODUCTS.filter(p => p.product_name.toLowerCase().includes((item.product_name || "").toLowerCase()));
   const selected = PRODUCTS.find(p => p.product_name.toLowerCase() === (item.product_name || "").toLowerCase());
-
   useEffect(() => {
     const fn = (e) => { if (ref.current && !ref.current.contains(e.target)) setShowSuggest(false); };
-    document.addEventListener("mousedown", fn);
-    return () => document.removeEventListener("mousedown", fn);
+    document.addEventListener("mousedown", fn); return () => document.removeEventListener("mousedown", fn);
   }, []);
-
   const sizeChange = (field, val) => {
     const updated = { ...item, [field]: val };
     if (!updated.sq_ft_manual) updated.sq_ft = parseFloat(toSqFt(updated.width, updated.height, updated.size_unit).toFixed(4));
@@ -855,13 +646,11 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
   };
   const set = (f, v) => onChange(idx, { ...item, [f]: v });
   const handleQtyTypeChange = (val) => onChange(idx, { ...item, quantity_type: val, ...(val === "quantity" ? { sq_ft: 0, sq_ft_manual: false, width: "", height: "" } : {}) });
-
   const isSqFtMode = item.quantity_type === "sq.ft";
   const { base, gstAmt, total: lineTotal } = computeProductLineTotal(item);
   const productCols = isMobile ? "1fr" : isTablet ? "1fr 1fr" : "1fr 1fr 1fr";
   const sizeCols    = isSqFtMode ? (isMobile ? "1fr 1fr" : "1fr 1fr 90px 1fr") : (isMobile ? "1fr 1fr" : "1fr 1fr 90px");
   const priceCols   = isMobile ? "1fr 1fr" : "repeat(3,1fr)";
-
   return (
     <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: isMobile ? 10 : 14 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
@@ -884,13 +673,10 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
             {showSuggest && matched.length > 0 && (
               <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, zIndex: 9999, boxShadow: "0 4px 16px rgba(0,0,0,0.12)", overflow: "hidden" }}>
                 {matched.map(p => (
-                  <div key={p.product_id}
-                    onMouseDown={() => { onChange(idx, { ...item, product_name: p.product_name, product_id: p.product_id, variation: "", printing_type: "" }); setShowSuggest(false); }}
+                  <div key={p.product_id} onMouseDown={() => { onChange(idx, { ...item, product_name: p.product_name, product_id: p.product_id, variation: "", printing_type: "" }); setShowSuggest(false); }}
                     style={{ padding: "8px 12px", cursor: "pointer", fontSize: 13, color: "#1a1a2e", fontWeight: 600, borderBottom: "1px solid #f3f4f6" }}
-                    onMouseEnter={e => e.currentTarget.style.background = "#eff6ff"}
-                    onMouseLeave={e => e.currentTarget.style.background = "#fff"}>
-                    🖨️ {p.product_name}
-                    <span style={{ marginLeft: 6, fontSize: 10, color: "#6b7280", fontWeight: 400 }}>{p.printing_type?.join(" · ")}</span>
+                    onMouseEnter={e => e.currentTarget.style.background = "#eff6ff"} onMouseLeave={e => e.currentTarget.style.background = "#fff"}>
+                    🖨️ {p.product_name}<span style={{ marginLeft: 6, fontSize: 10, color: "#6b7280", fontWeight: 400 }}>{p.printing_type?.join(" · ")}</span>
                   </div>
                 ))}
               </div>
@@ -929,17 +715,11 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
         </div>
       )}
       <div style={{ marginBottom: 10 }}>
-        <FormField label="Notes / Specs">
-          <Input placeholder="Custom text, specs…" value={item.notes} size="small" style={{ borderRadius: 6 }} onChange={e => set("notes", e.target.value)} />
-        </FormField>
+        <FormField label="Notes / Specs"><Input placeholder="Custom text, specs…" value={item.notes} size="small" style={{ borderRadius: 6 }} onChange={e => set("notes", e.target.value)} /></FormField>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: priceCols, gap: 8, marginBottom: 10 }}>
-        <FormField label="Quantity" required>
-          <InputNumber min={1} value={item.quantity} size="small" style={{ width: "100%", borderRadius: 6 }} onChange={v => set("quantity", v || 1)} />
-        </FormField>
-        <FormField label={isSqFtMode ? "Price / sq.ft (₹)" : "Unit Price (₹)"} required>
-          <InputNumber min={0} value={item.price} size="small" style={{ width: "100%", borderRadius: 6 }} prefix="₹" onChange={v => set("price", v || 0)} />
-        </FormField>
+        <FormField label="Quantity" required><InputNumber min={1} value={item.quantity} size="small" style={{ width: "100%", borderRadius: 6 }} onChange={v => set("quantity", v || 1)} /></FormField>
+        <FormField label={isSqFtMode ? "Price / sq.ft (₹)" : "Unit Price (₹)"} required><InputNumber min={0} value={item.price} size="small" style={{ width: "100%", borderRadius: 6 }} prefix="₹" onChange={v => set("price", v || 0)} /></FormField>
         <FormField label="GST %">
           <Select value={item.gst_percentage ?? 0} size="small" style={{ width: "100%" }} onChange={v => set("gst_percentage", v)}>
             {GST_OPTIONS.map(g => <Option key={g} value={g}>{g === 0 ? "No GST" : `${g}%`}</Option>)}
@@ -947,9 +727,7 @@ const ProductItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile, isTab
         </FormField>
       </div>
       <div style={{ marginBottom: 10 }}>
-        <FormField label="Design File">
-          <DesignFileUpload value={item.design_file} onChange={path => set("design_file", path)} />
-        </FormField>
+        <FormField label="Design File"><DesignFileUpload value={item.design_file} onChange={path => set("design_file", path)} /></FormField>
       </div>
       <div style={{ background: "#fff", border: "1px solid #d1fae5", borderRadius: 8, padding: "8px 14px", textAlign: "right" }}>
         <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 2 }}>
@@ -969,7 +747,6 @@ const OfficeServiceItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile 
   const set = (f, v) => onChange(idx, { ...item, [f]: v });
   const selectedType = OFFICE_WORK_TYPES.find(t => t.value === item.office_type);
   const { base, gstAmt, total: lineTotal, qty } = computeOfficeServiceLineTotal(item);
-
   const renderCalcFields = () => {
     const calc = selectedType?.calc;
     if (calc === "days")   return (<FormField label="Number of Days" required><InputNumber min={1} value={item.days} size="small" style={{ width: "100%", borderRadius: 6 }} addonAfter="days" onChange={v => set("days", v || 1)} /></FormField>);
@@ -982,27 +759,12 @@ const OfficeServiceItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile 
     );
     return null;
   };
-
-  const getUnitLabel = () => {
-    const calc = selectedType?.calc;
-    if (calc === "days")  return "Price / Day (₹)";
-    if (calc === "hours") return "Price / Hour (₹)";
-    return "Price / Item (₹)";
-  };
-
-  const getQtyLabel = () => {
-    const calc = selectedType?.calc;
-    if (calc === "days")   return `${qty} day${qty !== 1 ? "s" : ""}`;
-    if (calc === "hours")  return `${qty} hr${qty !== 1 ? "s" : ""}`;
-    return `${item.reels_count || 0} reels + ${item.post_count || 0} posts`;
-  };
-
+  const getUnitLabel = () => { const calc = selectedType?.calc; if (calc === "days") return "Price / Day (₹)"; if (calc === "hours") return "Price / Hour (₹)"; return "Price / Item (₹)"; };
+  const getQtyLabel = () => { const calc = selectedType?.calc; if (calc === "days") return `${qty} day${qty !== 1 ? "s" : ""}`; if (calc === "hours") return `${qty} hr${qty !== 1 ? "s" : ""}`; return `${item.reels_count || 0} reels + ${item.post_count || 0} posts`; };
   return (
     <div style={{ background: "#fafaf9", border: "1px solid #e5e7eb", borderRadius: 10, padding: isMobile ? 10 : 14 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: "#374151", background: "#fef3c7", padding: "2px 10px", borderRadius: 20 }}>
-          {selectedType?.icon} {selectedType?.label || "Office Work"} #{idx + 1}
-        </span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: "#374151", background: "#fef3c7", padding: "2px 10px", borderRadius: 20 }}>{selectedType?.icon} {selectedType?.label || "Office Work"} #{idx + 1}</span>
         <Popconfirm title="Remove this service?" onConfirm={() => onRemove(idx)} disabled={isOnly} okText="Yes" cancelText="No">
           <Button icon={<DeleteOutlined />} size="small" danger type="text" disabled={isOnly} />
         </Popconfirm>
@@ -1075,10 +837,7 @@ const LabourItemRow = ({ item, idx, onChange, onRemove, isOnly, isMobile }) => {
           {item.sq_ft > 0 && item.hours > 0 && <span style={{ margin: "0 6px", color: "#9ca3af" }}>+</span>}
           {item.hours > 0 && <span>{item.hours} hrs × ₹{item.price_per_hour} = ₹{hoursAmt.toFixed(2)}</span>}
         </div>
-        <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 2 }}>
-          Base: <span style={{ fontWeight: 600, color: "#374151" }}>₹{base.toFixed(2)}</span>
-          {item.gst_percentage > 0 && <span style={{ marginLeft: 8 }}>GST ({item.gst_percentage}%): <span style={{ fontWeight: 600, color: "#d97706" }}>₹{gstAmt.toFixed(2)}</span></span>}
-        </div>
+        <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 2 }}>Base: <span style={{ fontWeight: 600, color: "#374151" }}>₹{base.toFixed(2)}</span>{item.gst_percentage > 0 && <span style={{ marginLeft: 8 }}>GST ({item.gst_percentage}%): <span style={{ fontWeight: 600, color: "#d97706" }}>₹{gstAmt.toFixed(2)}</span></span>}</div>
         <div style={{ fontSize: 14, fontWeight: 700, color: "#6b21a8" }}>Labour Total: ₹{lineTotal.toFixed(2)}</div>
       </div>
     </div>
@@ -1093,11 +852,7 @@ const JobItemsSection = ({ productItems, officeItems, labourItems, onProductChan
       label: (<span style={{ display: "flex", alignItems: "center", gap: 6 }}><AppstoreOutlined /> Product{productItems.length > 0 && <Tag color="blue" style={{ margin: 0, fontSize: 10, lineHeight: "16px", padding: "0 5px" }}>{productItems.length}</Tag>}</span>),
       children: (
         <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 8 }}>
-          {productItems.map((item, idx) => (
-            <ProductItemRow key={idx} item={item} idx={idx} onChange={onProductChange} onRemove={onRemoveProduct}
-              isOnly={productItems.length === 1 && officeItems.length === 0 && labourItems.length === 0}
-              isMobile={isMobile} isTablet={isTablet} />
-          ))}
+          {productItems.map((item, idx) => (<ProductItemRow key={idx} item={item} idx={idx} onChange={onProductChange} onRemove={onRemoveProduct} isOnly={productItems.length === 1 && officeItems.length === 0 && labourItems.length === 0} isMobile={isMobile} isTablet={isTablet} />))}
           <Button icon={<PlusOutlined />} onClick={onAddProduct} style={{ borderStyle: "dashed", borderRadius: 8, color: "#6b7280", height: 40, borderColor: "#93c5fd" }}>Add Product Item</Button>
         </div>
       ),
@@ -1145,8 +900,8 @@ const ViewCartItems = ({ cartItems, isMobile }) => {
         if (cat === "service_office")       { const r = computeOfficeServiceLineTotal(it); lineTotal = r.total; summary = `${it.office_type} · ₹${r.base.toFixed(2)} base`; }
         else if (cat === "service_labour")  { const r = computeLabourLineTotal(it);        lineTotal = r.total; summary = `${it.sq_ft || 0} ft² + ${it.hours || 0} hrs · ₹${r.base.toFixed(2)} base`; }
         else                                { const r = computeProductLineTotal(it);       lineTotal = r.total; summary = it.quantity_type === "sq.ft" ? `${it.quantity} × ${it.sq_ft} ft² × ₹${it.price}/ft² = ₹${r.base.toFixed(2)}` : `${it.quantity} × ₹${it.price} = ₹${r.base.toFixed(2)}`; }
-        const isProduct = !cat || cat === "product";
-        const bgColor   = cat === "service_office" ? "#fffbeb" : cat === "service_labour" ? "#faf5ff" : "#fff";
+        const isProduct   = !cat || cat === "product";
+        const bgColor     = cat === "service_office" ? "#fffbeb" : cat === "service_labour" ? "#faf5ff" : "#fff";
         const borderColor = cat === "service_office" ? "#fde68a" : cat === "service_labour" ? "#e9d5ff" : "#e5e7eb";
         return (
           <div key={it._id || it.item_id || i} style={{ background: bgColor, border: `1px solid ${borderColor}`, borderRadius: 10, padding: "12px 14px" }}>
@@ -1204,24 +959,27 @@ const AdminJobManagement = () => {
   const [jobs,      setJobs]      = useState([]);
   const [total,     setTotal]     = useState(0);
 
-  const [searchName,   setSearchName]   = useState("");
-  const [searchJobNo,  setSearchJobNo]  = useState("");
-  const [searchDate,   setSearchDate]   = useState(null);
-  const [statusFilter, setStatusFilter] = useState(null);
+  const [searchName,        setSearchName]        = useState("");
+  const [searchJobNo,       setSearchJobNo]        = useState("");
+  const [searchDate,        setSearchDate]         = useState(null);
+  const [statusFilter,      setStatusFilter]       = useState(null);
+  // ── Payment Pending quick filter ─────────────────────────────────────
+  const [paymentPending,    setPaymentPending]     = useState(false);
+
   const [page,     setPage]     = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [lastRefreshed, setLastRefreshed] = useState(dayjs());
-  const [countdown, setCountdown]        = useState(AUTO_REFRESH_INTERVAL / 1000);
+  const [countdown,     setCountdown]     = useState(AUTO_REFRESH_INTERVAL / 1000);
 
   // Edit modal
-  const [editModal,   setEditModal]   = useState(false);
-  const [editJob,     setEditJob]     = useState(null);
-  const [editForm,    setEditForm]    = useState({ ...DEFAULT_EDIT_FORM });
+  const [editModal,        setEditModal]        = useState(false);
+  const [editJob,          setEditJob]          = useState(null);
+  const [editForm,         setEditForm]         = useState({ ...DEFAULT_EDIT_FORM });
   const [editProductItems, setEditProductItems] = useState([{ ...EMPTY_PRODUCT_ITEM }]);
   const [editOfficeItems,  setEditOfficeItems]  = useState([]);
   const [editLabourItems,  setEditLabourItems]  = useState([]);
-  const [editLoading, setEditLoading] = useState(false);
-  const [editError,   setEditError]   = useState("");
+  const [editLoading,      setEditLoading]      = useState(false);
+  const [editError,        setEditError]        = useState("");
 
   // Approve modal
   const [approveModalOpen,  setApproveModalOpen]  = useState(false);
@@ -1258,95 +1016,159 @@ const AdminJobManagement = () => {
       if (!silent) setLoading(false);
     }
   }, []);
-const getExportQtyDisplay = (item) => {
-  const cat = item.item_category;
 
-  if (cat === "service_office") {
-    if (item.office_type === "website") return `${item.days || 0} day(s)`;
-    if (item.office_type === "social_media") return `${item.reels_count || 0} reels + ${item.post_count || 0} posts`;
-    return `${item.hours || 0} hr(s)`;
-  }
+  // ── Export to Excel (plain register) ──────────────────────────────────────
+  const getExportQtyDisplay = (item) => {
+    const cat = item.item_category;
+    if (cat === "service_office") {
+      if (item.office_type === "website")      return `${item.days || 0} day(s)`;
+      if (item.office_type === "social_media") return `${item.reels_count || 0} reels + ${item.post_count || 0} posts`;
+      return `${item.hours || 0} hr(s)`;
+    }
+    if (cat === "service_labour") {
+      const parts = [];
+      if (item.sq_ft > 0)  parts.push(`${item.sq_ft} sq.ft`);
+      if (item.hours > 0)  parts.push(`${item.hours} hr(s)`);
+      return parts.join(" + ") || "—";
+    }
+    if (item.quantity_type === "sq.ft") {
+      const sizeStr = item.width && item.height ? `${item.width}×${item.height} ${item.size_unit}` : "";
+      return [`${item.quantity || 0} qty`, `${item.sq_ft || 0} sq.ft`, sizeStr].filter(Boolean).join(" · ");
+    }
+    return `${item.quantity || 0} pcs`;
+  };
 
-  if (cat === "service_labour") {
-    const parts = [];
-    if (item.sq_ft > 0) parts.push(`${item.sq_ft} sq.ft`);
-    if (item.hours > 0) parts.push(`${item.hours} hr(s)`);
-    return parts.join(" + ") || "—";
-  }
-
-  // product
-  if (item.quantity_type === "sq.ft") {
-    const sizeStr = item.width && item.height ? `${item.width}×${item.height} ${item.size_unit}` : "";
-    return [
-      `${item.quantity || 0} qty`,
-      `${item.sq_ft || 0} sq.ft`,
-      sizeStr,
-    ].filter(Boolean).join(" · ");
-  }
-
-  return `${item.quantity || 0} pcs`;
-};
-
-const exportJobsToExcel = (jobsToExport) => {
-  const rows = [];
-
-  jobsToExport.forEach((job) => {
-    const items = (job.cart_items && job.cart_items.length) ? job.cart_items : [{}];
-
-    items.forEach((item, idx) => {
-      const isFirstRow = idx === 0;
-      const itemAmount = item.line_total !== undefined ? parseFloat(item.line_total || 0) : "";
-
-      rows.push({
-        "Order Date": isFirstRow
-          ? (job.order_date
-              ? dayjs(job.order_date).format("DD MMM YYYY")
-              : job.createdAt
-              ? dayjs(job.createdAt).format("DD MMM YYYY")
-              : "")
-          : "",
-        "Job No": isFirstRow ? (job.job_no || "") : "",
-        "Customer Name": isFirstRow
-          ? (job.customer_name
-              ? job.customer_name.charAt(0).toUpperCase() + job.customer_name.slice(1)
-              : "")
-          : "",
-        "Customer Phone": isFirstRow ? (job.customer_phone || "") : "",
-        "Product / Service": item.product_name || item.service_name || "",
-        "Qty / Size": (item.product_name || item.service_name) ? getExportQtyDisplay(item) : "",
-        // "Notes": item.notes || "",
-        "Item Amount": itemAmount,
-        "Total Amount": isFirstRow ? parseFloat(job.total_amount || 0) : "",
-        "Paid": isFirstRow ? parseFloat(job.payment_amount || 0) : "",
-        "Balance": isFirstRow ? parseFloat(job.balance_amount || 0) : "",
+  // FIX: the previous implementation looked up each job's serial number with
+  // `filteredJobs.indexOf(job)` inside the forEach loop — an O(n) scan per
+  // job (O(n²) overall) that also silently broke if the export list was ever
+  // a different array than `filteredJobs`. Since we already iterate the
+  // export list in order, the loop's own index is the correct serial number.
+  const exportJobsToExcel = (jobsToExport) => {
+    const rows = [];
+    jobsToExport.forEach((job, jobIdx) => {
+      const items = (job.cart_items && job.cart_items.length) ? job.cart_items : [{}];
+      const globalSerial = jobIdx + 1;
+      items.forEach((item, idx) => {
+        const isFirstRow = idx === 0;
+        const itemAmount = item.line_total !== undefined ? parseFloat(item.line_total || 0) : "";
+        rows.push({
+          "S.No":            isFirstRow ? globalSerial : "",
+          "Order Date":      isFirstRow ? (job.order_date ? dayjs(job.order_date).format("DD MMM YYYY") : job.createdAt ? dayjs(job.createdAt).format("DD MMM YYYY") : "") : "",
+          "Job No":          isFirstRow ? (job.job_no || "") : "",
+          "Customer Name":   isFirstRow ? (job.customer_name ? job.customer_name.charAt(0).toUpperCase() + job.customer_name.slice(1) : "") : "",
+          "Customer Phone":  isFirstRow ? (job.customer_phone || "") : "",
+          "Product / Service": item.product_name || item.service_name || "",
+          "Qty / Size":      (item.product_name || item.service_name) ? getExportQtyDisplay(item) : "",
+          "Item Amount":     itemAmount,
+          "Total Amount":    isFirstRow ? parseFloat(job.total_amount || 0) : "",
+          "Paid":            isFirstRow ? parseFloat(job.payment_amount || 0) : "",
+          "Balance":         isFirstRow ? parseFloat(job.balance_amount || 0) : "",
+        });
       });
     });
-  });
+    if (!rows.length) { ERROR_NOTIFICATION({ message: "No jobs to export" }); return; }
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws["!cols"] = [
+      { wch: 6  }, // S.No
+      { wch: 14 }, // Order Date
+      { wch: 14 }, // Job No
+      { wch: 22 }, // Customer Name
+      { wch: 14 }, // Customer Phone
+      { wch: 24 }, // Product / Service
+      { wch: 30 }, // Qty / Size
+      { wch: 14 }, // Item Amount
+      { wch: 14 }, // Total Amount
+      { wch: 14 }, // Paid
+      { wch: 14 }, // Balance
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Jobs");
+    XLSX.writeFile(wb, `Jobs-Export-${dayjs().format("YYYY-MM-DD_HHmm")}.xlsx`);
+  };
 
-  if (!rows.length) {
-    ERROR_NOTIFICATION({ message: "No jobs to export" });
-    return;
-  }
+  // ── NEW: Tally-style accounting export ─────────────────────────────────────
+  // Produces a classic double-entry "Day Book" (Dr/Cr voucher listing, the
+  // same shape Tally exports for a Sales Register) plus a "Ledger Summary"
+  // sheet that totals every ledger head — exactly what an accountant would
+  // import into Tally or hand to a CA. Uses the corrected calcJobTotals()
+  // so GST here always matches the taxable value after discount.
+  const exportJobsToTallyFormat = (jobsToExport) => {
+    if (!jobsToExport.length) { ERROR_NOTIFICATION({ message: "No jobs to export" }); return; }
 
-  const ws = XLSX.utils.json_to_sheet(rows);
-  ws["!cols"] = [
-    { wch: 14 }, // Order Date
-    { wch: 14 }, // Job No
-    { wch: 22 }, // Customer Name
-    { wch: 14 }, // Customer Phone
-    { wch: 24 }, // Product / Service
-    { wch: 30 }, // Qty / Size
-    { wch: 32 }, // Notes
-    { wch: 14 }, // Item Amount
-    { wch: 14 }, // Total Amount
-    { wch: 14 }, // Paid
-    { wch: 14 }, // Balance
-  ];
+    const dayBookRows = [];
+    const ledgerMap = {};
+    const addLedger = (name, dr, cr) => {
+      if (!ledgerMap[name]) ledgerMap[name] = { Debit: 0, Credit: 0 };
+      ledgerMap[name].Debit  += dr || 0;
+      ledgerMap[name].Credit += cr || 0;
+    };
 
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Jobs");
-  XLSX.writeFile(wb, `Jobs-Export-${dayjs().format("YYYY-MM-DD_HHmm")}.xlsx`);
-};
+    let srNo = 1;
+    jobsToExport.forEach((job) => {
+      const totals = calcJobTotals(job);
+      const voucherDate = job.order_date ? dayjs(job.order_date).format("DD-MM-YYYY") : job.createdAt ? dayjs(job.createdAt).format("DD-MM-YYYY") : "";
+      const voucherNo    = job.job_no || "";
+      const partyLedger  = `${job.customer_name || "Unknown Customer"}${job.company_name ? ` (${job.company_name})` : ""} A/c`;
+      const cgst = parseFloat((totals.taxAmount / 2).toFixed(2));
+      const sgst = parseFloat((totals.taxAmount - cgst).toFixed(2));
+      const grandTotal = parseFloat(totals.grandTotal.toFixed(2));
+
+      const pushRow = (particulars, debit, credit, vchType, narration) => {
+        dayBookRows.push({
+          "Sr.No":         particulars === partyLedger ? srNo : "",
+          "Date":          voucherDate,
+          "Voucher No.":   voucherNo,
+          "Voucher Type":  vchType || "",
+          "Particulars":   particulars,
+          "Debit":         debit || "",
+          "Credit":        credit || "",
+          "Narration":     narration || "",
+        });
+      };
+
+      // Debit: Party (receivable) — full invoice value
+      pushRow(partyLedger, grandTotal, "", "Sales", `Being sale to ${job.customer_name || "customer"} vide Job ${voucherNo}`);
+      addLedger(partyLedger, grandTotal, 0);
+      srNo += 1;
+
+      // Credit: Sales A/c — taxable value
+      if (totals.taxableAmount > 0) { pushRow("Sales A/c", "", parseFloat(totals.taxableAmount.toFixed(2))); addLedger("Sales A/c", 0, totals.taxableAmount); }
+      // Credit: Output CGST / SGST
+      if (cgst > 0) { pushRow("Output CGST A/c", "", cgst); addLedger("Output CGST A/c", 0, cgst); }
+      if (sgst > 0) { pushRow("Output SGST A/c", "", sgst); addLedger("Output SGST A/c", 0, sgst); }
+      // Credit: Design / Delivery charges
+      if (totals.designCharges > 0)   { pushRow("Design Charges A/c", "", parseFloat(totals.designCharges.toFixed(2)));   addLedger("Design Charges A/c", 0, totals.designCharges); }
+      if (totals.deliveryCharges > 0) { pushRow("Delivery Charges A/c", "", parseFloat(totals.deliveryCharges.toFixed(2))); addLedger("Delivery Charges A/c", 0, totals.deliveryCharges); }
+      // Debit: Discount Allowed (contra to party receivable)
+      if (totals.discountAmt > 0) { pushRow("Discount Allowed A/c", parseFloat(totals.discountAmt.toFixed(2)), ""); addLedger("Discount Allowed A/c", totals.discountAmt, 0); }
+
+      // spacer row between vouchers
+      dayBookRows.push({ "Sr.No": "", "Date": "", "Voucher No.": "", "Voucher Type": "", "Particulars": "", "Debit": "", "Credit": "", "Narration": "" });
+    });
+
+    const totalDebit  = parseFloat(dayBookRows.reduce((a, r) => a + (typeof r.Debit  === "number" ? r.Debit  : 0), 0).toFixed(2));
+    const totalCredit = parseFloat(dayBookRows.reduce((a, r) => a + (typeof r.Credit === "number" ? r.Credit : 0), 0).toFixed(2));
+    dayBookRows.push({ "Sr.No": "", "Date": "", "Voucher No.": "", "Voucher Type": "", "Particulars": "GRAND TOTAL", "Debit": totalDebit, "Credit": totalCredit, "Narration": Math.abs(totalDebit - totalCredit) < 0.01 ? "Tallied" : "⚠ Debit/Credit mismatch" });
+
+    const wsDayBook = XLSX.utils.json_to_sheet(dayBookRows);
+    wsDayBook["!cols"] = [{ wch: 6 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 30 }, { wch: 14 }, { wch: 14 }, { wch: 42 }];
+
+    const ledgerRows = Object.entries(ledgerMap).map(([name, v]) => ({
+      "Ledger Name": name,
+      "Debit":  v.Debit  > 0 ? parseFloat(v.Debit.toFixed(2))  : "",
+      "Credit": v.Credit > 0 ? parseFloat(v.Credit.toFixed(2)) : "",
+    }));
+    const ledgerTotalDr = ledgerRows.reduce((a, r) => a + (typeof r.Debit === "number" ? r.Debit : 0), 0);
+    const ledgerTotalCr = ledgerRows.reduce((a, r) => a + (typeof r.Credit === "number" ? r.Credit : 0), 0);
+    ledgerRows.push({ "Ledger Name": "TOTAL", "Debit": parseFloat(ledgerTotalDr.toFixed(2)), "Credit": parseFloat(ledgerTotalCr.toFixed(2)) });
+    const wsLedger = XLSX.utils.json_to_sheet(ledgerRows);
+    wsLedger["!cols"] = [{ wch: 30 }, { wch: 14 }, { wch: 14 }];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, wsDayBook, "Day Book");
+    XLSX.utils.book_append_sheet(wb, wsLedger, "Ledger Summary");
+    XLSX.writeFile(wb, `Tally-DayBook-${dayjs().format("YYYY-MM-DD_HHmm")}.xlsx`);
+  };
 
   const startAutoRefresh = useCallback(() => {
     clearInterval(autoRefreshRef.current);
@@ -1357,7 +1179,7 @@ const exportJobsToExcel = (jobsToExport) => {
   }, [loadJobs]);
 
   useEffect(() => { loadJobs(); startAutoRefresh(); return () => { clearInterval(autoRefreshRef.current); clearInterval(countdownRef.current); }; }, []);
-  useEffect(() => { setPage(1); }, [searchName, searchJobNo, searchDate, statusFilter, pageSize]);
+  useEffect(() => { setPage(1); }, [searchName, searchJobNo, searchDate, statusFilter, paymentPending, pageSize]);
 
   // ── Client-side filtering ──────────────────────────────────────────────────
   const filteredJobs = useMemo(() => {
@@ -1379,47 +1201,50 @@ const exportJobsToExcel = (jobsToExport) => {
       });
     }
     if (statusFilter) result = result.filter(j => j.job_status === statusFilter);
+    // Payment Pending filter: balance > 0
+    if (paymentPending) result = result.filter(j => parseFloat(j.balance_amount || 0) > 0);
     return result;
-  }, [jobs, searchName, searchJobNo, searchDate, statusFilter]);
+  }, [jobs, searchName, searchJobNo, searchDate, statusFilter, paymentPending]);
+
+  // ── Payment pending count (for badge) ────────────────────────────────────
+  const paymentPendingCount = useMemo(() => jobs.filter(j => parseFloat(j.balance_amount || 0) > 0).length, [jobs]);
 
   const paginatedJobs = useMemo(() => {
     const start = (page - 1) * pageSize;
     return filteredJobs.slice(start, start + pageSize);
   }, [filteredJobs, page, pageSize]);
 
-  const clearAllFilters = () => { setSearchName(""); setSearchJobNo(""); setSearchDate(null); setStatusFilter(null); setPage(1); };
-  const hasActiveFilters = searchName || searchJobNo || searchDate || statusFilter;
+  const clearAllFilters = () => { setSearchName(""); setSearchJobNo(""); setSearchDate(null); setStatusFilter(null); setPaymentPending(false); setPage(1); };
+  const hasActiveFilters = searchName || searchJobNo || searchDate || statusFilter || paymentPending;
 
   // ── Edit totals with round-half-up ────────────────────────────────────────
+  // FIX: same discount-vs-GST inconsistency as calcJobTotals — GST is now
+  // computed proportionally on the taxable (post-discount) value so the
+  // Grand Total actually matches what should be charged.
   const editTotals = useMemo(() => {
     let subtotal = 0, taxAmount = 0;
     editProductItems.forEach(it => { const r = computeProductLineTotal(it);       subtotal += r.base; taxAmount += r.gstAmt; });
     editOfficeItems.forEach(it  => { const r = computeOfficeServiceLineTotal(it); subtotal += r.base; taxAmount += r.gstAmt; });
     editLabourItems.forEach(it  => { const r = computeLabourLineTotal(it);        subtotal += r.base; taxAmount += r.gstAmt; });
-
     const discountAmt     = Math.min(parseFloat(editForm.discount_amount) || 0, subtotal);
     const taxableAmount   = subtotal - discountAmt;
+    const discountRatio   = subtotal > 0 ? discountAmt / subtotal : 0;
+    const adjustedTaxAmount = parseFloat((taxAmount * (1 - discountRatio)).toFixed(2));
     const designCharges   = parseFloat(editForm.design_charges) || 0;
     const deliveryCharges = editForm.free_delivery ? 0 : parseFloat(editForm.delivery_charges) || 0;
-
-    const grandTotalExact   = taxableAmount + taxAmount + designCharges + deliveryCharges;
+    const grandTotalExact   = taxableAmount + adjustedTaxAmount + designCharges + deliveryCharges;
     const grandTotalRounded = roundHalfUp(grandTotalExact);
     const roundingAdj       = parseFloat((grandTotalRounded - grandTotalExact).toFixed(2));
-
-    return { subtotal, taxAmount, discountAmt, taxableAmount, designCharges, deliveryCharges, grandTotalExact, grandTotal: grandTotalRounded, roundingAdj };
+    return { subtotal, taxAmount: adjustedTaxAmount, rawTaxAmount: taxAmount, discountAmt, taxableAmount, designCharges, deliveryCharges, grandTotalExact, grandTotal: grandTotalRounded, roundingAdj };
   }, [editProductItems, editOfficeItems, editLabourItems, editForm]);
 
   const hasRounding = Math.abs(editTotals.roundingAdj) >= 0.01;
 
-  // ── Projected balance after saving edits (uses rounded total) ────────────
   const projectedBalanceAfterSave = useMemo(() => {
     const alreadyPaid = parseFloat(editJob?.payment_amount || 0);
     return parseFloat((editTotals.grandTotal - alreadyPaid).toFixed(2));
   }, [editTotals.grandTotal, editJob]);
 
-  // ── Live balance for collect payment modal ────────────────────────────────
-  // If the user edits items and then opens "Collect Payment" without saving,
-  // we use the live rounded total minus already-paid so the balance is correct.
   const getLiveBalance = useCallback((job) => {
     if (editJob && job._id === editJob._id) {
       const alreadyPaid = parseFloat(editJob.payment_amount || 0);
@@ -1464,7 +1289,6 @@ const exportJobsToExcel = (jobsToExport) => {
   // ── Collect Payment ────────────────────────────────────────────────────────
   const openCollectPaymentModal = (job) => {
     setCollectPaymentError("");
-    // Attach live_balance so modal always reflects current item totals
     const liveBalance = getLiveBalance(job);
     setPayingJob({ ...job, live_balance: liveBalance });
     setPaymentForm({ amount: "", method: job.payment_mode || "", notes: "", next_due_date: null, discount_amount: 0 });
@@ -1473,47 +1297,32 @@ const exportJobsToExcel = (jobsToExport) => {
 
   const closeCollectPaymentModal = () => {
     if (collectingPayment) return;
-    setCollectPaymentModal(false);
-    setPayingJob(null);
-    setCollectPaymentError("");
+    setCollectPaymentModal(false); setPayingJob(null); setCollectPaymentError("");
   };
 
   const handleCollectPayment = async () => {
     setCollectPaymentError("");
-    // Use live_balance (which may reflect unsaved item edits) as the source of truth
     const balance  = parseFloat(payingJob?.live_balance ?? payingJob?.balance_amount ?? 0);
     const discount = parseFloat(paymentForm.discount_amount) || 0;
     const amt      = parseFloat(paymentForm.amount);
-
-    if (!amt || amt <= 0) { setCollectPaymentError("Enter a valid payment amount."); return; }
-    if (discount < 0)     { setCollectPaymentError("Discount cannot be negative."); return; }
-    if (discount > balance + 0.01) { setCollectPaymentError(`Discount (₹${discount.toFixed(2)}) cannot exceed the balance (₹${balance.toFixed(2)}).`); return; }
-
+    if (!amt || amt <= 0)            { setCollectPaymentError("Enter a valid payment amount."); return; }
+    if (discount < 0)                { setCollectPaymentError("Discount cannot be negative."); return; }
+    if (discount > balance + 0.01)   { setCollectPaymentError(`Discount (₹${discount.toFixed(2)}) cannot exceed the balance (₹${balance.toFixed(2)}).`); return; }
     const effectiveBalance = Math.max(0, balance - discount);
     if (amt > effectiveBalance + 0.01) { setCollectPaymentError(`Amount cannot exceed the balance after discount (₹${effectiveBalance.toFixed(2)}).`); return; }
-
     setCollectingPayment(true);
     try {
       const remaining = parseFloat((effectiveBalance - amt).toFixed(2));
-      const body = {
-        amount:           amt,
-        method:           paymentForm.method || "",
-        notes:            paymentForm.notes  || "",
-        discount_applied: discount,
-        next_due_date:    remaining > 0 && paymentForm.next_due_date ? dayjs(paymentForm.next_due_date).toISOString() : null,
-      };
+      const body = { amount: amt, method: paymentForm.method || "", notes: paymentForm.notes || "", discount_applied: discount, next_due_date: remaining > 0 && paymentForm.next_due_date ? dayjs(paymentForm.next_due_date).toISOString() : null };
       const res  = await fetch(`https://api.dmedia.in/api/jobs/${payingJob._id}/collect-payment`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("authToken")}` }, body: JSON.stringify(body) });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.message || "Failed to record payment");
-
       SUCCESS_NOTIFICATION({ message: `₹${amt.toFixed(2)} payment recorded for ${payingJob.job_no}` + (discount > 0 ? ` (₹${discount.toFixed(2)} discount applied)` : "") });
-
       const updatedJob = data.data || null;
       if (updatedJob) {
         if (viewJob && viewJob._id === updatedJob._id) setViewJob(updatedJob);
         if (editJob && editJob._id === updatedJob._id) setEditJob(updatedJob);
       }
-
       setCollectPaymentModal(false); setPayingJob(null);
       loadJobs(true);
     } catch (err) { setCollectPaymentError(err.message || "Failed to record payment"); }
@@ -1533,22 +1342,14 @@ const exportJobsToExcel = (jobsToExport) => {
       legacyDisc = sub * (legacyPct / 100);
     }
     setEditForm({
-      customer_name:           record.customer_name || "",
-      customer_phone:          record.customer_phone || "",
-      company_name:            record.company_name || "",
+      customer_name: record.customer_name || "", customer_phone: record.customer_phone || "", company_name: record.company_name || "",
       estimated_delivery_date: record.estimated_delivery_date ? dayjs(record.estimated_delivery_date).format("YYYY-MM-DDTHH:mm") : "",
-      address_line1: streetParts[0] || "",
-      address_line2: streetParts.slice(1).join(", ") || "",
-      city:    addr.city || "", state: addr.state || "", pincode: addr.pincode || "", country: addr.country || "India",
-      gst_no:           record.gst_no || "",
-      delivery_charges: record.delivery_charges ?? 0,
-      free_delivery:    record.free_delivery ?? false,
-      design_charges:   record.design_charges ?? 0,
-      discount_amount:  storedDisc || legacyDisc || 0,
-      notes:            record.notes || "",
-      terms_and_conditions: record.terms_and_conditions || "Payment due within 30 days.\nPrices subject to change without notice.\nDelivery: 7-10 business days after confirmation.",
+      address_line1: streetParts[0] || "", address_line2: streetParts.slice(1).join(", ") || "",
+      city: addr.city || "", state: addr.state || "", pincode: addr.pincode || "", country: addr.country || "India",
+      gst_no: record.gst_no || "", delivery_charges: record.delivery_charges ?? 0, free_delivery: record.free_delivery ?? false,
+      design_charges: record.design_charges ?? 0, discount_amount: storedDisc || legacyDisc || 0,
+      notes: record.notes || "", terms_and_conditions: record.terms_and_conditions || "Payment due within 30 days.\nPrices subject to change without notice.\nDelivery: 7-10 business days after confirmation.",
     });
-
     const allItems   = record.cart_items || [];
     const products   = allItems.filter(it => it.item_category === "product" || !it.item_category);
     const mappedProducts = products.map(it => {
@@ -1570,8 +1371,7 @@ const exportJobsToExcel = (jobsToExport) => {
     setEditModal(false); setEditJob(null); setEditError("");
     setEditForm({ ...DEFAULT_EDIT_FORM });
     setEditProductItems([{ ...EMPTY_PRODUCT_ITEM }]);
-    setEditOfficeItems([]);
-    setEditLabourItems([]);
+    setEditOfficeItems([]); setEditLabourItems([]);
   };
 
   const handleEditInput = (k, v) => setEditForm(p => ({ ...p, [k]: v }));
@@ -1582,16 +1382,10 @@ const exportJobsToExcel = (jobsToExport) => {
       if (!editForm.customer_name.trim())    throw new Error("Customer name is required");
       if (!editForm.customer_phone.trim())   throw new Error("Phone number is required");
       if (!editForm.estimated_delivery_date) throw new Error("Estimated delivery date is required");
-
-      const validProducts = editProductItems.filter(it => {
-        if (!it.product_name || !it.quantity_type) return false;
-        if (it.quantity_type === "sq.ft" && (it.sq_ft || 0) <= 0) return false;
-        return (it.quantity || 0) > 0 && (it.price || 0) > 0;
-      });
-      const validOffice = editOfficeItems.filter(it => it.office_type && (it.price || 0) > 0);
-      const validLabour = editLabourItems.filter(it => it.sq_ft > 0 || it.hours > 0);
+      const validProducts = editProductItems.filter(it => { if (!it.product_name || !it.quantity_type) return false; if (it.quantity_type === "sq.ft" && (it.sq_ft || 0) <= 0) return false; return (it.quantity || 0) > 0 && (it.price || 0) > 0; });
+      const validOffice   = editOfficeItems.filter(it => it.office_type && (it.price || 0) > 0);
+      const validLabour   = editLabourItems.filter(it => it.sq_ft > 0 || it.hours > 0);
       if (!validProducts.length && !validOffice.length && !validLabour.length) throw new Error("Add at least one valid item with price/qty");
-
       const cartItems = [
         ...validProducts.map(it => {
           const { base, gstAmt, total } = computeProductLineTotal(it);
@@ -1607,30 +1401,27 @@ const exportJobsToExcel = (jobsToExport) => {
           return { item_category: "service_labour", product_name: it.service_name || "Labour Work", sq_ft: it.sq_ft || 0, hours: it.hours || 0, price_per_sqft: it.price_per_sqft || 0, price_per_hour: it.price_per_hour || 0, quantity: 1, quantity_type: "labour", price: base || 0, gst_percentage: it.gst_percentage || 0, gst_amount: parseFloat(gstAmt.toFixed(2)), line_base: parseFloat(base.toFixed(2)), line_total: parseFloat(total.toFixed(2)), notes: it.notes || "" };
         }),
       ];
-
       const payload = {
         customer_name:           editForm.customer_name.trim(),
         customer_phone:          editForm.customer_phone.trim(),
         company_name:            (editForm.company_name || "").trim(),
         estimated_delivery_date: dayjs(editForm.estimated_delivery_date).toISOString(),
-        delivery_address: { street: [editForm.address_line1, editForm.address_line2].filter(Boolean).join(", "), city: editForm.city, state: editForm.state, pincode: editForm.pincode, country: editForm.country },
-        cart_items:           cartItems,
-        gst_no:               editForm.gst_no.trim(),
-        delivery_charges:     editTotals.deliveryCharges,
-        free_delivery:        editForm.free_delivery,
-        design_charges:       editTotals.designCharges,
-        discount_amount:      parseFloat(editTotals.discountAmt.toFixed(2)),
-        discount_percentage:  0,
-        subtotal:             parseFloat(editTotals.subtotal.toFixed(2)),
-        taxable_amount:       parseFloat(editTotals.taxableAmount.toFixed(2)),
-        tax_amount:           parseFloat(editTotals.taxAmount.toFixed(2)),
-        // ✅ Send the rounded total — backend will recomputePayments() from this
-        total_amount:         editTotals.grandTotal,
-        rounding_adjustment:  parseFloat(editTotals.roundingAdj.toFixed(2)),
-        notes:                editForm.notes,
-        terms_and_conditions: editForm.terms_and_conditions,
+        delivery_address:        { street: [editForm.address_line1, editForm.address_line2].filter(Boolean).join(", "), city: editForm.city, state: editForm.state, pincode: editForm.pincode, country: editForm.country },
+        cart_items:              cartItems,
+        gst_no:                  editForm.gst_no.trim(),
+        delivery_charges:        editTotals.deliveryCharges,
+        free_delivery:           editForm.free_delivery,
+        design_charges:          editTotals.designCharges,
+        discount_amount:         parseFloat(editTotals.discountAmt.toFixed(2)),
+        discount_percentage:     0,
+        subtotal:                parseFloat(editTotals.subtotal.toFixed(2)),
+        taxable_amount:          parseFloat(editTotals.taxableAmount.toFixed(2)),
+        tax_amount:              parseFloat(editTotals.taxAmount.toFixed(2)),
+        total_amount:            editTotals.grandTotal,
+        rounding_adjustment:     parseFloat(editTotals.roundingAdj.toFixed(2)),
+        notes:                   editForm.notes,
+        terms_and_conditions:    editForm.terms_and_conditions,
       };
-
       const res  = await fetch(`https://api.dmedia.in/api/jobs/${editJob._id}`, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("authToken")}` }, body: JSON.stringify(payload) });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.message || "Failed to update job");
@@ -1641,12 +1432,12 @@ const exportJobsToExcel = (jobsToExport) => {
   };
 
   // ── Layout vars ────────────────────────────────────────────────────────────
-  const p   = isMobile ? 8 : 12;
-  const g   = isMobile ? 8 : 12;
-  const c2  = isMobile ? "1fr" : "1fr 1fr";
-  const c3  = isMobile ? "1fr" : isTablet ? "1fr 1fr" : "1fr 1fr 1fr";
-  const c4  = isMobile ? "1fr 1fr" : "repeat(4,1fr)";
-  const c5  = isMobile ? "1fr 1fr" : isTablet ? "1fr 1fr 1fr" : "repeat(4,1fr)";
+  const p  = isMobile ? 8 : 12;
+  const g  = isMobile ? 8 : 12;
+  const c2 = isMobile ? "1fr" : "1fr 1fr";
+  const c3 = isMobile ? "1fr" : isTablet ? "1fr 1fr" : "1fr 1fr 1fr";
+  const c4 = isMobile ? "1fr 1fr" : "repeat(4,1fr)";
+  const c5 = isMobile ? "1fr 1fr" : isTablet ? "1fr 1fr 1fr" : "repeat(4,1fr)";
   const formatCountdown = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   const modalWidth  = isMobile ? "100vw" : isTablet ? "94vw" : "min(96vw,900px)";
   const mobileStyle = isMobile ? { top: 0, margin: 0, maxWidth: "100vw", padding: 0 } : {};
@@ -1656,7 +1447,32 @@ const exportJobsToExcel = (jobsToExport) => {
 
   // ── Table columns ──────────────────────────────────────────────────────────
   const columns = [
-    { title: "#", width: 36, render: (_, __, i) => <span style={{ color: "#9ca3af", fontSize: 11 }}>{(page - 1) * pageSize + i + 1}</span> },
+    {
+      // FIX: previously used `filteredJobs.indexOf(record)` inside render —
+      // an O(n) reference scan through the *entire* filtered list for every
+      // single row on every render (O(n²) for a page). Ant Design's column
+      // `render` already receives the row's index within the current page
+      // as its 3rd argument, so the true global serial is simply the page
+      // offset plus that index — O(1) per row, and correct even if the
+      // same record object ever appears more than once.
+      title: "S.No",
+      width: 52,
+      render: (_, record, index) => {
+        const globalIdx = (page - 1) * pageSize + index;
+        return (
+          <span style={{
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            width: 28, height: 28, borderRadius: "50%",
+            background: "linear-gradient(135deg,#eff6ff,#dbeafe)",
+            border: "1px solid #bfdbfe",
+            fontSize: 11, fontWeight: 700, color: "#1d4ed8",
+            fontFamily: "monospace",
+          }}>
+            {globalIdx + 1}
+          </span>
+        );
+      },
+    },
     {
       title: "Job No", dataIndex: "job_no",
       render: (n, record) => {
@@ -1695,9 +1511,8 @@ const exportJobsToExcel = (jobsToExport) => {
         );
       },
     },
-     ...(!isMobile ? [{
-      title: "Created", dataIndex: "createdAt",
-      width: 110,
+    ...(!isMobile ? [{
+      title: "Created", dataIndex: "createdAt", width: 110,
       render: (date) => {
         if (!date) return <span style={{ color: "#9ca3af", fontSize: 12 }}>—</span>;
         return (
@@ -1758,24 +1573,24 @@ const exportJobsToExcel = (jobsToExport) => {
         );
       },
     },
-{
-  title: "", width: isMobile ? 90 : 230,
-  render: (_, record) => (
-    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-      <Tooltip title="View Job"><Button icon={<EyeOutlined />} size="small" style={{ color: "#6b7280", borderColor: "#e5e7eb" }} onClick={() => { setViewJob(record); setViewModal(true); }}>{!isMobile && "View"}</Button></Tooltip>
-      <Tooltip title="Edit Job"><Button icon={<EditOutlined />} size="small" style={{ color: "#2563eb", borderColor: "#bfdbfe" }} onClick={() => openEditModal(record)}>{!isMobile && "Edit"}</Button></Tooltip>
-      <Tooltip title="Download Job Request as Image">
-        <Button icon={<FileTextOutlined />} size="small" style={{ color: "#7c3aed", borderColor: "#ddd6fe" }} onClick={() => generateJobRequestImage(record)}>{!isMobile && "Job Request"}</Button>
-      </Tooltip>
-      {parseFloat(record.balance_amount || 0) > 0 && (
-        <Tooltip title="Collect Payment">
-          <Button icon={<WalletOutlined />} size="small" style={{ color: "#d97706", borderColor: "#fde68a" }} onClick={() => openCollectPaymentModal(record)}>{!isMobile && "Collect"}</Button>
-        </Tooltip>
-      )}
-      {record.job_status === "draft" && <Tooltip title="Approve & Assign"><Button type="primary" icon={<CheckCircleOutlined />} size="small" style={{ background: "#16a34a", borderColor: "#16a34a" }} onClick={() => openApproveModal(record)}>{!isMobile && "Approve"}</Button></Tooltip>}
-    </div>
-  ),
-},
+    {
+      title: "", width: isMobile ? 90 : 240,
+      render: (_, record) => (
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+          <Tooltip title="View Job"><Button icon={<EyeOutlined />} size="small" style={{ color: "#6b7280", borderColor: "#e5e7eb" }} onClick={() => { setViewJob(record); setViewModal(true); }}>{!isMobile && "View"}</Button></Tooltip>
+          <Tooltip title="Edit Job"><Button icon={<EditOutlined />} size="small" style={{ color: "#2563eb", borderColor: "#bfdbfe" }} onClick={() => openEditModal(record)}>{!isMobile && "Edit"}</Button></Tooltip>
+          <Tooltip title="Download Job Request as Image">
+            <Button icon={<FileTextOutlined />} size="small" style={{ color: "#7c3aed", borderColor: "#ddd6fe" }} onClick={() => generateJobRequestImage(record)}>{!isMobile && "Job Request"}</Button>
+          </Tooltip>
+          {parseFloat(record.balance_amount || 0) > 0 && (
+            <Tooltip title="Collect Payment">
+              <Button icon={<WalletOutlined />} size="small" style={{ color: "#d97706", borderColor: "#fde68a" }} onClick={() => openCollectPaymentModal(record)}>{!isMobile && "Collect"}</Button>
+            </Tooltip>
+          )}
+          {record.job_status === "draft" && <Tooltip title="Approve & Assign"><Button type="primary" icon={<CheckCircleOutlined />} size="small" style={{ background: "#16a34a", borderColor: "#16a34a" }} onClick={() => openApproveModal(record)}>{!isMobile && "Approve"}</Button></Tooltip>}
+        </div>
+      ),
+    },
   ];
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1796,12 +1611,16 @@ const exportJobsToExcel = (jobsToExport) => {
               <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#22c55e", boxShadow: "0 0 0 2px #bbf7d0", display: "inline-block", animation: "pulse 1.5s infinite" }} />
               <span style={{ fontSize: 11, color: "#15803d", fontWeight: 600, fontFamily: "monospace" }}>{formatCountdown(countdown)}</span>
             </div>
-             <Tooltip title="Export filtered jobs to Excel">
-    <Button icon={<FileExcelOutlined />} onClick={() => exportJobsToExcel(filteredJobs)}
-      style={{ borderRadius: 8, color: "#16a34a", borderColor: "#86efac" }}>
-      {!isMobile && "Export"}
-    </Button>
-  </Tooltip>
+            <Tooltip title="Export filtered jobs to Excel">
+              <Button icon={<FileExcelOutlined />} onClick={() => exportJobsToExcel(filteredJobs)} style={{ borderRadius: 8, color: "#16a34a", borderColor: "#86efac" }}>
+                {!isMobile && "Export"}
+              </Button>
+            </Tooltip>
+            <Tooltip title="Export in Tally Day Book format (Dr/Cr ledger entries, GST split as CGST/SGST)">
+              <Button icon={<BookOutlined />} onClick={() => exportJobsToTallyFormat(filteredJobs)} style={{ borderRadius: 8, color: "#7c3aed", borderColor: "#ddd6fe" }}>
+                {!isMobile && "Tally Export"}
+              </Button>
+            </Tooltip>
             <Tooltip title="Refresh now"><Button icon={<ReloadOutlined spin={loading} />} onClick={() => { loadJobs(); startAutoRefresh(); }} style={{ borderRadius: 8 }} /></Tooltip>
           </div>
         </div>
@@ -1810,12 +1629,17 @@ const exportJobsToExcel = (jobsToExport) => {
       {/* Search & Filters */}
       <Card bodyStyle={{ padding: `${p}px ${p + 4}px` }} style={{ borderRadius: 12, border: "1px solid #e5e7eb", marginBottom: g, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {/* Search row */}
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : isTablet ? "1fr 1fr 1fr" : "1fr 1fr 200px 180px", gap: 8, alignItems: "flex-end" }}>
             <FormField label="Search by Customer Name / Phone">
-              <Input prefix={<UserOutlined style={{ color: "#9ca3af" }} />} suffix={searchName ? <CloseCircleOutlined style={{ color: "#9ca3af", cursor: "pointer" }} onClick={() => setSearchName("")} /> : <SearchOutlined style={{ color: "#9ca3af" }} />} placeholder="Name or phone…" value={searchName} onChange={e => setSearchName(e.target.value)} style={{ borderRadius: 8 }} allowClear />
+              <Input prefix={<UserOutlined style={{ color: "#9ca3af" }} />}
+                suffix={searchName ? <CloseCircleOutlined style={{ color: "#9ca3af", cursor: "pointer" }} onClick={() => setSearchName("")} /> : <SearchOutlined style={{ color: "#9ca3af" }} />}
+                placeholder="Name or phone…" value={searchName} onChange={e => setSearchName(e.target.value)} style={{ borderRadius: 8 }} allowClear />
             </FormField>
             <FormField label="Search by Job Number">
-              <Input prefix={<TagOutlined style={{ color: "#9ca3af" }} />} suffix={searchJobNo ? <CloseCircleOutlined style={{ color: "#9ca3af", cursor: "pointer" }} onClick={() => setSearchJobNo("")} /> : <SearchOutlined style={{ color: "#9ca3af" }} />} placeholder="e.g. JB-2024-001" value={searchJobNo} onChange={e => setSearchJobNo(e.target.value)} style={{ borderRadius: 8 }} allowClear />
+              <Input prefix={<TagOutlined style={{ color: "#9ca3af" }} />}
+                suffix={searchJobNo ? <CloseCircleOutlined style={{ color: "#9ca3af", cursor: "pointer" }} onClick={() => setSearchJobNo("")} /> : <SearchOutlined style={{ color: "#9ca3af" }} />}
+                placeholder="e.g. JB-2024-001" value={searchJobNo} onChange={e => setSearchJobNo(e.target.value)} style={{ borderRadius: 8 }} allowClear />
             </FormField>
             <FormField label="Filter by Date (Order / Delivery)">
               <DatePicker value={searchDate} onChange={d => setSearchDate(d)} format="DD MMM YYYY" style={{ width: "100%", borderRadius: 8 }} placeholder="Pick a date" allowClear />
@@ -1829,17 +1653,50 @@ const exportJobsToExcel = (jobsToExport) => {
             </FormField>
           </div>
 
+          {/* Payment Pending quick filter */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", paddingTop: 4 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em" }}>Quick Filters:</span>
+            <button
+              onClick={() => setPaymentPending(p => !p)}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "5px 14px", borderRadius: 20, cursor: "pointer", fontWeight: 700, fontSize: 12,
+                border: `1.5px solid ${paymentPending ? "#f59e0b" : "#fde68a"}`,
+                background: paymentPending ? "linear-gradient(135deg,#fef3c7,#fde68a)" : "#fffbeb",
+                color: paymentPending ? "#92400e" : "#b45309",
+                boxShadow: paymentPending ? "0 2px 8px rgba(245,158,11,0.2)" : "none",
+                transition: "all 0.15s",
+              }}
+            >
+              <WalletOutlined style={{ fontSize: 12 }} />
+              Payment Pending
+              {paymentPendingCount > 0 && (
+                <span style={{
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  minWidth: 20, height: 20, borderRadius: 10,
+                  background: paymentPending ? "#d97706" : "#f59e0b",
+                  color: "#fff", fontSize: 10, fontWeight: 800, padding: "0 5px",
+                }}>
+                  {paymentPendingCount}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* Active filter tags */}
           {hasActiveFilters && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <span style={{ fontSize: 11, color: "#6b7280", fontWeight: 600 }}>Active filters:</span>
-              {searchName   && <Tag closable onClose={() => setSearchName("")}   color="blue"   style={{ fontSize: 11 }}>Name: "{searchName}"</Tag>}
-              {searchJobNo  && <Tag closable onClose={() => setSearchJobNo("")}  color="purple" style={{ fontSize: 11 }}>Job No: "{searchJobNo}"</Tag>}
-              {searchDate   && <Tag closable onClose={() => setSearchDate(null)} color="orange" style={{ fontSize: 11 }}>Date: {searchDate.format("DD MMM YYYY")}</Tag>}
-              {statusFilter && <Tag closable onClose={() => setStatusFilter(null)} color={STATUS_CONFIG[statusFilter]?.color || "default"} style={{ fontSize: 11 }}>Status: {STATUS_CONFIG[statusFilter]?.label}</Tag>}
+              {searchName    && <Tag closable onClose={() => setSearchName("")}   color="blue"   style={{ fontSize: 11 }}>Name: "{searchName}"</Tag>}
+              {searchJobNo   && <Tag closable onClose={() => setSearchJobNo("")}  color="purple" style={{ fontSize: 11 }}>Job No: "{searchJobNo}"</Tag>}
+              {searchDate    && <Tag closable onClose={() => setSearchDate(null)} color="orange" style={{ fontSize: 11 }}>Date: {searchDate.format("DD MMM YYYY")}</Tag>}
+              {statusFilter  && <Tag closable onClose={() => setStatusFilter(null)} color={STATUS_CONFIG[statusFilter]?.color || "default"} style={{ fontSize: 11 }}>Status: {STATUS_CONFIG[statusFilter]?.label}</Tag>}
+              {paymentPending && <Tag closable onClose={() => setPaymentPending(false)} color="gold" style={{ fontSize: 11 }}>💰 Payment Pending ({filteredJobs.length})</Tag>}
               <Button size="small" type="link" onClick={clearAllFilters} style={{ padding: "0 4px", fontSize: 11, color: "#6b7280" }}>Clear all</Button>
             </div>
           )}
 
+          {/* Legend */}
           <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", paddingTop: 4, borderTop: "1px solid #f3f4f6" }}>
             <span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Legend:</span>
             <div style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ display: "inline-block", width: 14, height: 14, borderRadius: 3, background: "linear-gradient(135deg,#d1fae5,#a7f3d0)", border: "1px solid #6ee7b7" }} /><span style={{ fontSize: 11, color: "#374151" }}>Completed & Paid</span></div>
@@ -1851,11 +1708,23 @@ const exportJobsToExcel = (jobsToExport) => {
 
       {/* Table */}
       <Card bodyStyle={{ padding: "0 0 8px 0" }} style={{ borderRadius: 12, border: "1px solid #e5e7eb", boxShadow: "0 1px 4px rgba(0,0,0,0.06)", overflow: "hidden" }}>
+        {/* Payment Pending summary banner */}
+        {paymentPending && filteredJobs.length > 0 && (
+          <div style={{ padding: "10px 16px", background: "linear-gradient(90deg,#fef3c7,#fffbeb)", borderBottom: "1px solid #fde68a", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <WalletOutlined style={{ color: "#d97706", fontSize: 14 }} />
+            <span style={{ fontSize: 12, fontWeight: 700, color: "#92400e" }}>
+              {filteredJobs.length} job{filteredJobs.length !== 1 ? "s" : ""} with payment pending
+            </span>
+            <span style={{ fontSize: 12, color: "#b45309" }}>
+              · Total outstanding: ₹{filteredJobs.reduce((acc, j) => acc + parseFloat(j.balance_amount || 0), 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+            </span>
+          </div>
+        )}
         <CustomTable
           dataSource={paginatedJobs}
           loading={loading}
           columns={columns}
-          scroll={{ x: isMobile ? 360 : 880 }}
+          scroll={{ x: isMobile ? 360 : 900 }}
           rowKey={r => r._id || r.job_no}
           size="small"
           rowClassName={record => {
@@ -1869,7 +1738,7 @@ const exportJobsToExcel = (jobsToExport) => {
             showSizeChanger: !isMobile, pageSizeOptions: ["10", "25", "50"],
             showTotal: isMobile ? undefined : (t, r) => `${r[0]}-${r[1]} of ${t}`,
             onChange: (pg, ps) => { setPage(pg); setPageSize(ps); },
-            style: { padding: "8px 12px" }, size: isMobile ? "small" : "default"
+            style: { padding: "8px 12px" }, size: isMobile ? "small" : "default",
           }}
         />
       </Card>
@@ -1940,18 +1809,18 @@ const exportJobsToExcel = (jobsToExport) => {
                 </div>
                 {viewJob.order_date && <span style={{ fontSize: 12, color: "#6b7280" }}>Ordered: {dayjs(viewJob.order_date).format("DD MMM YYYY, HH:mm")}</span>}
               </div>
-            <div style={{ background: "#f9fafb", borderRadius: 10, padding: "12px 14px", border: "1px solid #e5e7eb" }}>
-  <SectionHeader icon={<UserOutlined />} title="Customer Info" />
-  <div style={{ display: "grid", gridTemplateColumns: c2, gap: 10 }}>
-    <InfoRow label="Name"          value={viewJob.customer_name} />
-    <InfoRow label="Created By"    value={viewJob.created_by || "—"} />
-    <InfoRow label="Phone"         value={viewJob.customer_phone} />
-    {viewJob.company_name && <InfoRow label="Company" value={viewJob.company_name} />}
-    <InfoRow label="Est. Delivery" value={viewJob.estimated_delivery_date ? dayjs(viewJob.estimated_delivery_date).format("DD MMM YYYY, HH:mm") : "—"} />
-    <InfoRow label="GST Number"    value={viewJob.gst_no || "—"} />
-    <InfoRow label="Created Date"  value={viewJob.createdAt ? dayjs(viewJob.createdAt).format("DD MMM YYYY, HH:mm") : "—"} />
-  </div>
-</div>
+              <div style={{ background: "#f9fafb", borderRadius: 10, padding: "12px 14px", border: "1px solid #e5e7eb" }}>
+                <SectionHeader icon={<UserOutlined />} title="Customer Info" />
+                <div style={{ display: "grid", gridTemplateColumns: c2, gap: 10 }}>
+                  <InfoRow label="Name"          value={viewJob.customer_name} />
+                  <InfoRow label="Created By"    value={viewJob.created_by || "—"} />
+                  <InfoRow label="Phone"         value={viewJob.customer_phone} />
+                  {viewJob.company_name && <InfoRow label="Company" value={viewJob.company_name} />}
+                  <InfoRow label="Est. Delivery" value={viewJob.estimated_delivery_date ? dayjs(viewJob.estimated_delivery_date).format("DD MMM YYYY, HH:mm") : "—"} />
+                  <InfoRow label="GST Number"    value={viewJob.gst_no || "—"} />
+                  <InfoRow label="Created Date"  value={viewJob.createdAt ? dayjs(viewJob.createdAt).format("DD MMM YYYY, HH:mm") : "—"} />
+                </div>
+              </div>
               {stageCfg?.assigned_to?.name && (
                 <div style={{ background: "#eff6ff", borderRadius: 10, padding: "10px 14px", border: "1px solid #bfdbfe", display: "flex", alignItems: "center", gap: 10 }}>
                   <UserOutlined style={{ color: "#2563eb", fontSize: 16 }} />
@@ -2036,18 +1905,12 @@ const exportJobsToExcel = (jobsToExport) => {
               </div>
             </div>
           )}
+          {editError && <div style={{ marginBottom: 12, padding: "10px 14px", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 8, color: "#b91c1c", fontSize: 13 }}>⚠ {editError}</div>}
 
-          {editError && (
-            <div style={{ marginBottom: 12, padding: "10px 14px", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 8, color: "#b91c1c", fontSize: 13 }}>⚠ {editError}</div>
-          )}
-
-          {/* Customer Info */}
           <SectionHeader icon={<UserOutlined />} title="Customer Info" />
           <div style={{ display: "grid", gridTemplateColumns: c3, gap: g, marginBottom: g }}>
             <FormField label="Customer Name" required>
-              <Input prefix={<UserOutlined style={{ color: "#9ca3af" }} />} placeholder="Full name" value={editForm.customer_name}
-                onChange={e => handleEditInput("customer_name", e.target.value.replace(/^\w/, c => c.toUpperCase()))}
-                style={{ borderRadius: 8 }} />
+              <Input prefix={<UserOutlined style={{ color: "#9ca3af" }} />} placeholder="Full name" value={editForm.customer_name} onChange={e => handleEditInput("customer_name", e.target.value.replace(/^\w/, c => c.toUpperCase()))} style={{ borderRadius: 8 }} />
             </FormField>
             <FormField label="Phone" required>
               <Input prefix={<PhoneOutlined style={{ color: "#9ca3af" }} />} placeholder="10-digit mobile" value={editForm.customer_phone} maxLength={10} onChange={e => handleEditInput("customer_phone", e.target.value)} style={{ borderRadius: 8 }} />
@@ -2057,15 +1920,10 @@ const exportJobsToExcel = (jobsToExport) => {
             </FormField>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: c2, gap: g, marginBottom: 14 }}>
-            <FormField label="Company Name">
-              <Input prefix={<BankOutlined style={{ color: "#9ca3af" }} />} placeholder="Company / Business name" value={editForm.company_name} onChange={e => handleEditInput("company_name", e.target.value)} style={{ borderRadius: 8 }} />
-            </FormField>
-            <FormField label="GST Number">
-              <Input placeholder="GSTIN (15 chars)" maxLength={15} value={editForm.gst_no} onChange={e => handleEditInput("gst_no", e.target.value.toUpperCase())} style={{ borderRadius: 8 }} />
-            </FormField>
+            <FormField label="Company Name"><Input prefix={<BankOutlined style={{ color: "#9ca3af" }} />} placeholder="Company / Business name" value={editForm.company_name} onChange={e => handleEditInput("company_name", e.target.value)} style={{ borderRadius: 8 }} /></FormField>
+            <FormField label="GST Number"><Input placeholder="GSTIN (15 chars)" maxLength={15} value={editForm.gst_no} onChange={e => handleEditInput("gst_no", e.target.value.toUpperCase())} style={{ borderRadius: 8 }} /></FormField>
           </div>
 
-          {/* Delivery Address */}
           <SectionHeader icon={<EnvironmentOutlined />} title="Delivery Address" />
           <div style={{ display: "flex", flexDirection: "column", gap: g, marginBottom: 14 }}>
             <div style={{ display: "grid", gridTemplateColumns: c2, gap: g }}>
@@ -2073,13 +1931,12 @@ const exportJobsToExcel = (jobsToExport) => {
               <FormField label="Address Line 2"><Input placeholder="Street, Area, Landmark" value={editForm.address_line2} onChange={e => handleEditInput("address_line2", e.target.value)} style={{ borderRadius: 8 }} /></FormField>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: c4, gap: g }}>
-              {[["city", "City", "City"], ["state", "State", "State"], ["pincode", "Pincode", "6-digit"], ["country", "Country", "Country"]].map(([k, label, ph]) => (
+              {[["city","City","City"],["state","State","State"],["pincode","Pincode","6-digit"],["country","Country","Country"]].map(([k,label,ph]) => (
                 <FormField key={k} label={label}><Input placeholder={ph} value={editForm[k]} onChange={e => handleEditInput(k, e.target.value)} style={{ borderRadius: 8 }} /></FormField>
               ))}
             </div>
           </div>
 
-          {/* Job Items */}
           <SectionHeader icon={<ShoppingCartOutlined />} title="Job Items" />
           <JobItemsSection
             productItems={editProductItems} officeItems={editOfficeItems} labourItems={editLabourItems}
@@ -2095,18 +1952,11 @@ const exportJobsToExcel = (jobsToExport) => {
             isMobile={isMobile} isTablet={isTablet}
           />
 
-          {/* Pricing & Tax */}
           <SectionHeader icon={<TagOutlined />} title="Pricing & Tax" />
           <div style={{ display: "grid", gridTemplateColumns: c5, gap: g, marginBottom: 14 }}>
-            <FormField label="Discount (₹)">
-              <InputNumber min={0} value={editForm.discount_amount} style={{ width: "100%", borderRadius: 8 }} prefix="₹" onChange={v => handleEditInput("discount_amount", v || 0)} />
-            </FormField>
-            <FormField label="Delivery Charges (₹)">
-              <InputNumber min={0} value={editForm.free_delivery ? 0 : editForm.delivery_charges} disabled={editForm.free_delivery} style={{ width: "100%", borderRadius: 8 }} prefix="₹" onChange={v => handleEditInput("delivery_charges", v || 0)} />
-            </FormField>
-            <FormField label="Design Charges (₹)">
-              <InputNumber min={0} value={editForm.design_charges} style={{ width: "100%", borderRadius: 8 }} prefix="₹" onChange={v => handleEditInput("design_charges", v || 0)} />
-            </FormField>
+            <FormField label="Discount (₹)"><InputNumber min={0} value={editForm.discount_amount} style={{ width: "100%", borderRadius: 8 }} prefix="₹" onChange={v => handleEditInput("discount_amount", v || 0)} /></FormField>
+            <FormField label="Delivery Charges (₹)"><InputNumber min={0} value={editForm.free_delivery ? 0 : editForm.delivery_charges} disabled={editForm.free_delivery} style={{ width: "100%", borderRadius: 8 }} prefix="₹" onChange={v => handleEditInput("delivery_charges", v || 0)} /></FormField>
+            <FormField label="Design Charges (₹)"><InputNumber min={0} value={editForm.design_charges} style={{ width: "100%", borderRadius: 8 }} prefix="₹" onChange={v => handleEditInput("design_charges", v || 0)} /></FormField>
             <FormField label="Free Delivery">
               <div onClick={() => handleEditInput("free_delivery", !editForm.free_delivery)} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", background: editForm.free_delivery ? "#f0fdf4" : "#f9fafb", border: `1px solid ${editForm.free_delivery ? "#86efac" : "#e5e7eb"}`, borderRadius: 8, padding: "6px 12px", userSelect: "none" }}>
                 <div style={{ width: 36, height: 20, borderRadius: 10, background: editForm.free_delivery ? "#22c55e" : "#d1d5db", position: "relative" }}>
@@ -2117,7 +1967,6 @@ const exportJobsToExcel = (jobsToExport) => {
             </FormField>
           </div>
 
-          {/* Payment Info (read-only, collect separately) */}
           <SectionHeader icon={<WalletOutlined />} title="Payment" />
           <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: "12px 14px", marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
             <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
@@ -2129,52 +1978,26 @@ const exportJobsToExcel = (jobsToExport) => {
           </div>
           <div style={{ fontSize: 11, color: "#9ca3af", marginBottom: 14 }}>Payments are recorded separately and won't be affected by item/price changes here — the balance will recalculate after you save.</div>
 
-          {/* Notes */}
           <SectionHeader icon={<FileTextOutlined />} title="Notes" />
           <div style={{ marginBottom: 14 }}>
-            <FormField label="Notes">
-              <TextArea rows={3} placeholder="Additional notes…" value={editForm.notes} onChange={e => handleEditInput("notes", e.target.value)} style={{ borderRadius: 8 }} />
-            </FormField>
+            <FormField label="Notes"><TextArea rows={3} placeholder="Additional notes…" value={editForm.notes} onChange={e => handleEditInput("notes", e.target.value)} style={{ borderRadius: 8 }} /></FormField>
           </div>
 
-          {/* ── Order Summary with Round-Half-Up ── */}
+          {/* Order Summary */}
           <div style={{ background: "linear-gradient(135deg,#eff6ff 0%,#f8fafc 100%)", border: "1px solid #bfdbfe", borderRadius: 10, padding: isMobile ? 12 : "14px 16px", marginBottom: 14 }}>
             <div style={{ fontWeight: 700, color: "#1e40af", marginBottom: 10, fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}><FileTextOutlined /> Order Summary</div>
-
             <SummaryRow label="Subtotal (items base)" value={`₹${editTotals.subtotal.toFixed(2)}`} />
             {editTotals.discountAmt > 0 && <SummaryRow label="Discount" value={`− ₹${editTotals.discountAmt.toFixed(2)}`} color="#059669" />}
             <SummaryRow label="Total GST"             value={`₹${editTotals.taxAmount.toFixed(2)}`} color="#d97706" />
             {editTotals.designCharges > 0 && <SummaryRow label="Design Charges" value={`₹${editTotals.designCharges.toFixed(2)}`} color="#7c3aed" />}
             <SummaryRow label="Delivery"              value={editForm.free_delivery ? "Free" : `₹${editTotals.deliveryCharges.toFixed(2)}`} color={editForm.free_delivery ? "#059669" : undefined} />
-
             <Divider style={{ margin: "8px 0" }} />
-
-            {/* Rounding rows — only shown when rounding applies */}
-            {hasRounding && (
-              <SummaryRow
-                label="Exact Total (before rounding)"
-                value={`₹${editTotals.grandTotalExact.toFixed(2)}`}
-                color="#9ca3af" small />
-            )}
-            {hasRounding && (
-              <SummaryRow
-                label={editTotals.roundingAdj > 0 ? "Rounding (+)" : "Rounding (−)"}
-                value={`${editTotals.roundingAdj > 0 ? "+" : ""}₹${editTotals.roundingAdj.toFixed(2)}`}
-                color="#9ca3af" small />
-            )}
-
-            {/* Golden Grand Total row */}
+            {hasRounding && <SummaryRow label="Exact Total (before rounding)" value={`₹${editTotals.grandTotalExact.toFixed(2)}`} color="#9ca3af" small />}
+            {hasRounding && <SummaryRow label={editTotals.roundingAdj > 0 ? "Rounding (+)" : "Rounding (−)"} value={`${editTotals.roundingAdj > 0 ? "+" : ""}₹${editTotals.roundingAdj.toFixed(2)}`} color="#9ca3af" small />}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, padding: "10px 14px", background: "#FFFBEA", border: "1.5px solid #F2C41A", borderRadius: 6 }}>
-              <span style={{ fontWeight: 800, fontSize: isMobile ? 14 : 15, color: "#1A1200" }}>
-                Grand Total
-                {hasRounding && <span style={{ fontSize: 10, fontWeight: 500, color: "#C9A00E", marginLeft: 6 }}>(rounded)</span>}
-              </span>
-              <span style={{ fontWeight: 800, fontSize: isMobile ? 18 : 20, color: "#1A1200", letterSpacing: "-0.02em" }}>
-                ₹{editTotals.grandTotal}
-              </span>
+              <span style={{ fontWeight: 800, fontSize: isMobile ? 14 : 15, color: "#1A1200" }}>Grand Total{hasRounding && <span style={{ fontSize: 10, fontWeight: 500, color: "#C9A00E", marginLeft: 6 }}>(rounded)</span>}</span>
+              <span style={{ fontWeight: 800, fontSize: isMobile ? 18 : 20, color: "#1A1200", letterSpacing: "-0.02em" }}>₹{editTotals.grandTotal}</span>
             </div>
-
-            {/* Already paid & projected balance */}
             {parseFloat(editJob?.payment_amount || 0) > 0 && (
               <>
                 <div style={{ height: 6 }} />
@@ -2273,16 +2096,13 @@ const exportJobsToExcel = (jobsToExport) => {
         ]}
         width={isMobile ? "100vw" : 460} style={sheetStyle} styles={{ body: sheetBody }} destroyOnClose>
         {payingJob && (() => {
-          // Always use live_balance — reflects unsaved item edits when opened from edit modal
           const balance      = parseFloat(payingJob.live_balance ?? payingJob.balance_amount ?? 0);
           const discount     = parseFloat(paymentForm.discount_amount) || 0;
           const effectiveBal = Math.max(0, balance - discount);
           const amt          = parseFloat(paymentForm.amount) || 0;
           const remaining    = parseFloat((effectiveBal - amt).toFixed(2));
-
           return (
             <div>
-              {/* Job Summary */}
               <div style={{ background: "#f8fafc", borderRadius: 8, padding: "10px 12px", marginBottom: 16, border: "1px solid #e5e7eb" }}>
                 <div style={{ fontFamily: "monospace", fontWeight: 700, color: "#2563eb", fontSize: 14 }}>{payingJob.job_no}</div>
                 <div style={{ fontSize: 13, color: "#374151", marginTop: 2 }}>{payingJob.customer_name || "—"}</div>
@@ -2290,32 +2110,20 @@ const exportJobsToExcel = (jobsToExport) => {
                   <span style={{ fontSize: 12, color: "#6b7280" }}>Total: <strong>₹{parseFloat(payingJob.total_amount || 0).toFixed(2)}</strong></span>
                   <span style={{ fontSize: 12, fontWeight: 700, color: "#dc2626" }}>Balance Due: ₹{balance.toFixed(2)}</span>
                 </div>
-                {/* Show note if live balance differs from DB balance */}
                 {payingJob.live_balance !== undefined && Math.abs(payingJob.live_balance - parseFloat(payingJob.balance_amount || 0)) > 0.01 && (
                   <div style={{ marginTop: 8, fontSize: 11, color: "#d97706", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 6, padding: "4px 8px" }}>
                     ⚠ Balance reflects unsaved item changes. Save the job first to lock in this amount.
                   </div>
                 )}
               </div>
-
-              {collectPaymentError && (
-                <div style={{ marginBottom: 12, padding: "8px 12px", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 8, color: "#b91c1c", fontSize: 12 }}>⚠ {collectPaymentError}</div>
-              )}
-
+              {collectPaymentError && <div style={{ marginBottom: 12, padding: "8px 12px", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 8, color: "#b91c1c", fontSize: 12 }}>⚠ {collectPaymentError}</div>}
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                {/* Discount / Waiver */}
                 <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: "12px 14px" }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
                     <TagOutlined style={{ color: "#d97706" }} /> Discount / Waiver (Optional)
                   </div>
                   <FormField label="Discount Amount (₹)" hint="Amount to waive off from the balance before collecting payment">
-                    <InputNumber
-                      min={0} max={balance}
-                      value={paymentForm.discount_amount}
-                      style={{ width: "100%", borderRadius: 8, background: "#fffbeb" }}
-                      prefix="₹" placeholder="0.00 — no discount"
-                      onChange={v => setPaymentForm(p => ({ ...p, discount_amount: v || 0, amount: "" }))}
-                    />
+                    <InputNumber min={0} max={balance} value={paymentForm.discount_amount} style={{ width: "100%", borderRadius: 8, background: "#fffbeb" }} prefix="₹" placeholder="0.00 — no discount" onChange={v => setPaymentForm(p => ({ ...p, discount_amount: v || 0, amount: "" }))} />
                   </FormField>
                   {discount > 0 && (
                     <div style={{ marginTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px", background: "#fef3c7", border: "1px solid #fcd34d", borderRadius: 6 }}>
@@ -2324,88 +2132,41 @@ const exportJobsToExcel = (jobsToExport) => {
                     </div>
                   )}
                 </div>
-
-                {/* Amount */}
                 <FormField label="Amount Received (₹)" required>
-                  <InputNumber
-                    min={0} max={effectiveBal}
-                    value={paymentForm.amount}
-                    style={{ width: "100%", borderRadius: 8 }}
-                    prefix="₹"
-                    onChange={v => setPaymentForm(p => ({ ...p, amount: v }))}
-                    placeholder={`Max ₹${effectiveBal.toFixed(2)}`}
-                  />
+                  <InputNumber min={0} max={effectiveBal} value={paymentForm.amount} style={{ width: "100%", borderRadius: 8 }} prefix="₹" onChange={v => setPaymentForm(p => ({ ...p, amount: v }))} placeholder={`Max ₹${effectiveBal.toFixed(2)}`} />
                   <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
-                    <button onClick={() => setPaymentForm(p => ({ ...p, amount: effectiveBal }))}
-                      style={{ fontSize: 11, padding: "3px 10px", borderRadius: 20, border: "1px solid #86efac", background: "#f0fdf4", color: "#15803d", cursor: "pointer", fontWeight: 600 }}>
-                      Full Balance{discount > 0 ? ` (₹${effectiveBal.toFixed(2)})` : ""}
-                    </button>
-                    <button onClick={() => setPaymentForm(p => ({ ...p, amount: parseFloat((effectiveBal / 2).toFixed(2)) }))}
-                      style={{ fontSize: 11, padding: "3px 10px", borderRadius: 20, border: "1px solid #d1d5db", background: "#f9fafb", color: "#374151", cursor: "pointer", fontWeight: 600 }}>
-                      50%
-                    </button>
+                    <button onClick={() => setPaymentForm(p => ({ ...p, amount: effectiveBal }))} style={{ fontSize: 11, padding: "3px 10px", borderRadius: 20, border: "1px solid #86efac", background: "#f0fdf4", color: "#15803d", cursor: "pointer", fontWeight: 600 }}>Full Balance{discount > 0 ? ` (₹${effectiveBal.toFixed(2)})` : ""}</button>
+                    <button onClick={() => setPaymentForm(p => ({ ...p, amount: parseFloat((effectiveBal / 2).toFixed(2)) }))} style={{ fontSize: 11, padding: "3px 10px", borderRadius: 20, border: "1px solid #d1d5db", background: "#f9fafb", color: "#374151", cursor: "pointer", fontWeight: 600 }}>50%</button>
                   </div>
                 </FormField>
-
-                {/* Payment Mode */}
                 <FormField label="Payment Mode">
                   <Select placeholder="Select payment mode" value={paymentForm.method || undefined} style={{ width: "100%" }} allowClear onChange={v => setPaymentForm(p => ({ ...p, method: v || "" }))}>
                     {PAYMENT_MODES.map(m => <Option key={m} value={m}>{m}</Option>)}
                   </Select>
                 </FormField>
-
-                {/* Next Due Date */}
                 {remaining > 0 && amt > 0 && (
                   <FormField label="Next Due Date for Remaining Balance" hint={`₹${remaining.toFixed(2)} will still be due`}>
-                    <DatePicker
-                      value={paymentForm.next_due_date ? dayjs(paymentForm.next_due_date) : null}
-                      onChange={d => setPaymentForm(p => ({ ...p, next_due_date: d }))}
-                      format="DD MMM YYYY"
-                      style={{ width: "100%", borderRadius: 8 }}
-                      disabledDate={d => d && d.isBefore(dayjs().startOf("day"))}
-                      placeholder="Pick a due date"
-                    />
+                    <DatePicker value={paymentForm.next_due_date ? dayjs(paymentForm.next_due_date) : null} onChange={d => setPaymentForm(p => ({ ...p, next_due_date: d }))} format="DD MMM YYYY" style={{ width: "100%", borderRadius: 8 }} disabledDate={d => d && d.isBefore(dayjs().startOf("day"))} placeholder="Pick a due date" />
                     <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
                       {[["7 days", 7], ["15 days", 15], ["30 days", 30]].map(([label, days]) => (
-                        <button key={days} onClick={() => setPaymentForm(p => ({ ...p, next_due_date: dayjs().add(days, "day") }))}
-                          style={{ fontSize: 11, padding: "3px 10px", borderRadius: 20, border: "1px solid #d1d5db", background: "#f9fafb", color: "#374151", cursor: "pointer", fontWeight: 600 }}>
-                          +{label}
-                        </button>
+                        <button key={days} onClick={() => setPaymentForm(p => ({ ...p, next_due_date: dayjs().add(days, "day") }))} style={{ fontSize: 11, padding: "3px 10px", borderRadius: 20, border: "1px solid #d1d5db", background: "#f9fafb", color: "#374151", cursor: "pointer", fontWeight: 600 }}>+{label}</button>
                       ))}
                     </div>
                   </FormField>
                 )}
-
-                {/* Notes */}
-                <FormField label="Notes">
-                  <Input placeholder="Reference / cheque no / remarks…" value={paymentForm.notes} onChange={e => setPaymentForm(p => ({ ...p, notes: e.target.value }))} style={{ borderRadius: 8 }} />
-                </FormField>
+                <FormField label="Notes"><Input placeholder="Reference / cheque no / remarks…" value={paymentForm.notes} onChange={e => setPaymentForm(p => ({ ...p, notes: e.target.value }))} style={{ borderRadius: 8 }} /></FormField>
               </div>
-
-              {/* Payment Summary Preview */}
               {(amt > 0 || discount > 0) && (
                 <div style={{ marginTop: 14, padding: "12px 14px", background: remaining <= 0 ? "#f0fdf4" : "#fffbeb", border: `1px solid ${remaining <= 0 ? "#86efac" : "#fde68a"}`, borderRadius: 10 }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: "#374151", textTransform: "uppercase", marginBottom: 8, letterSpacing: "0.04em" }}>Payment Summary</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#6b7280" }}>
-                      <span>Original balance:</span><span style={{ fontWeight: 600 }}>₹{balance.toFixed(2)}</span>
-                    </div>
-                    {discount > 0 && (
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#059669" }}>
-                        <span>Discount applied:</span><span style={{ fontWeight: 600 }}>− ₹{discount.toFixed(2)}</span>
-                      </div>
-                    )}
-                    {amt > 0 && (
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#2563eb" }}>
-                        <span>Amount received:</span><span style={{ fontWeight: 600 }}>− ₹{amt.toFixed(2)}</span>
-                      </div>
-                    )}
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#6b7280" }}><span>Original balance:</span><span style={{ fontWeight: 600 }}>₹{balance.toFixed(2)}</span></div>
+                    {discount > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#059669" }}><span>Discount applied:</span><span style={{ fontWeight: 600 }}>− ₹{discount.toFixed(2)}</span></div>}
+                    {amt > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#2563eb" }}><span>Amount received:</span><span style={{ fontWeight: 600 }}>− ₹{amt.toFixed(2)}</span></div>}
                     <div style={{ height: 1, background: "#e5e7eb", margin: "4px 0" }} />
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 800 }}>
                       <span style={{ color: "#1a1a2e" }}>Remaining balance:</span>
-                      <span style={{ color: remaining <= 0 ? "#16a34a" : "#dc2626" }}>
-                        {remaining <= 0 ? "✓ Fully Settled" : `₹${remaining.toFixed(2)}`}
-                      </span>
+                      <span style={{ color: remaining <= 0 ? "#16a34a" : "#dc2626" }}>{remaining <= 0 ? "✓ Fully Settled" : `₹${remaining.toFixed(2)}`}</span>
                     </div>
                   </div>
                 </div>
