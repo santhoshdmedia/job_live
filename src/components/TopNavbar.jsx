@@ -351,7 +351,7 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
 
   // ── Derived display values ────────────────────────────────────────────────
   const isPastAutoLogoutHour = nowTick.getHours() >= 19; // 7 PM
-  const isApproachingCutoff  = nowTick.getHours() === 12; // 6 PM hour — give a heads-up
+  const isApproachingCutoff  = nowTick.getHours() === 16; // 6 PM hour — give a heads-up
   const permStatus           = permission?.status || "none";
   const permApprovedActive   =
     permStatus === "approved" &&
@@ -594,29 +594,7 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
                     </span>
                   </Tooltip>
                 )}
-           {  <Button
-                      onClick={handleOpenPermModal}
-                      size="middle"
-                      style={{
-                        borderRadius: 10,
-                        fontWeight: 600,
-                        borderColor: isPastAutoLogoutHour ? "#FCA5A5" : "#E2E8F0",
-                        color: isPastAutoLogoutHour ? "#DC2626" : "#374151",
-                        background: isPastAutoLogoutHour ? "#FEF2F2" : undefined,
-                        height: 34,
-                        paddingInline: 10,
-                      }}
-                      title={
-                        isPastAutoLogoutHour
-                          ? "It's past 7 PM — you'll be auto-logged-out unless a super admin approves this"
-                          : "Ask a super admin for permission to work past 7 PM"
-                      }
-                    >
-                      <span className="hidden md:inline">
-                        {isPastAutoLogoutHour ? "⚠ Request late permission" : "🌙 Work late?"}
-                      </span>
-                      <span className="md:hidden">🌙</span>
-                    </Button>}
+
                 {(isApproachingCutoff || isPastAutoLogoutHour) &&
                   permStatus !== "pending" &&
                   !permApprovedActive && (
