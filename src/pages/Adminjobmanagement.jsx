@@ -1616,11 +1616,11 @@ const AdminJobManagement = () => {
                 {!isMobile && "Export"}
               </Button>
             </Tooltip>
-            <Tooltip title="Export in Tally Day Book format (Dr/Cr ledger entries, GST split as CGST/SGST)">
+            {/* <Tooltip title="Export in Tally Day Book format (Dr/Cr ledger entries, GST split as CGST/SGST)">
               <Button icon={<BookOutlined />} onClick={() => exportJobsToTallyFormat(filteredJobs)} style={{ borderRadius: 8, color: "#7c3aed", borderColor: "#ddd6fe" }}>
                 {!isMobile && "Tally Export"}
               </Button>
-            </Tooltip>
+            </Tooltip> */}
             <Tooltip title="Refresh now"><Button icon={<ReloadOutlined spin={loading} />} onClick={() => { loadJobs(); startAutoRefresh(); }} style={{ borderRadius: 8 }} /></Tooltip>
           </div>
         </div>

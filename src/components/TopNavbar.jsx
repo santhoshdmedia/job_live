@@ -23,10 +23,10 @@ function getGreeting(name = "") {
     hour < 12
       ? "Good Morning"
       : hour < 17
-      ? "Good Afternoon"
-      : hour < 21
-      ? "Good Evening"
-      : "Good Night";
+        ? "Good Afternoon"
+        : hour < 21
+          ? "Good Evening"
+          : "Good Night";
   return name ? `${greet}, ${name.split(" ")[0]}` : greet;
 }
 
@@ -74,7 +74,9 @@ function useLiveTimer(startIso, running) {
       return;
     }
     const tick = () =>
-      setSecs(Math.max(0, Math.floor((Date.now() - new Date(startIso)) / 1000)));
+      setSecs(
+        Math.max(0, Math.floor((Date.now() - new Date(startIso)) / 1000)),
+      );
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
@@ -87,15 +89,19 @@ function useLiveTimer(startIso, running) {
 // chips share the same shape/padding instead of drifting apart over time.
 function StatChip({ children, tone = "slate" }) {
   const tones = {
-    slate:  { bg: "#F8FAFC", border: "#E2E8F0", text: "#475569" },
-    blue:   { bg: "#EFF6FF", border: "#BFDBFE", text: "#2563EB" },
+    slate: { bg: "#F8FAFC", border: "#E2E8F0", text: "#475569" },
+    blue: { bg: "#EFF6FF", border: "#BFDBFE", text: "#2563EB" },
     orange: { bg: "#FFF7ED", border: "#FED7AA", text: "#C2410C" },
   };
   const c = tones[tone];
   return (
     <span
       className="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold tabular-nums shrink-0"
-      style={{ background: c.bg, border: `1px solid ${c.border}`, color: c.text }}
+      style={{
+        background: c.bg,
+        border: `1px solid ${c.border}`,
+        color: c.text,
+      }}
     >
       {children}
     </span>
@@ -140,11 +146,14 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
   const workSecs = useLiveTimer(sessionStart, !!sessionStart && !onBreak);
   const breakLive = useLiveTimer(breakStart, onBreak);
 
-  const isAdmin = ["super admin", "super_admin", "admin", "designing head"].includes(
-    user?.role?.toLowerCase?.()
-  );
+  const isAdmin = [
+    "super admin",
+    "super_admin",
+    "admin",
+    "designing head",
+  ].includes(user?.role?.toLowerCase?.());
 
-  const is_hari=user.is_Special==true;
+  const is_hari = user.is_Special == true;
 
   // ── On mount: restore session & break state from server ──────────────────
   useEffect(() => {
@@ -154,7 +163,12 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
       try {
         // 1. Try to restore an existing active session
         const res = await smApi.getSession(user._id);
-        const { login_at, active_break, break_seconds, permission: perm } = res?.data?.data || {};
+        const {
+          login_at,
+          active_break,
+          break_seconds,
+          permission: perm,
+        } = res?.data?.data || {};
 
         if (login_at) setSessionStart(login_at);
         if (break_seconds) setTotalBreakSecs(break_seconds);
@@ -232,7 +246,9 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
       if (breakMenuRef.current && !breakMenuRef.current.contains(e.target))
         setShowBreakMenu(false);
     };
-    const escHandler = (e) => { if (e.key === "Escape") setShowBreakMenu(false); };
+    const escHandler = (e) => {
+      if (e.key === "Escape") setShowBreakMenu(false);
+    };
     document.addEventListener("mousedown", handler);
     document.addEventListener("keydown", escHandler);
     return () => {
@@ -261,7 +277,7 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
       setBreakType(type);
       setBreakStart(breakStartTime); // use server timestamp for accuracy
       message.info(
-        type === "lunch" ? "🍽️ Lunch break started" : "☕ Break started"
+        type === "lunch" ? "🍽️ Lunch break started" : "☕ Break started",
       );
     } catch (err) {
       message.error(err?.response?.data?.message || "Failed to start break");
@@ -335,9 +351,14 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
       const [h, m] = permUntilHour.split(":").map(Number);
       const requestedUntil = new Date();
       requestedUntil.setHours(h, m, 0, 0);
-      if (requestedUntil <= new Date()) requestedUntil.setDate(requestedUntil.getDate() + 1);
+      if (requestedUntil <= new Date())
+        requestedUntil.setDate(requestedUntil.getDate() + 1);
 
-      const res = await smApi.requestPermission(user._id, permReason.trim(), requestedUntil.toISOString());
+      const res = await smApi.requestPermission(
+        user._id,
+        permReason.trim(),
+        requestedUntil.toISOString(),
+      );
       const perm = res?.data?.data?.permission;
       if (perm) setPermission(perm);
       setShowPermModal(false);
@@ -351,19 +372,23 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
 
   // ── Derived display values ────────────────────────────────────────────────
   const isPastAutoLogoutHour = nowTick.getHours() >= 19; // 7 PM
-  const isApproachingCutoff  = nowTick.getHours() === 16; // 6 PM hour — give a heads-up
-  const permStatus           = permission?.status || "none";
-  const permApprovedActive   =
+  const isApproachingCutoff = nowTick.getHours() === 16; // 6 PM hour — give a heads-up
+  const permStatus = permission?.status || "none";
+  const permApprovedActive =
     permStatus === "approved" &&
     permission?.permitted_until &&
     new Date(permission.permitted_until) > nowTick;
 
   const otSecs = Math.max(0, workSecs - STANDARD_WORK_SECS);
   const showOT = otSecs > 0;
-  const workPct = Math.min(100, Math.round((workSecs / STANDARD_WORK_SECS) * 100));
+  const workPct = Math.min(
+    100,
+    Math.round((workSecs / STANDARD_WORK_SECS) * 100),
+  );
   const ringColor = showOT ? "#F97316" : workPct >= 80 ? "#EAB308" : "#2563EB";
   const ringTrack = "#F1F5F9";
-  const showStatsStrip = initialized && sessionStart && (workSecs > 0 || totalBreakSecs > 0);
+  const showStatsStrip =
+    initialized && sessionStart && (workSecs > 0 || totalBreakSecs > 0);
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -403,7 +428,12 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
                 <span className="text-[13px] sm:text-[15px] leading-tight font-semibold text-slate-800 truncate">
                   {getGreeting(user?.name)}
                 </span>
-                <span className="text-sm hidden md:inline shrink-0" aria-hidden="true">{getGreetingIcon()}</span>
+                <span
+                  className="text-sm hidden md:inline shrink-0"
+                  aria-hidden="true"
+                >
+                  {getGreetingIcon()}
+                </span>
               </div>
 
               {/* Work status only shown inline from sm+; on mobile it moves to
@@ -422,7 +452,9 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
                         : "0 0 0 2px rgba(34,197,94,0.18)",
                     }}
                   />
-                  <span className="whitespace-nowrap">{fmtDur(workSecs)} worked</span>
+                  <span className="whitespace-nowrap">
+                    {fmtDur(workSecs)} worked
+                  </span>
                 </span>
               )}
             </div>
@@ -430,7 +462,6 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
 
           {/* Right: actions */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-
             {/* Work progress ring — desktop/tablet only; mobile gets the %
                 inside the stats strip instead since hover tooltips don't
                 work well on touch. */}
@@ -440,7 +471,9 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
                   <div style={{ textAlign: "center", lineHeight: 1.5 }}>
                     <div style={{ fontWeight: 700 }}>{workPct}% of 10h day</div>
                     {showOT && <div>Overtime: {fmtDur(otSecs)}</div>}
-                    {totalBreakSecs > 0 && <div>Break time: {fmtDur(totalBreakSecs)}</div>}
+                    {totalBreakSecs > 0 && (
+                      <div>Break time: {fmtDur(totalBreakSecs)}</div>
+                    )}
                   </div>
                 }
               >
@@ -449,16 +482,33 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
                   role="img"
                   aria-label={`${workPct} percent of the standard work day completed`}
                 >
-                  <svg width="36" height="36" viewBox="0 0 36 36" className="-rotate-90">
-                    <circle cx="18" cy="18" r="14" fill="none" stroke={ringTrack} strokeWidth="3.5" />
+                  <svg
+                    width="36"
+                    height="36"
+                    viewBox="0 0 36 36"
+                    className="-rotate-90"
+                  >
                     <circle
-                      cx="18" cy="18" r="14"
+                      cx="18"
+                      cy="18"
+                      r="14"
+                      fill="none"
+                      stroke={ringTrack}
+                      strokeWidth="3.5"
+                    />
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="14"
                       fill="none"
                       stroke={ringColor}
                       strokeWidth="3.5"
                       strokeDasharray={`${(87.96 * workPct) / 100} 87.96`}
                       strokeLinecap="round"
-                      style={{ transition: "stroke-dasharray 0.4s ease, stroke 0.3s ease" }}
+                      style={{
+                        transition:
+                          "stroke-dasharray 0.4s ease, stroke 0.3s ease",
+                      }}
                     />
                   </svg>
                   <span className="absolute text-[9px] font-bold text-slate-600 tabular-nums">
@@ -469,8 +519,9 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
             )}
 
             {/* Break / Lunch */}
-            {initialized && sessionStart && (
-              onBreak ? (
+            {initialized &&
+              sessionStart &&
+              (onBreak ? (
                 <Button
                   onClick={handleEndBreak}
                   loading={loading}
@@ -495,7 +546,9 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
                   <span className="hidden md:inline">
                     End {breakType === "lunch" ? "Lunch" : "Break"} ·{" "}
                   </span>
-                  <span className="tabular-nums font-mono">{fmtDur(breakLive)}</span>
+                  <span className="tabular-nums font-mono">
+                    {fmtDur(breakLive)}
+                  </span>
                 </Button>
               ) : (
                 <div className="relative" ref={breakMenuRef}>
@@ -523,7 +576,9 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
                       style={{
                         fontSize: 9,
                         transition: "transform 0.15s ease",
-                        transform: showBreakMenu ? "rotate(180deg)" : "rotate(0deg)",
+                        transform: showBreakMenu
+                          ? "rotate(180deg)"
+                          : "rotate(0deg)",
                       }}
                     />
                   </Button>
@@ -538,8 +593,18 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
                       }}
                     >
                       {[
-                        { type: "break", icon: "☕", label: "Short Break", hint: "15 min" },
-                        { type: "lunch", icon: "🍽️", label: "Lunch Break", hint: "45 min" },
+                        {
+                          type: "break",
+                          icon: "☕",
+                          label: "Short Break",
+                          hint: "15 min",
+                        },
+                        {
+                          type: "lunch",
+                          icon: "🍽️",
+                          label: "Lunch Break",
+                          hint: "45 min",
+                        },
                       ].map(({ type, icon, label, hint }) => (
                         <button
                           key={type}
@@ -547,18 +612,24 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
                           onClick={() => handleStartBreak(type)}
                           className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 active:bg-slate-100 text-left transition-colors duration-100"
                         >
-                          <span className="text-base leading-none shrink-0" aria-hidden="true">{icon}</span>
+                          <span
+                            className="text-base leading-none shrink-0"
+                            aria-hidden="true"
+                          >
+                            {icon}
+                          </span>
                           <span className="flex flex-col min-w-0">
                             <span className="truncate">{label}</span>
-                            <span className="text-[10px] font-normal text-slate-400">{hint} suggested</span>
+                            <span className="text-[10px] font-normal text-slate-400">
+                              {hint} suggested
+                            </span>
                           </span>
                         </button>
                       ))}
                     </div>
                   )}
                 </div>
-              )
-            )}
+              ))}
 
             {/* ── After-7-PM work permission ────────────────────────────────── */}
             {initialized && sessionStart && (
@@ -568,8 +639,14 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
                     <span
                       className="hidden sm:inline-flex items-center gap-1.5"
                       style={{
-                        background: "#FEF3C7", border: "1px solid #FCD34D", color: "#92400E",
-                        fontWeight: 700, fontSize: 11, borderRadius: 10, padding: "6px 10px", height: 34,
+                        background: "#FEF3C7",
+                        border: "1px solid #FCD34D",
+                        color: "#92400E",
+                        fontWeight: 700,
+                        fontSize: 11,
+                        borderRadius: 10,
+                        padding: "6px 10px",
+                        height: 34,
                       }}
                     >
                       ⏳ Waiting for approval
@@ -582,19 +659,52 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
                     <span
                       className="hidden sm:inline-flex items-center gap-1.5"
                       style={{
-                        background: "#F0FDF4", border: "1px solid #86EFAC", color: "#15803D",
-                        fontWeight: 700, fontSize: 11, borderRadius: 10, padding: "6px 10px", height: 34,
+                        background: "#F0FDF4",
+                        border: "1px solid #86EFAC",
+                        color: "#15803D",
+                        fontWeight: 700,
+                        fontSize: 11,
+                        borderRadius: 10,
+                        padding: "6px 10px",
+                        height: 34,
                       }}
                     >
                       ✓ Approved until{" "}
-                      {new Date(permission.permitted_until).toLocaleTimeString("en-IN", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
+                      {new Date(permission.permitted_until).toLocaleTimeString(
+                        "en-IN",
+                        {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        },
+                      )}
                     </span>
                   </Tooltip>
                 )}
-
+                <Button
+                  onClick={handleOpenPermModal}
+                  size="middle"
+                  style={{
+                    borderRadius: 10,
+                    fontWeight: 600,
+                    borderColor: isPastAutoLogoutHour ? "#FCA5A5" : "#E2E8F0",
+                    color: isPastAutoLogoutHour ? "#DC2626" : "#374151",
+                    background: isPastAutoLogoutHour ? "#FEF2F2" : undefined,
+                    height: 34,
+                    paddingInline: 10,
+                  }}
+                  title={
+                    isPastAutoLogoutHour
+                      ? "It's past 7 PM — you'll be auto-logged-out unless a super admin approves this"
+                      : "Ask a super admin for permission to work past 7 PM"
+                  }
+                >
+                  <span className="hidden md:inline">
+                    {isPastAutoLogoutHour
+                      ? "⚠ Request late permission"
+                      : "🌙 Work late?"}
+                  </span>
+                  <span className="md:hidden">🌙</span>
+                </Button>
                 {(isApproachingCutoff || isPastAutoLogoutHour) &&
                   permStatus !== "pending" &&
                   !permApprovedActive && (
@@ -604,9 +714,13 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
                       style={{
                         borderRadius: 10,
                         fontWeight: 600,
-                        borderColor: isPastAutoLogoutHour ? "#FCA5A5" : "#E2E8F0",
+                        borderColor: isPastAutoLogoutHour
+                          ? "#FCA5A5"
+                          : "#E2E8F0",
                         color: isPastAutoLogoutHour ? "#DC2626" : "#374151",
-                        background: isPastAutoLogoutHour ? "#FEF2F2" : undefined,
+                        background: isPastAutoLogoutHour
+                          ? "#FEF2F2"
+                          : undefined,
                         height: 34,
                         paddingInline: 10,
                       }}
@@ -617,7 +731,9 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
                       }
                     >
                       <span className="hidden md:inline">
-                        {isPastAutoLogoutHour ? "⚠ Request late permission" : "🌙 Work late?"}
+                        {isPastAutoLogoutHour
+                          ? "⚠ Request late permission"
+                          : "🌙 Work late?"}
                       </span>
                       <span className="md:hidden">🌙</span>
                     </Button>
@@ -626,29 +742,34 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
             )}
 
             {/* New Job (admin only) */}
-            {isAdmin||is_hari && (
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={() => setCreateOpen(true)}
-                size="middle"
-                style={{
-                  background: "linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)",
-                  border: "none",
-                  borderRadius: 10,
-                  fontWeight: 600,
-                  height: 34,
-                  paddingInline: 10,
-                  boxShadow: "0 2px 8px rgba(37,99,235,0.28)",
-                }}
-                className="hover:!shadow-lg hover:!brightness-105 transition-all duration-150"
-              >
-                <span className="hidden md:inline">New Job</span>
-              </Button>
-            )}
+            {isAdmin ||
+              (is_hari && (
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  onClick={() => setCreateOpen(true)}
+                  size="middle"
+                  style={{
+                    background:
+                      "linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)",
+                    border: "none",
+                    borderRadius: 10,
+                    fontWeight: 600,
+                    height: 34,
+                    paddingInline: 10,
+                    boxShadow: "0 2px 8px rgba(37,99,235,0.28)",
+                  }}
+                  className="hover:!shadow-lg hover:!brightness-105 transition-all duration-150"
+                >
+                  <span className="hidden md:inline">New Job</span>
+                </Button>
+              ))}
 
             {/* Divider */}
-            <div className="hidden md:block w-px h-6 bg-slate-200 mx-0.5" aria-hidden="true" />
+            <div
+              className="hidden md:block w-px h-6 bg-slate-200 mx-0.5"
+              aria-hidden="true"
+            />
 
             {/* Logout */}
             <Tooltip title="Log out">
@@ -688,10 +809,13 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
               {fmtDur(workSecs)} worked
             </StatChip>
             <StatChip tone="blue">{workPct}% of day</StatChip>
-            {showOT && <StatChip tone="orange">⚡ OT +{fmtDur(otSecs)}</StatChip>}
+            {showOT && (
+              <StatChip tone="orange">⚡ OT +{fmtDur(otSecs)}</StatChip>
+            )}
             {totalBreakSecs > 0 && !onBreak && (
               <StatChip tone="blue">
-                <CoffeeOutlined style={{ fontSize: 10 }} /> {fmtDur(totalBreakSecs)} break
+                <CoffeeOutlined style={{ fontSize: 10 }} />{" "}
+                {fmtDur(totalBreakSecs)} break
               </StatChip>
             )}
           </div>
@@ -721,33 +845,48 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
         centered
       >
         <p style={{ fontSize: 13, color: "#64748B", marginBottom: 12 }}>
-          Staff are automatically logged out at 7:00 PM. Tell your super admin why you
-          need more time — they'll approve or decline it, and you'll be logged out
-          automatically once your approved time is up.
+          Staff are automatically logged out at 7:00 PM. Tell your super admin
+          why you need more time — they'll approve or decline it, and you'll be
+          logged out automatically once your approved time is up.
         </p>
-        <label style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>Reason</label>
+        <label style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>
+          Reason
+        </label>
         <textarea
           value={permReason}
           onChange={(e) => setPermReason(e.target.value)}
           placeholder="e.g. Finishing an urgent job for tomorrow's delivery"
           rows={3}
           style={{
-            width: "100%", marginTop: 4, marginBottom: 12, padding: "8px 10px",
-            borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 13, resize: "vertical",
+            width: "100%",
+            marginTop: 4,
+            marginBottom: 12,
+            padding: "8px 10px",
+            borderRadius: 8,
+            border: "1px solid #E2E8F0",
+            fontSize: 13,
+            resize: "vertical",
           }}
         />
-        <label style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>Need until (approx.)</label>
+        <label style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>
+          Need until (approx.)
+        </label>
         <input
           type="time"
           value={permUntilHour}
           onChange={(e) => setPermUntilHour(e.target.value)}
           style={{
-            width: "100%", marginTop: 4, padding: "8px 10px",
-            borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 13,
+            width: "100%",
+            marginTop: 4,
+            padding: "8px 10px",
+            borderRadius: 8,
+            border: "1px solid #E2E8F0",
+            fontSize: 13,
           }}
         />
         <p style={{ fontSize: 11, color: "#94A3B8", marginTop: 6 }}>
-          This is just what you're requesting — the super admin sets the final approved cutoff time.
+          This is just what you're requesting — the super admin sets the final
+          approved cutoff time.
         </p>
       </Modal>
 
