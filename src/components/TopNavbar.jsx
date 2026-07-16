@@ -6,6 +6,7 @@ import {
   CoffeeOutlined,
   CloseCircleOutlined,
   DownOutlined,
+  CameraOutlined,
 } from "@ant-design/icons";
 import { useDispatch, useSelector } from "react-redux";
 import React from "react";
@@ -14,6 +15,7 @@ import { useNavigate } from "react-router-dom";
 import CreateJobModal from "./job/Createjobmodal";
 import { smApi } from "../api/staffmonitor.api";
 import { admintoken } from "../helper/notification_helper";
+import InTimeCaptureModal from "./InTimeCaptureModal";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -125,14 +127,13 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
   const [breakStart, setBreakStart] = useState(null); // ISO string from DB
   const [totalBreakSecs, setTotalBreakSecs] = useState(0); // accumulated from DB
 
-  // ── After-7-PM work permission ────────────────────────────────────────
-  // status: "none" | "pending" | "approved" | "rejected"
-  const [permission, setPermission] = useState({ status: "none" });
-  const [showPermModal, setShowPermModal] = useState(false);
-  const [permReason, setPermReason] = useState("");
-  const [permUntilHour, setPermUntilHour] = useState("21:00");
-  const [permSubmitting, setPermSubmitting] = useState(false);
-  const [nowTick, setNowTick] = useState(() => new Date()); // ticks every minute so the "past 7pm" UI updates live
+  // ── In Time / Out Time (attendance) ─────────────────────────────────────
+  // Attendance is separate from the app's auth session. Clicking "In Time"
+  // opens the camera, captures a photo + location, and starts the
+  // attendance session. Clicking "Out Time" closes that attendance session
+  // only — it does NOT sign the user out of the app.
+  const [showInTimeModal, setShowInTimeModal] = useState(false);
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
   const autoLogoutHandledRef = useRef(false);
 
   // UI
@@ -155,24 +156,25 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
 
   const is_hari = user.is_Special == true;
 
+  // Super admins and individually-flagged "is_Special" users can skip the
+  // photo + location capture when clicking "In Time" — it's optional for
+  // them, though they can still choose to take a photo like everyone else.
+  const canSkipInTimeCapture =
+    user?.role?.toLowerCase?.() === "super admin" || user?.is_Special === true;
+
   // ── On mount: restore session & break state from server ──────────────────
   useEffect(() => {
     if (!user?._id) return;
 
     const initSession = async () => {
       try {
-        // 1. Try to restore an existing active session
+        // Try to restore an existing open attendance session (e.g. the
+        // page was refreshed after the user already clicked "In Time").
         const res = await smApi.getSession(user._id);
-        const {
-          login_at,
-          active_break,
-          break_seconds,
-          permission: perm,
-        } = res?.data?.data || {};
+        const { login_at, active_break, break_seconds } = res?.data?.data || {};
 
         if (login_at) setSessionStart(login_at);
         if (break_seconds) setTotalBreakSecs(break_seconds);
-        if (perm) setPermission(perm);
 
         // Restore mid-break state — timer resumes from original break_start
         if (active_break?.start && active_break?.type) {
@@ -181,14 +183,10 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
           setBreakStart(active_break.start);
         }
       } catch {
-        // No active session found → record a fresh login
-        try {
-          const res = await smApi.recordLogin(user._id);
-          const session = res?.data?.data?.session;
-          setSessionStart(session?.login_at ?? new Date().toISOString());
-        } catch {
-          setSessionStart(new Date().toISOString());
-        }
+        // No active attendance session — that's fine, it just means the
+        // user hasn't clicked "In Time" yet today. We deliberately do NOT
+        // auto-start one here; it only starts when they click "In Time"
+        // and complete the photo + location capture.
       } finally {
         setInitialized(true);
       }
@@ -197,43 +195,34 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
     initSession();
   }, [user?._id]);
 
-  // ── Minute ticker so "past 7 PM" UI (the late-work button/badges) updates live ──
-  useEffect(() => {
-    const id = setInterval(() => setNowTick(new Date()), 30000);
-    return () => clearInterval(id);
-  }, []);
-
-  // ── Poll the server session every 45s while "logged in" here ──────────────
-  // Two jobs:
-  //   1. Pick up permission approve/reject decisions made by a super admin.
-  //   2. Notice if the server already closed our session for us (force-logout
-  //      by admin, or the automatic 7 PM / permission-expiry cutoff) and mirror
-  //      that locally instead of pretending we're still clocked in.
+  // ── Poll the server session every 45s while an attendance session is open ──
+  // Job: notice if a super admin force-closed our attendance session from
+  // the admin dashboard, and mirror that locally instead of pretending
+  // we're still clocked in. (There's no more automatic 7 PM cutoff — the
+  // only way a session closes without the user clicking "Out Time" is an
+  // explicit admin force-logout.)
   useEffect(() => {
     if (!user?._id || !initialized || !sessionStart) return;
     const poll = async () => {
       try {
-        const res = await smApi.getSession(user._id);
-        const perm = res?.data?.data?.permission;
-        if (perm) setPermission(perm);
+        await smApi.getSession(user._id);
       } catch {
-        // No active session on the server anymore — we were logged out remotely.
+        // No active attendance session on the server anymore — an admin
+        // force-closed it. Mirror that locally (attendance only — the user
+        // stays signed into the app).
         if (autoLogoutHandledRef.current) return;
         autoLogoutHandledRef.current = true;
-        const pastCutoff = new Date().getHours() >= 19;
-        Modal.info({
-          title: "You've been logged out",
-          content: pastCutoff
-            ? "Your session was automatically closed because it's past the 7:00 PM work cutoff. If you need to keep working, log back in and request permission."
-            : "A super admin has logged you out of your active session.",
-          okText: "OK",
-          centered: true,
-          onOk: () => {
-            localStorage.removeItem(admintoken);
-            dispatch(isLoginSuccess({}));
-            navigate("/");
-          },
-        });
+        setSessionStart(null);
+        setOnBreak(false);
+        setBreakType(null);
+        setBreakStart(null);
+        setTotalBreakSecs(0);
+        message.info(
+          'A super admin closed your attendance session. You\'re still logged in — click "In Time" to start a new one.',
+        );
+        setTimeout(() => {
+          autoLogoutHandledRef.current = false;
+        }, 2000);
       }
     };
     const id = setInterval(poll, 45000);
@@ -332,53 +321,72 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
     });
   };
 
-  // ── After-7-PM permission actions ─────────────────────────────────────────
-  const handleOpenPermModal = () => {
-    setPermReason("");
-    setPermUntilHour("21:00");
-    setShowPermModal(true);
+  // ── In Time ──────────────────────────────────────────────────────────────
+  // Opens the camera-capture modal. The actual /session/login call happens
+  // once the modal confirms a photo + location (see handleInTimeConfirm).
+  const handleOpenInTime = () => {
+    if (!user?._id) return;
+    setShowInTimeModal(true);
   };
 
-  const handleSubmitPermRequest = async () => {
-    if (!permReason.trim()) {
-      message.warning("Please add a short reason for working late.");
-      return;
-    }
+  const handleInTimeConfirm = async (selfieUrl, coords) => {
     if (!user?._id) return;
-    setPermSubmitting(true);
-    try {
-      // Build a full Date from the chosen "HH:mm" using today's date.
-      const [h, m] = permUntilHour.split(":").map(Number);
-      const requestedUntil = new Date();
-      requestedUntil.setHours(h, m, 0, 0);
-      if (requestedUntil <= new Date())
-        requestedUntil.setDate(requestedUntil.getDate() + 1);
+    // selfieUrl may be null when a canSkip user chose to skip the photo
+    const res = await smApi.recordLogin(user._id, {
+      ...(selfieUrl ? { selfie_url: selfieUrl } : {}),
+      latitude: coords?.latitude,
+      longitude: coords?.longitude,
+      accuracy: coords?.accuracy,
+    });
+    const session = res?.data?.data?.session;
+    setSessionStart(session?.login_at ?? new Date().toISOString());
+    setOnBreak(false);
+    setBreakType(null);
+    setBreakStart(null);
+    setTotalBreakSecs(0);
+    setShowInTimeModal(false);
+    message.success("In time recorded!");
+  };
 
-      const res = await smApi.requestPermission(
-        user._id,
-        permReason.trim(),
-        requestedUntil.toISOString(),
-      );
-      const perm = res?.data?.data?.permission;
-      if (perm) setPermission(perm);
-      setShowPermModal(false);
-      message.success("Request sent. Waiting for super admin approval.");
-    } catch (err) {
-      message.error(err?.response?.data?.message || "Failed to send request");
-    } finally {
-      setPermSubmitting(false);
-    }
+  // ── Out Time ─────────────────────────────────────────────────────────────
+  // Ends the attendance session ONLY. The user stays signed into the app —
+  // no token removal, no navigation away. They can click "In Time" again
+  // later to start a new attendance session.
+  const handleOutTime = () => {
+    if (!user?._id || !sessionStart) return;
+    Modal.confirm({
+      title: "Record out time?",
+      icon: <LogoutOutlined style={{ color: "#DC2626" }} />,
+      content: `Your attendance session will be closed. Worked time: ${fmtDur(workSecs)}. You'll stay logged in — this just stops the clock.`,
+      okText: "Out Time",
+      cancelText: "Cancel",
+      okButtonProps: { danger: true, style: { borderRadius: 8 } },
+      cancelButtonProps: { style: { borderRadius: 8 } },
+      centered: true,
+      onOk: async () => {
+        setAttendanceLoading(true);
+        try {
+          await smApi.recordLogout(user._id);
+        } catch (err) {
+          message.error(
+            err?.response?.data?.message || "Failed to record out time",
+          );
+          return;
+        } finally {
+          setAttendanceLoading(false);
+        }
+        setSessionStart(null);
+        setOnBreak(false);
+        setBreakType(null);
+        setBreakStart(null);
+        setTotalBreakSecs(0);
+        setShowBreakMenu(false);
+        message.success("Out time recorded. You're still logged in.");
+      },
+    });
   };
 
   // ── Derived display values ────────────────────────────────────────────────
-  const isPastAutoLogoutHour = nowTick.getHours() >= 19; // 7 PM
-  const isApproachingCutoff = nowTick.getHours() === 16; // 6 PM hour — give a heads-up
-  const permStatus = permission?.status || "none";
-  const permApprovedActive =
-    permStatus === "approved" &&
-    permission?.permitted_until &&
-    new Date(permission.permitted_until) > nowTick;
-
   const otSecs = Math.max(0, workSecs - STANDARD_WORK_SECS);
   const showOT = otSecs > 0;
   const workPct = Math.min(
@@ -462,6 +470,51 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
 
           {/* Right: actions */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* In Time / Out Time — attendance, separate from app auth */}
+            {initialized &&
+              (sessionStart ? (
+                <Button
+                  onClick={handleOutTime}
+                  loading={attendanceLoading}
+                  size="middle"
+                  icon={!attendanceLoading && <LogoutOutlined />}
+                  style={{
+                    borderRadius: 10,
+                    fontWeight: 600,
+                    borderColor: "#FCA5A5",
+                    color: "#DC2626",
+                    background: "#FEF2F2",
+                    height: 34,
+                    paddingInline: 10,
+                  }}
+                  title="End your attendance session (you'll stay logged in)"
+                >
+                  <span className="hidden md:inline">Out Time</span>
+                  <span className="md:hidden">⏱ Out</span>
+                </Button>
+              ) : (
+                <Button
+                  type="primary"
+                  onClick={handleOpenInTime}
+                  size="middle"
+                  icon={<CameraOutlined />}
+                  style={{
+                    borderRadius: 10,
+                    fontWeight: 600,
+                    background:
+                      "linear-gradient(135deg, #16A34A 0%, #15803D 100%)",
+                    border: "none",
+                    height: 34,
+                    paddingInline: 10,
+                    boxShadow: "0 2px 8px rgba(22,163,74,0.28)",
+                  }}
+                  title="Capture a photo + location to start your attendance session"
+                >
+                  <span className="hidden md:inline">In Time</span>
+                  <span className="md:hidden">⏱ In</span>
+                </Button>
+              ))}
+
             {/* Work progress ring — desktop/tablet only; mobile gets the %
                 inside the stats strip instead since hover tooltips don't
                 work well on touch. */}
@@ -631,116 +684,6 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
                 </div>
               ))}
 
-            {/* ── After-7-PM work permission ────────────────────────────────── */}
-            {initialized && sessionStart && (
-              <>
-                {permStatus === "pending" && (
-                  <Tooltip title={`Requested: ${permission.reason || ""}`}>
-                    <span
-                      className="hidden sm:inline-flex items-center gap-1.5"
-                      style={{
-                        background: "#FEF3C7",
-                        border: "1px solid #FCD34D",
-                        color: "#92400E",
-                        fontWeight: 700,
-                        fontSize: 11,
-                        borderRadius: 10,
-                        padding: "6px 10px",
-                        height: 34,
-                      }}
-                    >
-                      ⏳ Waiting for approval
-                    </span>
-                  </Tooltip>
-                )}
-
-                {permApprovedActive && (
-                  <Tooltip title="A super admin approved you to keep working past 7 PM">
-                    <span
-                      className="hidden sm:inline-flex items-center gap-1.5"
-                      style={{
-                        background: "#F0FDF4",
-                        border: "1px solid #86EFAC",
-                        color: "#15803D",
-                        fontWeight: 700,
-                        fontSize: 11,
-                        borderRadius: 10,
-                        padding: "6px 10px",
-                        height: 34,
-                      }}
-                    >
-                      ✓ Approved until{" "}
-                      {new Date(permission.permitted_until).toLocaleTimeString(
-                        "en-IN",
-                        {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        },
-                      )}
-                    </span>
-                  </Tooltip>
-                )}
-                <Button
-                  onClick={handleOpenPermModal}
-                  size="middle"
-                  style={{
-                    borderRadius: 10,
-                    fontWeight: 600,
-                    borderColor: isPastAutoLogoutHour ? "#FCA5A5" : "#E2E8F0",
-                    color: isPastAutoLogoutHour ? "#DC2626" : "#374151",
-                    background: isPastAutoLogoutHour ? "#FEF2F2" : undefined,
-                    height: 34,
-                    paddingInline: 10,
-                  }}
-                  title={
-                    isPastAutoLogoutHour
-                      ? "It's past 7 PM — you'll be auto-logged-out unless a super admin approves this"
-                      : "Ask a super admin for permission to work past 7 PM"
-                  }
-                >
-                  <span className="hidden md:inline">
-                    {isPastAutoLogoutHour
-                      ? "⚠ Request late permission"
-                      : "🌙 Work late?"}
-                  </span>
-                  <span className="md:hidden">🌙</span>
-                </Button>
-                {(isApproachingCutoff || isPastAutoLogoutHour) &&
-                  permStatus !== "pending" &&
-                  !permApprovedActive && (
-                    <Button
-                      onClick={handleOpenPermModal}
-                      size="middle"
-                      style={{
-                        borderRadius: 10,
-                        fontWeight: 600,
-                        borderColor: isPastAutoLogoutHour
-                          ? "#FCA5A5"
-                          : "#E2E8F0",
-                        color: isPastAutoLogoutHour ? "#DC2626" : "#374151",
-                        background: isPastAutoLogoutHour
-                          ? "#FEF2F2"
-                          : undefined,
-                        height: 34,
-                        paddingInline: 10,
-                      }}
-                      title={
-                        isPastAutoLogoutHour
-                          ? "It's past 7 PM — you'll be auto-logged-out unless a super admin approves this"
-                          : "Ask a super admin for permission to work past 7 PM"
-                      }
-                    >
-                      <span className="hidden md:inline">
-                        {isPastAutoLogoutHour
-                          ? "⚠ Request late permission"
-                          : "🌙 Work late?"}
-                      </span>
-                      <span className="md:hidden">🌙</span>
-                    </Button>
-                  )}
-              </>
-            )}
-
             {/* New Job (admin only) */}
             {isAdmin ||
               (is_hari && (
@@ -832,63 +775,14 @@ const TopNavbar = ({ jobs = [], onJobCreated }) => {
         existingJobs={jobs}
       />
 
-      {/* Request permission to work past 7 PM */}
-      <Modal
-        title="Request permission to work late"
-        open={showPermModal}
-        onCancel={() => setShowPermModal(false)}
-        onOk={handleSubmitPermRequest}
-        okText="Send request"
-        confirmLoading={permSubmitting}
-        okButtonProps={{ style: { borderRadius: 8 } }}
-        cancelButtonProps={{ style: { borderRadius: 8 } }}
-        centered
-      >
-        <p style={{ fontSize: 13, color: "#64748B", marginBottom: 12 }}>
-          Staff are automatically logged out at 7:00 PM. Tell your super admin
-          why you need more time — they'll approve or decline it, and you'll be
-          logged out automatically once your approved time is up.
-        </p>
-        <label style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>
-          Reason
-        </label>
-        <textarea
-          value={permReason}
-          onChange={(e) => setPermReason(e.target.value)}
-          placeholder="e.g. Finishing an urgent job for tomorrow's delivery"
-          rows={3}
-          style={{
-            width: "100%",
-            marginTop: 4,
-            marginBottom: 12,
-            padding: "8px 10px",
-            borderRadius: 8,
-            border: "1px solid #E2E8F0",
-            fontSize: 13,
-            resize: "vertical",
-          }}
-        />
-        <label style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>
-          Need until (approx.)
-        </label>
-        <input
-          type="time"
-          value={permUntilHour}
-          onChange={(e) => setPermUntilHour(e.target.value)}
-          style={{
-            width: "100%",
-            marginTop: 4,
-            padding: "8px 10px",
-            borderRadius: 8,
-            border: "1px solid #E2E8F0",
-            fontSize: 13,
-          }}
-        />
-        <p style={{ fontSize: 11, color: "#94A3B8", marginTop: 6 }}>
-          This is just what you're requesting — the super admin sets the final
-          approved cutoff time.
-        </p>
-      </Modal>
+      {/* Capture photo + location and start the attendance session.
+          canSkip=true for super admin / is_Special — photo is optional. */}
+      <InTimeCaptureModal
+        open={showInTimeModal}
+        onClose={() => setShowInTimeModal(false)}
+        onConfirm={handleInTimeConfirm}
+        canSkip={canSkipInTimeCapture}
+      />
 
       <style>{`
         @keyframes fadeSlideIn {
