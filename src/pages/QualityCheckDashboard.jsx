@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import {
   Button, Modal, Input, Spin, Empty,
-  Tooltip, Divider, message, Popconfirm, Image,
+  Tooltip, Divider, message, Popconfirm, Image, Select,
 } from "antd";
 import {
   CheckCircleOutlined, CloseCircleOutlined,
@@ -11,15 +11,17 @@ import {
   DeleteOutlined, DownloadOutlined,
   PlayCircleOutlined, PauseCircleOutlined,
   ClockCircleOutlined, ThunderboltOutlined,
-  StopOutlined,
+  StopOutlined, SwapOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import duration from "dayjs/plugin/duration";
 import CapUploadHelper from "../helper/CapUploadHelper";
+import { isSuperAdmin } from "../helper/permissionHelper";
 
 dayjs.extend(duration);
 
 const { TextArea } = Input;
+const { Option } = Select;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants & Helpers
@@ -50,6 +52,20 @@ const formatDuration = (seconds = 0) => {
   const s = seconds % 60;
   return [h, m, s].map((v) => String(v).padStart(2, "0")).join(":");
 };
+
+// GET /api/jobs (all jobs — used for super admin, who should see every QC job
+// regardless of who it's assigned to) can return the array in a few different
+// shapes depending on pagination — normalize them all here.
+const extractJobsList = (d) =>
+  Array.isArray(d?.data?.jobs)
+    ? d.data.jobs
+    : Array.isArray(d?.data)
+      ? d.data
+      : Array.isArray(d?.jobs)
+        ? d.jobs
+        : Array.isArray(d)
+          ? d
+          : [];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Status config
@@ -309,6 +325,8 @@ const QCJobCard = ({
   onCardStart,
   onCardPause,
   onCardComplete,
+  isSuperAdmin,
+  onReassign,
 }) => {
   const delivDate  = job.estimated_delivery_date ? dayjs(job.estimated_delivery_date) : null;
   const isOverdue  = delivDate && delivDate.isBefore(dayjs());
@@ -602,19 +620,36 @@ const QCJobCard = ({
         </div>
 
         {/* QC Inspection link */}
-        <Button
-          icon={<CameraOutlined />}
-          size="small"
-          block
-          onClick={() => onOpenQCModal(job)}
-          style={{
-            marginTop: 8, height: 30, borderRadius: 8,
-            color: "#6b7280", borderColor: "#e5e7eb",
-            background: "#f9fafb", fontWeight: 600, fontSize: 11,
-          }}
-        >
-          Open QC Inspection
-        </Button>
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <Button
+            icon={<CameraOutlined />}
+            size="small"
+            block
+            onClick={() => onOpenQCModal(job)}
+            style={{
+              height: 30, borderRadius: 8,
+              color: "#6b7280", borderColor: "#e5e7eb",
+              background: "#f9fafb", fontWeight: 600, fontSize: 11,
+            }}
+          >
+            Open QC Inspection
+          </Button>
+          {isSuperAdmin && (
+            <Button
+              icon={<SwapOutlined />}
+              size="small"
+              onClick={() => onReassign(job)}
+              style={{
+                height: 30, borderRadius: 8,
+                color: "#7c3aed", borderColor: "#ddd6fe",
+                background: "#faf5ff", fontWeight: 600, fontSize: 11,
+                whiteSpace: "nowrap",
+              }}
+            >
+              Reassign
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -627,6 +662,7 @@ const QualityCheckDashboard = () => {
   const user     = profile();
   const userId   = user._id;
   const userName = user.name || user.fullName || user.username || "QC Inspector";
+  const userIsSuperAdmin = isSuperAdmin(user.role);
 
   const [jobs, setJobs]                         = useState([]);
   const [loading, setLoading]                   = useState(false);
@@ -645,14 +681,31 @@ const QualityCheckDashboard = () => {
   const [sessionStatus, setSessionStatus]       = useState(null);
   const [sessionLoading, setSessionLoading]     = useState(false);
 
+  // ── Reassign (super admin only) ─────────────────────────────────────────────
+  const [reassignModalOpen, setReassignModalOpen] = useState(false);
+  const [reassignJob, setReassignJob]             = useState(null);
+  const [qcStaffList, setQcStaffList]             = useState([]);
+  const [qcStaffLoading, setQcStaffLoading]       = useState(false);
+  const [selectedReassignStaff, setSelectedReassignStaff] = useState(null);
+  const [reassigning, setReassigning]             = useState(false);
+
   // ─── Load jobs ─────────────────────────────────────────────────────────────
   const loadJobs = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
     try {
-      const res      = await fetch(`${BASE}/assigned-to/${userId}`, { headers: authHeader() });
-      const data     = await res.json();
-      const rows     = Array.isArray(data?.data) ? data.data : [];
+      let rows;
+      if (userIsSuperAdmin) {
+        // Super admin sees every job in the Quality Check stage, not just
+        // the ones assigned to them.
+        const res  = await fetch(BASE, { headers: authHeader() });
+        const data = await res.json();
+        rows = extractJobsList(data);
+      } else {
+        const res  = await fetch(`${BASE}/assigned-to/${userId}`, { headers: authHeader() });
+        const data = await res.json();
+        rows = Array.isArray(data?.data) ? data.data : [];
+      }
       const filtered = rows.filter((j) => j.job_status === "quality_check");
       setJobs(filtered);
       setLastRefresh(dayjs());
@@ -662,7 +715,7 @@ const QualityCheckDashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, [userId]);
+  }, [userId, userIsSuperAdmin]);
 
   useEffect(() => { loadJobs(); }, [loadJobs]);
 
@@ -752,21 +805,13 @@ const QualityCheckDashboard = () => {
         const closeData = await closeRes.json();
         if (!closeRes.ok || !closeData.success) throw new Error(closeData.message || "Failed to complete session");
       }
-      // Pass QC
+      // Pass QC — the backend moves the job to Delivery automatically.
       const passRes  = await fetch(`${BASE}/${job._id}/qc/pass`, {
         method: "POST", headers: jsonHeader(),
         body: JSON.stringify({ handled_by: { user_id: userId, name: userName }, notes: "Completed via card" }),
       });
       const passData = await passRes.json();
       if (!passRes.ok || !passData.success) throw new Error(passData.message || "Failed to pass QC");
-
-      // Move to delivery
-      const statusRes  = await fetch(`${BASE}/${job._id}/status`, {
-        method: "PATCH", headers: jsonHeader(),
-        body: JSON.stringify({ job_status: "delivery" }),
-      });
-      const statusData = await statusRes.json();
-      if (!statusRes.ok || !statusData.success) throw new Error(statusData.message || "Failed to update status");
 
       message.success("✅ QC Completed! Job moved to Delivery.");
       await loadJobs();
@@ -876,6 +921,69 @@ const QualityCheckDashboard = () => {
 
   const removeNewImage = (idx) => setNewImageUrls((prev) => prev.filter((_, i) => i !== idx));
 
+  // ─── Reassign (super admin only) ────────────────────────────────────────────
+  const fetchQCStaffList = async () => {
+    setQcStaffLoading(true);
+    try {
+      const res  = await fetch("https://api.dmedia.in/api/admin/get_admin", { headers: authHeader() });
+      const data = await res.json();
+      const team = (data.data || []).filter((u) => u.role === "quality check");
+      setQcStaffList(team);
+    } catch {
+      message.error("Could not load quality check staff list");
+    } finally {
+      setQcStaffLoading(false);
+    }
+  };
+
+  const openReassignModal = async (job) => {
+    setReassignJob(job);
+    setSelectedReassignStaff(null);
+    setReassignModalOpen(true);
+    await fetchQCStaffList();
+  };
+
+  const closeReassignModal = () => {
+    if (reassigning) return;
+    setReassignModalOpen(false);
+    setReassignJob(null);
+    setSelectedReassignStaff(null);
+    setQcStaffList([]);
+  };
+
+  const handleReassignSubmit = async () => {
+    if (!reassignJob || !selectedReassignStaff) {
+      message.warning("Please select a quality check staff member.");
+      return;
+    }
+    setReassigning(true);
+    try {
+      const res  = await fetch(`${BASE}/${reassignJob._id}/assign`, {
+        method: "POST", headers: jsonHeader(),
+        body: JSON.stringify({
+          stage: "quality_check",
+          stage_label: "Quality Check",
+          assigned_to: {
+            user_id: selectedReassignStaff._id,
+            name: selectedReassignStaff.name || selectedReassignStaff.fullName || "Unknown",
+            role: "quality check",
+          },
+          assigned_by: { user_id: userId, name: userName },
+          notes: "Reassigned by super admin",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || "Reassign failed");
+      message.success(`Reassigned to ${selectedReassignStaff.name}.`);
+      closeReassignModal();
+      await loadJobs();
+    } catch (err) {
+      message.error(err.message || "Failed to reassign");
+    } finally {
+      setReassigning(false);
+    }
+  };
+
   // ─── Save QC data ──────────────────────────────────────────────────────────
   const saveQCData = async (passOrFail = null) => {
     if (!currentJob) return;
@@ -906,14 +1014,6 @@ const QualityCheckDashboard = () => {
         });
         const passData = await passRes.json();
         if (!passRes.ok || !passData.success) throw new Error(passData.message || "Failed to pass QC");
-
-        const statusRes  = await fetch(`${BASE}/${currentJob._id}/status`, {
-          method: "PATCH", headers: jsonHeader(),
-          body: JSON.stringify({ job_status: "delivery" }),
-        });
-        const statusData = await statusRes.json();
-        if (!statusRes.ok || !statusData.success)
-          throw new Error(statusData.message || "Failed to update status");
 
         message.success("✅ QC Passed! Job moved to Delivery.");
 
@@ -1079,6 +1179,8 @@ const QualityCheckDashboard = () => {
                   onCardStart={handleCardStart}
                   onCardPause={handleCardPause}
                   onCardComplete={handleCardComplete}
+                  isSuperAdmin={userIsSuperAdmin}
+                  onReassign={openReassignModal}
                 />
               ))}
             </div>
@@ -1359,11 +1461,88 @@ const QualityCheckDashboard = () => {
             </div>
           )}
         </Modal>
+
+        {/* ── Reassign Quality Check Modal (super admin only) ──────────────── */}
+        <Modal
+          title={
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <SwapOutlined style={{ color: "#7c3aed" }} />
+              <span style={{ fontWeight: 700 }}>Reassign Quality Check</span>
+            </div>
+          }
+          open={reassignModalOpen}
+          onCancel={closeReassignModal}
+          maskClosable={!reassigning}
+          closable={!reassigning}
+          footer={[
+            <Button key="cancel" onClick={closeReassignModal} disabled={reassigning}>
+              Cancel
+            </Button>,
+            <Button
+              key="submit" type="primary" loading={reassigning}
+              disabled={!selectedReassignStaff || qcStaffLoading}
+              onClick={handleReassignSubmit}
+              style={{ background: "#7c3aed", borderColor: "#7c3aed" }}
+            >
+              Reassign
+            </Button>,
+          ]}
+          destroyOnClose
+        >
+          {reassignJob && (
+            <div>
+              <div style={{
+                background: "#f8fafc", borderRadius: 8, padding: "10px 12px",
+                marginBottom: 16, border: "1px solid #e5e7eb",
+              }}>
+                <div style={{ fontFamily: "monospace", fontWeight: 700, color: "#7c3aed", fontSize: 14 }}>
+                  {reassignJob.job_no}
+                </div>
+                <div style={{ fontSize: 13, color: "#374151", marginTop: 2 }}>
+                  {reassignJob.customer_name || "—"}
+                </div>
+                {reassignJob.current_stage?.assigned_to?.name && (
+                  <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
+                    Currently assigned to <strong>{reassignJob.current_stage.assigned_to.name}</strong>
+                  </div>
+                )}
+              </div>
+              <label style={{ display: "block", fontWeight: 600, marginBottom: 8, fontSize: 13 }}>
+                Assign To <span style={{ color: "#ef4444" }}>*</span>
+              </label>
+              <Select
+                placeholder={qcStaffLoading ? "Loading staff…" : "Choose a quality check staff member"}
+                style={{ width: "100%" }}
+                value={selectedReassignStaff?._id || undefined}
+                loading={qcStaffLoading}
+                disabled={qcStaffLoading}
+                onChange={(id) => setSelectedReassignStaff(qcStaffList.find((s) => s._id === id) || null)}
+                notFoundContent={qcStaffLoading ? "Loading…" : "No quality check staff found"}
+              >
+                {qcStaffList.map((s) => (
+                  <Option key={s._id} value={s._id}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <UserOutlined style={{ color: "#6b7280", fontSize: 12 }} />
+                      <span>{s.name || s.fullName || s.username || s._id}</span>
+                    </div>
+                  </Option>
+                ))}
+              </Select>
+              {!qcStaffLoading && qcStaffList.length === 0 && (
+                <div style={{
+                  marginTop: 8, color: "#b45309", fontSize: 12,
+                  background: "#fffbeb", border: "1px solid #fde68a",
+                  borderRadius: 6, padding: "6px 10px",
+                }}>
+                  No staff found. Add a user with role "quality check" first.
+                </div>
+              )}
+            </div>
+          )}
+        </Modal>
       </div>
     </>
   );
 };
 
 export default QualityCheckDashboard;
-
-

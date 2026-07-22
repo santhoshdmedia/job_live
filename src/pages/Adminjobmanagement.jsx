@@ -53,6 +53,7 @@ import {
   BookOutlined,
 } from "@ant-design/icons";
 import CustomTable from "../components/CustomTable";
+import CapUploadHelper from "../helper/CapUploadHelper";
 import {
   ERROR_NOTIFICATION,
   SUCCESS_NOTIFICATION,
@@ -67,6 +68,56 @@ const { RangePicker } = DatePicker;
 
 // ─── Round half-up ────────────────────────────────────────────────────────────
 const roundHalfUp = (n) => Math.floor(n + 0.5);
+
+// ─── QC image URL resolver ─────────────────────────────────────────────────────
+const resolveQCImageUrl = (url) => {
+  if (!url) return "";
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  return `https://api.dmedia.in${url.startsWith("/") ? url : `/${url}`}`;
+};
+
+// ─── Compact QC photo gallery (view + optional remove) ─────────────────────────
+const QCPhotoGallery = ({ images = [], onRemove, readonly = false }) => {
+  if (!images.length) return null;
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+      {images.map((img, idx) => {
+        const src = resolveQCImageUrl(img);
+        return (
+          <div
+            key={idx}
+            style={{
+              position: "relative",
+              width: 76,
+              height: 76,
+              border: "1px solid #e5e7eb",
+              borderRadius: 8,
+              overflow: "hidden",
+              background: "#f9fafb",
+            }}
+          >
+            <Image
+              src={src}
+              width={76}
+              height={76}
+              style={{ objectFit: "cover" }}
+            />
+            {!readonly && (
+              <Button
+                icon={<DeleteOutlined />}
+                size="small"
+                danger
+                shape="circle"
+                style={{ position: "absolute", top: 2, right: 2, opacity: 0.9 }}
+                onClick={() => onRemove(idx)}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
 
 // ─── Breakpoint ───────────────────────────────────────────────────────────────
 const useBreakpoint = () => {
@@ -2886,6 +2937,16 @@ const AdminJobManagement = () => {
   const [approving, setApproving] = useState(false);
   const [designersLoading, setDesignersLoading] = useState(false);
 
+  // Quality Check panel (view / upload photos / reassign) — Super Admin
+  const [qcNotesDraft, setQcNotesDraft] = useState("");
+  const [qcNewImages, setQcNewImages] = useState([]);
+  const [qcSaving, setQcSaving] = useState(false);
+  const [qcStaff, setQcStaff] = useState([]);
+  const [qcStaffLoading, setQcStaffLoading] = useState(false);
+  const [reassignQCModalOpen, setReassignQCModalOpen] = useState(false);
+  const [selectedQCStaff, setSelectedQCStaff] = useState(null);
+  const [reassigningQC, setReassigningQC] = useState(false);
+
   // Collect Payment modal
   const [collectPaymentModal, setCollectPaymentModal] = useState(false);
   const [payingJob, setPayingJob] = useState(null);
@@ -3461,6 +3522,137 @@ const AdminJobManagement = () => {
       ERROR_NOTIFICATION({ message: err.message || "Failed to approve" });
     } finally {
       setApproving(false);
+    }
+  };
+
+  // ── Quality Check (Super Admin: view photos, upload photos, reassign) ──────
+  const fetchQCStaff = async () => {
+    setQcStaffLoading(true);
+    try {
+      const res = await fetch("https://api.dmedia.in/api/admin/get_admin", {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+        },
+      });
+      const data = await res.json();
+      const team = (data.data || []).filter((u) => u.role === "quality check");
+      setQcStaff(team);
+      return team;
+    } catch {
+      ERROR_NOTIFICATION({ message: "Could not load quality check staff list" });
+      return [];
+    } finally {
+      setQcStaffLoading(false);
+    }
+  };
+
+  const openReassignQCModal = async () => {
+    setSelectedQCStaff(null);
+    setReassignQCModalOpen(true);
+    await fetchQCStaff();
+  };
+
+  const handleReassignQC = async () => {
+    if (!viewJob) return;
+    if (!selectedQCStaff) {
+      ERROR_NOTIFICATION({ message: "Please select a quality check staff member." });
+      return;
+    }
+    setReassigningQC(true);
+    try {
+      const profile = localStorage.getItem("userprofile")
+        ? JSON.parse(localStorage.getItem("userprofile"))
+        : {};
+      const res = await fetch(
+        `https://api.dmedia.in/api/jobs/${viewJob._id}/assign`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          },
+          body: JSON.stringify({
+            stage: "quality_check",
+            stage_label: "Quality Check",
+            assigned_to: {
+              user_id: selectedQCStaff._id,
+              name: selectedQCStaff.name || selectedQCStaff.fullName || "Unknown",
+              role: "quality check",
+            },
+            assigned_by: {
+              user_id: profile._id || null,
+              name: profile.name || "",
+            },
+            notes: "Reassigned by super admin",
+          }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok || !data.success)
+        throw new Error(data.message || "Reassign failed");
+      SUCCESS_NOTIFICATION({
+        message: `Quality check reassigned to ${selectedQCStaff.name}.`,
+      });
+      setReassignQCModalOpen(false);
+      setSelectedQCStaff(null);
+      if (data.data) setViewJob(data.data);
+      loadJobs(true);
+    } catch (err) {
+      ERROR_NOTIFICATION({ message: err.message || "Failed to reassign" });
+    } finally {
+      setReassigningQC(false);
+    }
+  };
+
+  const handleQCImagesAdded = (val) => {
+    if (Array.isArray(val)) {
+      setQcNewImages(
+        val.map((v) => (typeof v === "string" ? v : v.path)).filter(Boolean),
+      );
+    } else if (typeof val === "string" && val) {
+      setQcNewImages((prev) => [...prev, val]);
+    }
+  };
+
+  const removeQCNewImage = (idx) =>
+    setQcNewImages((prev) => prev.filter((_, i) => i !== idx));
+
+  const handleSaveQCPhotos = async () => {
+    if (!viewJob) return;
+    setQcSaving(true);
+    try {
+      const profile = localStorage.getItem("userprofile")
+        ? JSON.parse(localStorage.getItem("userprofile"))
+        : {};
+      const res = await fetch(
+        `https://api.dmedia.in/api/jobs/${viewJob._id}/qc/update`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+          },
+          body: JSON.stringify({
+            qc_notes: qcNotesDraft,
+            qc_images: qcNewImages,
+            handled_by: {
+              user_id: profile._id || null,
+              name: profile.name || "Super Admin",
+            },
+          }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok || !data.success)
+        throw new Error(data.message || "Failed to save QC photos");
+      SUCCESS_NOTIFICATION({ message: "Quality check photos & notes saved." });
+      setQcNewImages([]);
+      if (data.data) setViewJob(data.data);
+      loadJobs(true);
+    } catch (err) {
+      ERROR_NOTIFICATION({ message: err.message || "Failed to save" });
+    } finally {
+      setQcSaving(false);
     }
   };
 
@@ -4228,6 +4420,8 @@ const AdminJobManagement = () => {
               onClick={() => {
                 setViewJob(record);
                 setViewModal(true);
+                setQcNotesDraft(record.qc_notes || "");
+                setQcNewImages([]);
               }}
             >
               {!isMobile && "View"}
@@ -4770,12 +4964,16 @@ const AdminJobManagement = () => {
         onCancel={() => {
           setViewModal(false);
           setViewJob(null);
+          setQcNotesDraft("");
+          setQcNewImages([]);
         }}
         footer={
           <Button
             onClick={() => {
               setViewModal(false);
               setViewJob(null);
+              setQcNotesDraft("");
+              setQcNewImages([]);
             }}
             style={{ borderRadius: 8 }}
           >
@@ -5154,6 +5352,162 @@ const AdminJobManagement = () => {
                         </div>
                       )}
                     </div>
+                  </div>
+                )}
+                {(["quality_check", "delivery", "completed"].includes(
+                  viewJob.job_status,
+                ) ||
+                  (viewJob.qc_images || []).length > 0 ||
+                  viewJob.qc_notes ||
+                  (viewJob.qc_status && viewJob.qc_status !== "pending")) && (
+                  <div
+                    style={{
+                      background: "#faf5ff",
+                      borderRadius: 10,
+                      padding: "12px 14px",
+                      border: "1px solid #e9d5ff",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        flexWrap: "wrap",
+                        gap: 8,
+                        marginBottom: 10,
+                      }}
+                    >
+                      <SectionHeader
+                        icon={<CameraOutlined />}
+                        title="Quality Check"
+                      />
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        {viewJob.qc_status && (
+                          <Tag
+                            color={
+                              viewJob.qc_status === "passed"
+                                ? "green"
+                                : viewJob.qc_status === "failed"
+                                  ? "red"
+                                  : "blue"
+                            }
+                            style={{ fontWeight: 600 }}
+                          >
+                            {viewJob.qc_status.toUpperCase()}
+                          </Tag>
+                        )}
+                        <Button
+                          size="small"
+                          icon={<SwapOutlined />}
+                          onClick={openReassignQCModal}
+                        >
+                          Reassign
+                        </Button>
+                      </div>
+                    </div>
+
+                    {viewJob.qc_inspected_by && (
+                      <div
+                        style={{ fontSize: 12, color: "#6b7280", marginBottom: 8 }}
+                      >
+                        Inspected by{" "}
+                        <strong>{viewJob.qc_inspected_by}</strong>
+                        {viewJob.qc_inspected_at && (
+                          <>
+                            {" "}on{" "}
+                            {dayjs(viewJob.qc_inspected_at).format(
+                              "DD MMM YYYY, HH:mm",
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    {viewJob.qc_status === "failed" &&
+                      viewJob.qc_rejection_reason && (
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: "#b91c1c",
+                            background: "#fef2f2",
+                            border: "1px solid #fecaca",
+                            borderRadius: 8,
+                            padding: "6px 10px",
+                            marginBottom: 10,
+                          }}
+                        >
+                          <strong>Rejection reason:</strong>{" "}
+                          {viewJob.qc_rejection_reason}
+                        </div>
+                      )}
+
+                    {(viewJob.qc_images || []).length > 0 && (
+                      <div style={{ marginBottom: 12 }}>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            color: "#7c3aed",
+                            marginBottom: 6,
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          Saved Photos ({(viewJob.qc_images || []).length})
+                        </div>
+                        <QCPhotoGallery images={viewJob.qc_images} readonly />
+                      </div>
+                    )}
+
+                    <div
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        color: "#7c3aed",
+                        marginBottom: 6,
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      Add Quality Check Photos
+                    </div>
+                    <CapUploadHelper
+                      image_path={qcNewImages.map((url, i) => ({
+                        key: i + 1,
+                        path: url,
+                      }))}
+                      setImagePath={handleQCImagesAdded}
+                      multiple
+                      max={20}
+                      showCamera
+                    />
+                    {qcNewImages.length > 0 && (
+                      <div style={{ margin: "10px 0" }}>
+                        <QCPhotoGallery
+                          images={qcNewImages}
+                          onRemove={removeQCNewImage}
+                        />
+                      </div>
+                    )}
+                    <TextArea
+                      rows={2}
+                      placeholder="Inspection notes, observations…"
+                      value={qcNotesDraft}
+                      onChange={(e) => setQcNotesDraft(e.target.value)}
+                      style={{ marginTop: 8 }}
+                    />
+                    <Button
+                      type="primary"
+                      size="small"
+                      loading={qcSaving}
+                      onClick={handleSaveQCPhotos}
+                      style={{
+                        marginTop: 10,
+                        background: "#7c3aed",
+                        border: "none",
+                      }}
+                    >
+                      Save Photos & Notes
+                    </Button>
                   </div>
                 )}
                 {fullAddress && (
@@ -6218,6 +6572,136 @@ const AdminJobManagement = () => {
               Job will be approved and assigned to the selected designer, moving
               to <strong>Design</strong> stage.
             </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ══ REASSIGN QUALITY CHECK MODAL ══ */}
+      <Modal
+        title={
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <SwapOutlined style={{ color: "#7c3aed" }} />
+            <span style={{ fontWeight: 700 }}>Reassign Quality Check</span>
+          </div>
+        }
+        open={reassignQCModalOpen}
+        onCancel={() => {
+          if (reassigningQC) return;
+          setReassignQCModalOpen(false);
+          setSelectedQCStaff(null);
+          setQcStaff([]);
+        }}
+        maskClosable={!reassigningQC}
+        closable={!reassigningQC}
+        footer={[
+          <Button
+            key="cancel"
+            onClick={() => {
+              if (reassigningQC) return;
+              setReassignQCModalOpen(false);
+              setSelectedQCStaff(null);
+              setQcStaff([]);
+            }}
+            disabled={reassigningQC}
+          >
+            Cancel
+          </Button>,
+          <Button
+            key="submit"
+            type="primary"
+            loading={reassigningQC}
+            disabled={!selectedQCStaff || qcStaffLoading}
+            onClick={handleReassignQC}
+            style={{ background: "#7c3aed", borderColor: "#7c3aed" }}
+          >
+            Reassign
+          </Button>,
+        ]}
+        width={isMobile ? "100vw" : 420}
+        style={sheetStyle}
+        styles={{ body: sheetBody }}
+        destroyOnClose
+      >
+        {viewJob && (
+          <div>
+            <div
+              style={{
+                background: "#f8fafc",
+                borderRadius: 8,
+                padding: "10px 12px",
+                marginBottom: 16,
+                border: "1px solid #e5e7eb",
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: "monospace",
+                  fontWeight: 700,
+                  color: "#7c3aed",
+                  fontSize: 14,
+                }}
+              >
+                {viewJob.job_no}
+              </div>
+              <div style={{ fontSize: 13, color: "#374151", marginTop: 2 }}>
+                {viewJob.customer_name || "—"}
+              </div>
+              {viewJob.current_stage?.assigned_to?.name && (
+                <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
+                  Currently assigned to{" "}
+                  <strong>{viewJob.current_stage.assigned_to.name}</strong>
+                </div>
+              )}
+            </div>
+            <label
+              style={{
+                display: "block",
+                fontWeight: 600,
+                marginBottom: 8,
+                fontSize: 13,
+              }}
+            >
+              Assign To <span style={{ color: "#ef4444" }}>*</span>
+            </label>
+            <Select
+              placeholder={
+                qcStaffLoading ? "Loading staff…" : "Choose a quality check staff member"
+              }
+              style={{ width: "100%" }}
+              value={selectedQCStaff?._id || undefined}
+              loading={qcStaffLoading}
+              disabled={qcStaffLoading}
+              onChange={(id) =>
+                setSelectedQCStaff(qcStaff.find((s) => s._id === id) || null)
+              }
+              notFoundContent={
+                qcStaffLoading ? "Loading…" : "No quality check staff found"
+              }
+            >
+              {qcStaff.map((s) => (
+                <Option key={s._id} value={s._id}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <UserOutlined style={{ color: "#6b7280", fontSize: 12 }} />
+                    <span>{s.name || s.fullName || s.username || s._id}</span>
+                  </div>
+                </Option>
+              ))}
+            </Select>
+            {!qcStaffLoading && qcStaff.length === 0 && (
+              <div
+                style={{
+                  marginTop: 8,
+                  color: "#b45309",
+                  fontSize: 12,
+                  background: "#fffbeb",
+                  border: "1px solid #fde68a",
+                  borderRadius: 6,
+                  padding: "6px 10px",
+                }}
+              >
+                No staff found. Add a user with role "quality check" first.
+              </div>
+            )}
           </div>
         )}
       </Modal>
